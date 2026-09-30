@@ -1,0 +1,644 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────── ENUMS ─────────
+enum Role {
+  ADMIN
+  MANAGER
+  WAITER
+  KITCHEN
+  CUSTOMER
+}
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+enum WaitlistStatus {
+  WAITING
+  NOTIFIED
+  CONVERTED
+  EXPIRED
+}
+enum TableStatus {
+  FREE
+  RESERVED
+  OCCUPIED
+  CLEANING
+}
+enum OrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+}
+enum OrderStatus {
+  PENDING
+  IN_PROGRESS
+  READY
+  DELIVERED
+  CANCELLED
+}
+enum ItemStatus {
+  PENDING
+  IN_PROGRESS
+  READY
+  SERVED
+  CANCELLED
+}
+enum PaymentMethod {
+  CASH
+  CARD
+  STRIPE
+  OTHER
+}
+enum PaymentStatus {
+  PENDING
+  PAID
+  REFUNDED
+  FAILED
+}
+enum MovementType {
+  PURCHASE
+  ORDER_DEDUCTION
+  WASTE
+  ADJUSTMENT
+  RETURN
+}
+enum PurchaseStatus {
+  DRAFT
+  SENT
+  PARTIAL
+  RECEIVED
+  CANCELLED
+}
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  ON_THE_WAY
+  DELIVERED
+  FAILED
+}
+enum AbsenceType {
+  PAID_LEAVE
+  SICK
+  UNPAID
+  OTHER
+}
+
+// ───────── UTILISATEURS ─────────
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  role         Role
+  isActive     Boolean   @default(true)
+  locale       String    @default("fr")
+  consentAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  staffProfile   StaffProfile?
+  refreshTokens  RefreshToken[]
+  reservations   Reservation[]
+  orders         Order[]         @relation("OrderCustomer")
+  servedOrders   Order[]         @relation("OrderWaiter")
+  feedbacks      Feedback[]
+  waitlist       WaitlistEntry[]
+  sentMessages   Message[]
+  auditLogs      AuditLog[]
+  passwordResets PasswordReset[]
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ───────── SALLE & RÉSERVATIONS ─────────
+model FloorPlan {
+  id     String            @id @default(uuid())
+  name   String
+  width  Int
+  height Int
+  tables RestaurantTable[]
+}
+
+model RestaurantTable {
+  id           String      @id @default(uuid())
+  floorPlanId  String
+  label        String
+  capacity     Int
+  minCapacity  Int         @default(1)
+  posX         Float
+  posY         Float
+  shape        String      @default("rect")
+  rotation     Int         @default(0)
+  status       TableStatus @default(FREE)
+  mergedIntoId String?
+  isActive     Boolean     @default(true)
+
+  floorPlan    FloorPlan          @relation(fields: [floorPlanId], references: [id])
+  mergedInto   RestaurantTable?   @relation("Merge", fields: [mergedIntoId], references: [id])
+  mergedTables RestaurantTable[]  @relation("Merge")
+  reservations ReservationTable[]
+  orders       Order[]
+
+  @@unique([floorPlanId, label])
+}
+
+model Reservation {
+  id              String            @id @default(uuid())
+  customerId      String?
+  guestName       String
+  guestEmail      String?
+  guestPhone      String?
+  partySize       Int
+  startsAt        DateTime
+  endsAt          DateTime
+  status          ReservationStatus @default(PENDING)
+  specialRequests String?
+  reminderSentAt  DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  customer User?              @relation(fields: [customerId], references: [id])
+  tables   ReservationTable[]
+  orders   Order[]
+
+  @@index([startsAt, status])
+}
+
+model ReservationTable {
+  reservationId String
+  tableId       String
+  reservation   Reservation     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  table         RestaurantTable @relation(fields: [tableId], references: [id])
+
+  @@id([reservationId, tableId])
+}
+
+model WaitlistEntry {
+  id         String         @id @default(uuid())
+  customerId String?
+  guestName  String
+  guestPhone String?
+  guestEmail String?
+  partySize  Int
+  desiredAt  DateTime
+  status     WaitlistStatus @default(WAITING)
+  notifiedAt DateTime?
+  createdAt  DateTime       @default(now())
+  customer   User?          @relation(fields: [customerId], references: [id])
+
+  @@index([desiredAt, status])
+}
+
+model OpeningHours {
+  id          String @id @default(uuid())
+  weekday     Int
+  opensAt     String
+  closesAt    String
+  slotMinutes Int    @default(15)
+
+  @@unique([weekday, opensAt])
+}
+
+// ───────── MENU ─────────
+model Category {
+  id        String     @id @default(uuid())
+  name      String
+  sortOrder Int        @default(0)
+  isActive  Boolean    @default(true)
+  items     MenuItem[]
+}
+
+model Allergen {
+  id    String             @id @default(uuid())
+  code  String             @unique
+  name  String
+  items MenuItemAllergen[]
+}
+
+model MenuItem {
+  id            String   @id @default(uuid())
+  categoryId    String
+  name          String
+  description   String?
+  priceCents    Int
+  vatRate       Decimal  @default(10.00) @db.Decimal(4, 2)
+  imageUrl      String?
+  prepMinutes   Int      @default(10)
+  isAvailable   Boolean  @default(true)
+  availableFrom String?
+  availableTo   String?
+  isDishOfDay   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  category     Category           @relation(fields: [categoryId], references: [id])
+  allergens    MenuItemAllergen[]
+  optionGroups OptionGroup[]
+  recipe       RecipeLine[]
+  orderItems   OrderItem[]
+  formulaItems FormulaItem[]
+}
+
+model MenuItemAllergen {
+  menuItemId String
+  allergenId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  allergen   Allergen @relation(fields: [allergenId], references: [id])
+
+  @@id([menuItemId, allergenId])
+}
+
+model OptionGroup {
+  id         String   @id @default(uuid())
+  menuItemId String
+  name       String
+  minChoices Int      @default(0)
+  maxChoices Int      @default(1)
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  options    Option[]
+}
+
+model Option {
+  id           String            @id @default(uuid())
+  groupId      String
+  name         String
+  extraCents   Int               @default(0)
+  group        OptionGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  orderOptions OrderItemOption[]
+}
+
+model Formula {
+  id         String        @id @default(uuid())
+  name       String
+  priceCents Int
+  isActive   Boolean       @default(true)
+  items      FormulaItem[]
+}
+
+model FormulaItem {
+  formulaId  String
+  menuItemId String
+  formula    Formula  @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  @@id([formulaId, menuItemId])
+}
+
+// ───────── COMMANDES ─────────
+model Order {
+  id            String      @id @default(uuid())
+  number        Int         @default(autoincrement())
+  type          OrderType
+  status        OrderStatus @default(PENDING)
+  tableId       String?
+  reservationId String?
+  customerId    String?
+  waiterId      String?
+  notes         String?
+  subtotalCents Int         @default(0)
+  vatCents      Int         @default(0)
+  tipCents      Int         @default(0)
+  totalCents    Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  closedAt      DateTime?
+
+  table       RestaurantTable? @relation(fields: [tableId], references: [id])
+  reservation Reservation?     @relation(fields: [reservationId], references: [id])
+  customer    User?            @relation("OrderCustomer", fields: [customerId], references: [id])
+  waiter      User?            @relation("OrderWaiter", fields: [waiterId], references: [id])
+  items       OrderItem[]
+  payments    Payment[]
+  delivery    Delivery?
+  feedback    Feedback?
+
+  @@index([status, createdAt])
+  @@index([waiterId, createdAt])
+}
+
+model OrderItem {
+  id             String     @id @default(uuid())
+  orderId        String
+  menuItemId     String
+  quantity       Int
+  unitPriceCents Int
+  vatRate        Decimal    @db.Decimal(4, 2)
+  status         ItemStatus @default(PENDING)
+  instructions   String?
+  course         Int        @default(1)
+  createdAt      DateTime   @default(now())
+
+  order       Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem    MenuItem            @relation(fields: [menuItemId], references: [id])
+  options     OrderItemOption[]
+  allocations PaymentAllocation[]
+}
+
+model OrderItemOption {
+  orderItemId String
+  optionId    String
+  extraCents  Int
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  option      Option    @relation(fields: [optionId], references: [id])
+
+  @@id([orderItemId, optionId])
+}
+
+// ───────── PAIEMENT & CAISSE ─────────
+model Payment {
+  id                String        @id @default(uuid())
+  orderId           String
+  method            PaymentMethod
+  status            PaymentStatus @default(PENDING)
+  amountCents       Int
+  tipCents          Int           @default(0)
+  stripeIntentId    String?       @unique
+  registerSessionId String?
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+
+  order       Order               @relation(fields: [orderId], references: [id])
+  session     RegisterSession?    @relation(fields: [registerSessionId], references: [id])
+  allocations PaymentAllocation[]
+}
+
+model PaymentAllocation {
+  paymentId   String
+  orderItemId String
+  quantity    Int
+  amountCents Int
+  payment     Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
+
+  @@id([paymentId, orderItemId])
+}
+
+model RegisterSession {
+  id           String    @id @default(uuid())
+  openedById   String
+  openedAt     DateTime  @default(now())
+  closedAt     DateTime?
+  openingCents Int
+  closingCents Int?
+  payments     Payment[]
+}
+
+// ───────── LIVRAISON ─────────
+model DeliveryZone {
+  id            String     @id @default(uuid())
+  name          String
+  postalCodes   String[]
+  feeCents      Int
+  minOrderCents Int        @default(0)
+  deliveries    Delivery[]
+}
+
+model Delivery {
+  id       String         @id @default(uuid())
+  orderId  String         @unique
+  zoneId   String?
+  driverId String?
+  address  String
+  phone    String
+  feeCents Int
+  status   DeliveryStatus @default(PENDING)
+  eta      DateTime?
+  order    Order          @relation(fields: [orderId], references: [id])
+  zone     DeliveryZone?  @relation(fields: [zoneId], references: [id])
+  driver   StaffProfile?  @relation(fields: [driverId], references: [id])
+}
+
+// ───────── STOCK ─────────
+model Ingredient {
+  id                String  @id @default(uuid())
+  name              String  @unique
+  unit              String
+  quantity          Decimal @default(0) @db.Decimal(12, 3)
+  lowStockThreshold Decimal @default(0) @db.Decimal(12, 3)
+  reorderQty        Decimal? @db.Decimal(12, 3)
+  avgCostCents      Int     @default(0)
+  supplierId        String?
+  isActive          Boolean @default(true)
+
+  supplier      Supplier?           @relation(fields: [supplierId], references: [id])
+  recipeLines   RecipeLine[]
+  movements     StockMovement[]
+  purchaseLines PurchaseOrderLine[]
+  waste         WasteRecord[]
+}
+
+model RecipeLine {
+  menuItemId   String
+  ingredientId String
+  quantity     Decimal    @db.Decimal(12, 3)
+  menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@id([menuItemId, ingredientId])
+}
+
+model StockMovement {
+  id              String       @id @default(uuid())
+  ingredientId    String
+  type            MovementType
+  quantity        Decimal      @db.Decimal(12, 3)
+  balanceAfter    Decimal      @db.Decimal(12, 3)
+  orderItemId     String?
+  purchaseOrderId String?
+  userId          String?
+  reason          String?
+  createdAt       DateTime     @default(now())
+  ingredient      Ingredient   @relation(fields: [ingredientId], references: [id])
+
+  @@index([ingredientId, createdAt])
+}
+
+model WasteRecord {
+  id           String     @id @default(uuid())
+  ingredientId String
+  quantity     Decimal    @db.Decimal(12, 3)
+  reason       String
+  costCents    Int
+  recordedById String
+  createdAt    DateTime   @default(now())
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+}
+
+model Supplier {
+  id             String          @id @default(uuid())
+  name           String
+  contact        String?
+  email          String?
+  phone          String?
+  address        String?
+  ingredients    Ingredient[]
+  purchaseOrders PurchaseOrder[]
+}
+
+model PurchaseOrder {
+  id          String              @id @default(uuid())
+  supplierId  String
+  status      PurchaseStatus      @default(DRAFT)
+  createdById String
+  expectedAt  DateTime?
+  receivedAt  DateTime?
+  totalCents  Int                 @default(0)
+  createdAt   DateTime            @default(now())
+  supplier    Supplier            @relation(fields: [supplierId], references: [id])
+  lines       PurchaseOrderLine[]
+}
+
+model PurchaseOrderLine {
+  id              String        @id @default(uuid())
+  purchaseOrderId String
+  ingredientId    String
+  quantity        Decimal       @db.Decimal(12, 3)
+  receivedQty     Decimal       @default(0) @db.Decimal(12, 3)
+  unitCostCents   Int
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  ingredient      Ingredient    @relation(fields: [ingredientId], references: [id])
+}
+
+// ───────── PERSONNEL ─────────
+model StaffProfile {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  position           String
+  hourlyRateCents    Int
+  overtimeMultiplier Decimal  @default(1.25) @db.Decimal(3, 2)
+  hiredAt            DateTime
+  emergencyContact   String?
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shifts             Shift[]
+  attendances        Attendance[]
+  absences           Absence[]
+  deliveries         Delivery[]
+}
+
+model Shift {
+  id          String       @id @default(uuid())
+  staffId     String
+  startsAt    DateTime
+  endsAt      DateTime
+  position    String?
+  notes       String?
+  staff       StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  attendances Attendance[]
+
+  @@index([staffId, startsAt])
+}
+
+model Attendance {
+  id           String       @id @default(uuid())
+  staffId      String
+  shiftId      String?
+  clockIn      DateTime
+  clockOut     DateTime?
+  breakMinutes Int          @default(0)
+  staff        StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  shift        Shift?       @relation(fields: [shiftId], references: [id])
+
+  @@index([staffId, clockIn])
+}
+
+model Absence {
+  id       String       @id @default(uuid())
+  staffId  String
+  type     AbsenceType
+  from     DateTime
+  to       DateTime
+  approved Boolean      @default(false)
+  staff    StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+}
+
+// ───────── MESSAGERIE ─────────
+model Channel {
+  id       String          @id @default(uuid())
+  name     String?
+  isDirect Boolean         @default(false)
+  members  ChannelMember[]
+  messages Message[]
+}
+
+model ChannelMember {
+  channelId  String
+  userId     String
+  lastReadAt DateTime?
+  channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([channelId, userId])
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  channelId String
+  senderId  String
+  body      String
+  createdAt DateTime @default(now())
+  channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  sender    User     @relation(fields: [senderId], references: [id])
+
+  @@index([channelId, createdAt])
+}
+
+// ───────── AVIS, AUDIT, PARAMÈTRES ─────────
+model Feedback {
+  id         String   @id @default(uuid())
+  orderId    String   @unique
+  customerId String
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+  order      Order    @relation(fields: [orderId], references: [id])
+  customer   User     @relation(fields: [customerId], references: [id])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ip        String?
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([createdAt])
+}
+
+model Setting {
+  key   String @id
+  value Json
+}

@@ -1,0 +1,1 @@
+{ "name": "mobile", "private": true, "scripts": { "dev": "echo TODO", "build": "echo TODO", "lint": "echo TODO", "test": "echo TODO" } }

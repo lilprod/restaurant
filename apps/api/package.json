@@ -1,0 +1,6 @@
+{
+  "name": "api",
+  "private": true,
+  "scripts": { "dev": "echo TODO nest start --watch", "build": "echo TODO", "lint": "echo TODO", "test": "echo TODO" },
+  "prisma": { "seed": "tsx prisma/seed.ts" }
+}
