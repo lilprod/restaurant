@@ -1,4 +1,5 @@
 import { INestApplication } from "@nestjs/common";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { Test } from "@nestjs/testing";
 import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
@@ -8,8 +9,8 @@ import { setupApp } from "../src/setup";
 
 export async function createApp() {
   const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
-  const app = mod.createNestApplication();
-  setupApp(app, "http://localhost");
+  const app = mod.createNestApplication<NestExpressApplication>();
+  setupApp(app, { CORS_ORIGIN: "http://localhost", UPLOAD_DIR: process.env.UPLOAD_DIR! });
   await app.init();
   return app;
 }

@@ -1,51 +1,24 @@
-import {
-  CanActivate, ExecutionContext, ForbiddenException, Injectable, SetMetadata, UnauthorizedException,
-} from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import type { PlatformRole } from "@restaurant/shared-types";
-import type { Request } from "express";
-import { PrismaService } from "../../prisma/prisma.service";
+import type { Account, Space } from "../../security/accounts.repo";
+import { AccountsRepo } from "../../security/accounts.repo";
+import { LicenseGateService } from "../../security/license-gate.service";
+import { SecurityPolicyService } from "../../security/security-policy.service";
+import { SessionService } from "../../security/session.service";
+import { CurrentAccount, Roles, SpaceAuthGuard } from "../../security/space-auth.guard";
 
-export interface PlatformPrincipal {
-  id: string;
-  email: string;
-  role: PlatformRole;
-}
-export type PlatformRequest = Request & { platformUser: PlatformPrincipal };
-
-const ROLES_KEY = "platformRoles";
+/** Compte de l'espace plateforme authentifié (alias conservé pour les contrôleurs existants). */
+export type PlatformPrincipal = Account & { role: PlatformRole };
+export const CurrentPlatformUser = CurrentAccount;
 /** Restreint une route à certains rôles plateforme (par défaut : tout rôle plateforme authentifié). */
-export const PlatformRoles = (...roles: PlatformRole[]) => SetMetadata(ROLES_KEY, roles);
+export const PlatformRoles = (...roles: PlatformRole[]) => Roles(...roles);
 
 @Injectable()
-export class PlatformAuthGuard implements CanActivate {
-  constructor(
-    private readonly jwt: JwtService,
-    private readonly prisma: PrismaService,
-    private readonly reflector: Reflector,
-  ) {}
-
-  async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    const req = ctx.switchToHttp().getRequest<PlatformRequest>();
-    const header = req.headers.authorization;
-    if (!header?.startsWith("Bearer ")) throw new UnauthorizedException("Authentification requise");
-
-    let payload: { sub: string; typ: string };
-    try {
-      payload = await this.jwt.verifyAsync(header.slice(7));
-    } catch {
-      throw new UnauthorizedException("Jeton invalide ou expiré");
-    }
-    if (payload.typ !== "platform") throw new UnauthorizedException("Jeton invalide");
-
-    const user = await this.prisma.platformUser.findUnique({ where: { id: payload.sub } });
-    if (!user || !user.isActive) throw new UnauthorizedException("Compte désactivé");
-
-    const roles = this.reflector.getAllAndOverride<PlatformRole[] | undefined>(ROLES_KEY, [ctx.getHandler(), ctx.getClass()]);
-    if (roles?.length && !roles.includes(user.role)) throw new ForbiddenException("Droits insuffisants");
-
-    req.platformUser = { id: user.id, email: user.email, role: user.role };
-    return true;
+export class PlatformAuthGuard extends SpaceAuthGuard {
+  protected readonly space: Space = "platform";
+  constructor(jwt: JwtService, sessions: SessionService, repo: AccountsRepo, policies: SecurityPolicyService, gate: LicenseGateService, reflector: Reflector) {
+    super(jwt, sessions, repo, policies, gate, reflector);
   }
 }

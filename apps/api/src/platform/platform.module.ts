@@ -1,10 +1,7 @@
 import { Module } from "@nestjs/common";
-import { JwtModule } from "@nestjs/jwt";
-import { APP_ENV, Env } from "../config/env";
 import { PlatformAuditService } from "./audit/platform-audit.service";
-import { PlatformAuthController } from "./auth/platform-auth.controller";
 import { PlatformAuthGuard } from "./auth/platform-auth.guard";
-import { PlatformAuthService } from "./auth/platform-auth.service";
+import { PlatformAccountController, PlatformAuthController } from "./auth/platform-auth.controllers";
 import { DashboardController } from "./dashboard/dashboard.controller";
 import { LicensingService } from "./licensing/licensing.service";
 import { PaymentsController } from "./payments/payments.controller";
@@ -13,25 +10,23 @@ import { PlansController } from "./plans/plans.controller";
 import { PlansService } from "./plans/plans.service";
 import { PublicRegistrationController, RegistrationsController } from "./registrations/registrations.controller";
 import { RegistrationsService } from "./registrations/registrations.service";
+import { PublicBrandingController } from "./settings/public-branding.controller";
+import { PlatformSettingsController } from "./settings/platform-settings.controller";
+import { PlatformSecurityController, TenantAdminController } from "./security/platform-security.controller";
 import { TenantsController } from "./tenants/tenants.controller";
 import { TenantsService } from "./tenants/tenants.service";
+import { PlatformUsersController } from "./users/platform-users.controller";
 
-/** Espace plateforme (SuperAdmin) : tenants, plans, licences, paiements manuels, inscriptions. */
+/** Espace plateforme (SuperAdmin) : tenants, plans, licences, paiements manuels, inscriptions, réglages, sécurité. */
 @Module({
-  imports: [
-    JwtModule.registerAsync({
-      inject: [APP_ENV],
-      useFactory: (env: Env) => ({ secret: env.JWT_ACCESS_SECRET }),
-    }),
-  ],
   controllers: [
-    PlatformAuthController, PlansController, TenantsController,
-    PublicRegistrationController, RegistrationsController, PaymentsController, DashboardController,
+    PlatformAuthController, PlatformAccountController, PlansController, TenantsController, TenantAdminController,
+    PublicRegistrationController, PublicBrandingController, RegistrationsController, PaymentsController,
+    DashboardController, PlatformSettingsController, PlatformUsersController, PlatformSecurityController,
   ],
   providers: [
-    PlatformAuthGuard, PlatformAuthService, PlatformAuditService, PlansService, TenantsService,
-    RegistrationsService, PaymentsService, LicensingService,
+    PlatformAuthGuard, PlatformAuditService, PlansService, TenantsService, RegistrationsService, PaymentsService, LicensingService,
   ],
-  exports: [LicensingService],
+  exports: [LicensingService, PlatformAuthGuard],
 })
 export class PlatformModule {}

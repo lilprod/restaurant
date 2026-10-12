@@ -1,5 +1,7 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException } from "@nestjs/common";
 import * as argon2 from "argon2";
+import { DEFAULT_PASSWORD_POLICY, validatePassword } from "@restaurant/utils";
 import type { RegistrationInput } from "@restaurant/validation";
 import { PrismaService } from "../../prisma/prisma.service";
 import { PlatformAuditService } from "../audit/platform-audit.service";
@@ -15,6 +17,8 @@ export class RegistrationsService {
 
   /** Inscription publique : crée une demande en attente de validation (aucun tenant n'existe encore). */
   async submit(input: RegistrationInput) {
+    const weak = validatePassword(input.password, DEFAULT_PASSWORD_POLICY, { email: input.email, names: [input.ownerFirstName, input.ownerLastName] });
+    if (weak.length) throw new BadRequestException({ message: "Mot de passe trop faible", errors: weak.map((message) => ({ path: "password", message })) });
     const slug = input.slug.toLowerCase();
     const [tenant, pending] = await Promise.all([
       this.prisma.tenant.findUnique({ where: { slug } }),

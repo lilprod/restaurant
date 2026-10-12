@@ -4,8 +4,7 @@ import {
   CreateTenantInput, createTenantSchema, listTenantsQuerySchema, updateTenantSchema,
 } from "@restaurant/validation";
 import { ZodPipe } from "../../common/zod.pipe";
-import { CurrentPlatformUser } from "../auth/current-platform-user.decorator";
-import { PlatformAuthGuard, PlatformPrincipal, PlatformRoles } from "../auth/platform-auth.guard";
+import { CurrentPlatformUser, PlatformAuthGuard, PlatformPrincipal, PlatformRoles } from "../auth/platform-auth.guard";
 import { TenantsService } from "./tenants.service";
 
 @ApiTags("Plateforme · Restaurants (tenants)")

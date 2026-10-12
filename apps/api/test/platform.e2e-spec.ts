@@ -39,7 +39,7 @@ describe("Plateforme SaaS (e2e)", () => {
       expect(second.status).toBe(200);
       const replay = await api().post("/api/v1/platform/auth/refresh").send({ refreshToken: first.refreshToken });
       expect(replay.status).toBe(401);
-      const me = await api().get("/api/v1/platform/auth/me").set(auth(second.body.accessToken));
+      const me = await api().get("/api/v1/platform/account/me").set(auth(second.body.accessToken));
       expect(me.body.role).toBe("SUPER_ADMIN");
     });
     it("limite le rôle SUPPORT en lecture seule", async () => {
@@ -53,7 +53,7 @@ describe("Plateforme SaaS (e2e)", () => {
     let regId: string;
     const body = {
       restaurantName: "Chez Kofi", slug: "chez-kofi", ownerFirstName: "Kofi", ownerLastName: "Mensah",
-      email: "Kofi@Example.com", password: "MotDePasse1", phone: "90000000",
+      email: "Kofi@Example.com", password: "Cigale-Bleue74", phone: "90000000",
     };
     it("expose les plans actifs publiquement", async () => {
       const res = await api().get("/api/v1/public/plans");
@@ -100,7 +100,7 @@ describe("Plateforme SaaS (e2e)", () => {
     it("crée un tenant et refuse un doublon de slug", async () => {
       const payload = {
         name: "Le Palmier", slug: "le-palmier", email: "contact@palmier.tg", planId: seed.pro.id,
-        admin: { firstName: "Ama", lastName: "Dossou", email: "ama@palmier.tg", password: "MotDePasse1" },
+        admin: { firstName: "Ama", lastName: "Dossou", email: "ama@palmier.tg", password: "Cigale-Bleue74" },
       };
       const res = await api().post("/api/v1/platform/tenants").set(auth()).send(payload);
       expect(res.status).toBe(201);
@@ -111,7 +111,7 @@ describe("Plateforme SaaS (e2e)", () => {
     it("un plan sans essai crée un tenant suspendu jusqu'au premier paiement", async () => {
       const res = await api().post("/api/v1/platform/tenants").set(auth()).send({
         name: "Sans Essai", slug: "sans-essai", email: "a@b.tg", planId: seed.noTrial.id,
-        admin: { firstName: "A", lastName: "B", email: "a@b.tg", password: "MotDePasse1" },
+        admin: { firstName: "A", lastName: "B", email: "a@b.tg", password: "Cigale-Bleue74" },
       });
       expect(res.body.status).toBe("SUSPENDED");
       expect(res.body.subscription.status).toBe("EXPIRED");

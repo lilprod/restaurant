@@ -2,12 +2,17 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from "@prisma/client";
 import type { RecordPaymentInput } from "@restaurant/validation";
 import { PrismaService, Tx } from "../../prisma/prisma.service";
+import { PlatformSettingsService } from "../../settings/platform-settings.service";
 import { PlatformAuditService } from "../audit/platform-audit.service";
 import { computeRenewal, evaluateLicense, receiptNumber, tenantStatusFor } from "../licensing/licensing";
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly prisma: PrismaService, private readonly audit: PlatformAuditService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: PlatformAuditService,
+    private readonly settings: PlatformSettingsService,
+  ) {}
 
   /**
    * Enregistre un paiement de licence saisi manuellement (espèces, carte, Flooz, TMoney) et
@@ -92,6 +97,7 @@ export class PaymentsService {
    * la période est alors restituée telle qu'avant le paiement.
    */
   async void(id: string, reason: string, actorId: string) {
+    const graceDays = await this.settings.graceDays();
     return this.prisma.asPlatform(async (tx) => {
       const payment = await tx.subscriptionPayment.findUnique({ where: { id }, include: { subscription: true } });
       if (!payment) throw new NotFoundException("Paiement introuvable");
@@ -120,7 +126,7 @@ export class PaymentsService {
         tenantStatus = "SUSPENDED";
       } else {
         const ev = evaluateLicense(
-          { status: backToTrial ? "TRIALING" : "ACTIVE", currentPeriodEnd: restoredEnd, graceEndsAt: null }, now,
+          { status: backToTrial ? "TRIALING" : "ACTIVE", currentPeriodEnd: restoredEnd, graceEndsAt: null }, now, graceDays,
         );
         subUpdate = { status: ev.status, currentPeriodEnd: restoredEnd, graceEndsAt: ev.graceEndsAt };
         tenantStatus = tenantStatusFor(ev.status, backToTrial ? "TRIAL" : "ACTIVE");

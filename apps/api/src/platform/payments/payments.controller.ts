@@ -2,8 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Use
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import { RecordPaymentInput, listPaymentsQuerySchema, recordPaymentSchema, voidPaymentSchema } from "@restaurant/validation";
 import { ZodPipe } from "../../common/zod.pipe";
-import { CurrentPlatformUser } from "../auth/current-platform-user.decorator";
-import { PlatformAuthGuard, PlatformPrincipal, PlatformRoles } from "../auth/platform-auth.guard";
+import { CurrentPlatformUser, PlatformAuthGuard, PlatformPrincipal, PlatformRoles } from "../auth/platform-auth.guard";
 import { PaymentsService } from "./payments.service";
 
 @ApiTags("Plateforme · Paiements de licence")

@@ -115,3 +115,4 @@ export type PlanInput = z.infer<typeof planInputSchema>;
 export type CreateTenantInput = z.infer<typeof createTenantSchema>;
 export type RegistrationInput = z.infer<typeof registrationInputSchema>;
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
+export * from "./settings";

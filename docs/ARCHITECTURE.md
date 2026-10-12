@@ -39,3 +39,15 @@ Plus tard, un intégrateur de paiement (CinetPay, PayDunya, Stripe…) pourra cr
 ## Plans
 `Plan` : prix mensuel/annuel en FCFA, `trialDays`, limites (`maxUsers`, `maxTables`) et `features` (JSON des
 modules activés). Les guards NestJS vérifient plan + statut de licence avant chaque requête tenant.
+
+## Sécurité et paramètres
+
+- **Comptes** : `PlatformUser` (éditeur) et `User` (restaurant) partagent la même logique (`apps/api/src/security/`) :
+  connexion, verrouillage, 2FA TOTP + codes de secours, sessions révocables, mot de passe oublié, restrictions de session.
+- **Sessions** : jeton d'accès de 15 min lié à une session (`RefreshToken`) ; fermer la session invalide aussitôt le jeton d'accès.
+  L'état « mot de passe à changer » / « 2FA obligatoire » est relu en base à chaque requête, donc levé dès que l'utilisateur régularise.
+- **Licence** : `LicenseGateService` bloque connexion, rafraîchissement et chaque requête d'un restaurant dont la licence est expirée ou qui est suspendu (la période de grâce reste accessible).
+- **Réglages** : `SettingsEngine` (sections JSON validées par Zod, défauts + fusion profonde). Restaurant → table `Setting` (sous RLS) ; plateforme → `PlatformSetting`.
+  Les URL des logos ne sont jamais saisies : elles viennent des routes d'envoi.
+- **Thème** : couleurs de texte lisibles (contraste WCAG) et variables CSS calculées dans `packages/utils`, partagées par l'API, le web et le mobile.
+- **Fichiers** : `StorageService` (disque, interchangeable) ; validation par signature binaire.

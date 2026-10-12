@@ -6,8 +6,7 @@ import {
   RegistrationInput, listRegistrationsQuerySchema, registrationInputSchema, rejectRegistrationSchema,
 } from "@restaurant/validation";
 import { ZodPipe } from "../../common/zod.pipe";
-import { CurrentPlatformUser } from "../auth/current-platform-user.decorator";
-import { PlatformAuthGuard, PlatformPrincipal, PlatformRoles } from "../auth/platform-auth.guard";
+import { CurrentPlatformUser, PlatformAuthGuard, PlatformPrincipal, PlatformRoles } from "../auth/platform-auth.guard";
 import { PlansService } from "../plans/plans.service";
 import { RegistrationsService } from "./registrations.service";
 

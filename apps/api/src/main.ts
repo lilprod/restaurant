@@ -1,13 +1,14 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import { loadEnv } from "./config/env";
 import { setupApp, setupSwagger } from "./setup";
 
 async function bootstrap() {
   const env = loadEnv();
-  const app = await NestFactory.create(AppModule);
-  setupApp(app, env.CORS_ORIGIN);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  setupApp(app, env);
   setupSwagger(app);
   await app.listen(env.PORT);
   // eslint-disable-next-line no-console

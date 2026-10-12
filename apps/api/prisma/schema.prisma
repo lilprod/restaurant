@@ -109,20 +109,30 @@ enum AbsenceType {
 
 // ───────── UTILISATEURS ─────────
 model User {
-  tenantId     String
-  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id           String    @id @default(uuid())
-  email        String
-  passwordHash String
-  firstName    String
-  lastName     String
-  phone        String?
-  role         Role
-  isActive     Boolean   @default(true)
-  locale       String    @default("fr")
-  consentAt    DateTime?
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  tenantId           String
+  tenant             Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                 String    @id @default(uuid())
+  email              String
+  passwordHash       String
+  firstName          String
+  lastName           String
+  phone              String?
+  role               Role
+  isActive           Boolean   @default(true)
+  locale             String    @default("fr")
+  consentAt          DateTime?
+  mustChangePassword Boolean   @default(false)
+  passwordChangedAt  DateTime?
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  lastLoginIp        String?
+  twoFactorEnabled   Boolean   @default(false)
+  twoFactorSecret    String? // chiffré (AES-256-GCM)
+  recoveryCodeHashes String[]
+  avatarUrl          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   staffProfile   StaffProfile?
   refreshTokens  RefreshToken[]
@@ -143,7 +153,12 @@ model RefreshToken {
   id             String        @id @default(uuid())
   userId         String?
   platformUserId String?
+  tenantId       String? // renseigné pour les sessions tenant (hors RLS)
   tokenHash      String        @unique
+  userAgent      String?
+  ip             String?
+  createdAt      DateTime      @default(now())
+  lastUsedAt     DateTime      @default(now())
   expiresAt      DateTime
   revokedAt      DateTime?
   user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -151,15 +166,18 @@ model RefreshToken {
 
   @@index([userId])
   @@index([platformUserId])
+  @@index([tenantId])
 }
 
 model PasswordReset {
   id             String        @id @default(uuid())
   userId         String?
   platformUserId String?
+  tenantId       String?
   tokenHash      String        @unique
   expiresAt      DateTime
   usedAt         DateTime?
+  createdAt      DateTime      @default(now())
   user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   platformUser   PlatformUser? @relation(fields: [platformUserId], references: [id], onDelete: Cascade)
 }
@@ -851,14 +869,27 @@ enum RegistrationStatus {
 }
 
 model PlatformUser {
-  id           String       @id @default(uuid())
-  email        String       @unique
-  passwordHash String
-  firstName    String
-  lastName     String
-  role         PlatformRole @default(SUPER_ADMIN)
-  isActive     Boolean      @default(true)
-  createdAt    DateTime     @default(now())
+  id                 String       @id @default(uuid())
+  email              String       @unique
+  passwordHash       String
+  firstName          String
+  lastName           String
+  role               PlatformRole @default(SUPER_ADMIN)
+  isActive           Boolean      @default(true)
+  phone              String?
+  locale             String       @default("fr")
+  mustChangePassword Boolean      @default(false)
+  passwordChangedAt  DateTime?
+  failedLoginCount   Int          @default(0)
+  lockedUntil        DateTime?
+  lastLoginAt        DateTime?
+  lastLoginIp        String?
+  twoFactorEnabled   Boolean      @default(false)
+  twoFactorSecret    String? // chiffré (AES-256-GCM)
+  recoveryCodeHashes String[]
+  avatarUrl          String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @default(now()) @updatedAt
 
   refreshTokens    RefreshToken[]
   passwordResets   PasswordReset[]
@@ -892,7 +923,6 @@ model Tenant {
   email           String
   phone           String?
   address         String?
-  logoUrl         String?
   currency        String       @default("XOF")
   timezone        String       @default("Africa/Lome")
   locale          String       @default("fr")
@@ -1034,4 +1064,42 @@ model PlatformAuditLog {
 model ReceiptCounter {
   year Int @id
   last Int @default(0)
+}
+
+// ───────── SÉCURITÉ & PARAMÈTRES ─────────
+enum LoginResult {
+  SUCCESS
+  BAD_PASSWORD
+  UNKNOWN_ACCOUNT
+  LOCKED
+  TWO_FACTOR_FAILED
+  TWO_FACTOR_REQUIRED
+  LICENSE_BLOCKED
+}
+
+// Journal des tentatives de connexion (plateforme et tenants). Hors RLS : filtré par tenantId dans le code.
+model LoginEvent {
+  id             String      @id @default(uuid())
+  space          String // "platform" | "tenant"
+  tenantId       String?
+  userId         String?
+  platformUserId String?
+  email          String
+  result         LoginResult
+  ip             String?
+  userAgent      String?
+  createdAt      DateTime    @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([userId, createdAt])
+  @@index([platformUserId, createdAt])
+  @@index([createdAt])
+}
+
+// Réglages de la plateforme (marque, société, sécurité…) : une ligne par section.
+model PlatformSetting {
+  key         String   @id // branding | company | localization | security | paymentInstructions
+  value       Json
+  updatedAt   DateTime @updatedAt
+  updatedById String?
 }

@@ -1,6 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { BadRequestException } from "@nestjs/common";
 import * as argon2 from "argon2";
+import { DEFAULT_PASSWORD_POLICY, validatePassword } from "@restaurant/utils";
 import type { CreateTenantInput } from "@restaurant/validation";
 import { PrismaService, Tx } from "../../prisma/prisma.service";
 import { PlatformAuditService } from "../audit/platform-audit.service";
@@ -17,6 +19,8 @@ export interface ProvisionInput {
   address?: string;
   planId: string;
   admin: { firstName: string; lastName: string; email: string; passwordHash: string };
+  /** Mot de passe choisi par le SuperAdmin : l'administrateur du restaurant devra le changer à sa première connexion. */
+  forcePasswordChange?: boolean;
 }
 
 @Injectable()
@@ -26,9 +30,11 @@ export class TenantsService {
   /** Création par le SuperAdmin. */
   async create(input: CreateTenantInput, actorId: string) {
     const { password, ...admin } = input.admin;
+    const weak = validatePassword(password, DEFAULT_PASSWORD_POLICY, { email: admin.email, names: [admin.firstName, admin.lastName] });
+    if (weak.length) throw new BadRequestException({ message: "Mot de passe trop faible", errors: weak.map((message) => ({ path: "admin.password", message })) });
     const passwordHash = await argon2.hash(password);
     return this.prisma.asPlatform(async (tx) => {
-      const tenant = await this.provision(tx, { ...input, admin: { ...admin, passwordHash } });
+      const tenant = await this.provision(tx, { ...input, admin: { ...admin, passwordHash }, forcePasswordChange: true });
       await this.audit.log({ actorId, action: "tenant.create", entity: "Tenant", entityId: tenant.id }, tx);
       return this.detail(tx, tenant.id);
     });
@@ -69,6 +75,8 @@ export class TenantsService {
         lastName: input.admin.lastName,
         role: "ADMIN",
         consentAt: now,
+        passwordChangedAt: now,
+        mustChangePassword: input.forcePasswordChange ?? false,
       },
     });
     await tx.subscription.create({

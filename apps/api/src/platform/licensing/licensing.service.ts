@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { APP_ENV, Env } from "../../config/env";
 import { PrismaService } from "../../prisma/prisma.service";
+import { PlatformSettingsService } from "../../settings/platform-settings.service";
 import { PlatformAuditService } from "../audit/platform-audit.service";
 import { evaluateLicense, tenantStatusFor } from "./licensing";
 
@@ -12,6 +13,7 @@ export class LicensingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: PlatformAuditService,
+    private readonly settings: PlatformSettingsService,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
@@ -37,9 +39,10 @@ export class LicensingService {
       include: { tenant: { select: { id: true, status: true } } },
     });
 
+    const graceDays = await this.settings.graceDays();
     let changed = 0;
     for (const sub of due) {
-      const next = evaluateLicense(sub, now);
+      const next = evaluateLicense(sub, now, graceDays);
       if (next.status === sub.status) continue;
       await this.prisma.asPlatform(async (tx) => {
         await tx.subscription.update({ where: { id: sub.id }, data: { status: next.status, graceEndsAt: next.graceEndsAt } });

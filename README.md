@@ -24,6 +24,7 @@ pnpm dev
 API : `http://localhost:3000/api/v1` · Swagger : `/api/docs` · SuperAdmin de dev créé par le seed
 (`superadmin@restaurant.local`, mot de passe `ChangeMe123!` — à changer via `SEED_SUPERADMIN_PASSWORD`).
 Documentation des routes : `docs/API.md`.
+En production, définissez `DATA_ENCRYPTION_KEY`, `PUBLIC_API_URL`, `APP_URL`, `SEED_SUPERADMIN_PASSWORD` et un volume pour `UPLOAD_DIR`.
 
 ## Structure
 Voir `docs/ARCHITECTURE.md`. Schéma de données : `apps/api/prisma/schema.prisma`.
