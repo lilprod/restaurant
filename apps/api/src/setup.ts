@@ -1,12 +1,14 @@
 import { INestApplication } from "@nestjs/common";
 import type { NestExpressApplication } from "@nestjs/platform-express";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
+import { installFrenchErrors } from "@restaurant/validation";
 import helmet from "helmet";
 import { resolve } from "node:path";
 import type { Env } from "./config/env";
 
 /** Configuration HTTP commune à main.ts et aux tests e2e. */
 export function setupApp(app: INestApplication, env: Pick<Env, "CORS_ORIGIN" | "UPLOAD_DIR">) {
+  installFrenchErrors();                                // messages de validation en français
   const express = app as NestExpressApplication;
   express.set("trust proxy", 1);                       // IP réelle derrière un reverse proxy (sessions, journal)
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));   // images servies à un autre domaine (web)

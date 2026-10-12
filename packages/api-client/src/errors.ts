@@ -1,5 +1,5 @@
 /** Codes d'erreur métier renvoyés par l'API (champ `code` du corps de réponse). */
-export type ApiErrorCode = "RESTRICTED_SESSION" | "LICENSE_BLOCKED" | "ACCOUNT_LOCKED" | "NETWORK_ERROR" | "UNKNOWN";
+export type ApiErrorCode = "RESTRICTED_SESSION" | "LICENSE_BLOCKED" | "ACCOUNT_LOCKED" | "PLAN_LIMIT" | "NETWORK_ERROR" | "UNKNOWN";
 
 export interface FieldError {
   /** Chemin du champ, ex. `admin.password` ou `newPassword`. */
@@ -64,6 +64,8 @@ export class ApiError extends Error {
   get isRestricted() { return this.code === "RESTRICTED_SESSION"; }
   get isLicenseBlocked() { return this.code === "LICENSE_BLOCKED"; }
   get isLocked() { return this.status === 423 || this.code === "ACCOUNT_LOCKED"; }
+  /** Limite du plan atteinte (utilisateurs, tables) : 409 `PLAN_LIMIT`. */
+  get isPlanLimit() { return this.code === "PLAN_LIMIT"; }
 
   /** Minutes restantes avant déverrouillage, extraites du message 423 (« Réessayez dans N minute(s) »). */
   get lockedMinutes(): number | null {

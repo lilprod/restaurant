@@ -20,6 +20,8 @@ export interface NavItem {
   icon: React.ReactNode;
   end?: boolean;
   keywords?: string[];
+  /** Titre de groupe dans la barre latérale (affiché quand il change d'un lien au suivant). */
+  section?: string;
 }
 
 interface AppShellProps {
@@ -138,8 +140,11 @@ function SidebarContent({ nav, spaceLabel, roleLabel, accountPath, onSearch }: {
 
       <nav aria-label="Navigation principale" className="flex-1 overflow-y-auto px-3 py-2">
         <ul className="flex flex-col gap-0.5">
-          {nav.map((n) => (
+          {nav.map((n, i) => (
             <li key={n.to}>
+              {n.section && n.section !== nav[i - 1]?.section && (
+                <span className={cn("block px-3 pb-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-faint", i > 0 ? "pt-4" : "pt-1")}>{n.section}</span>
+              )}
               <NavLink
                 to={n.to}
                 end={n.end}

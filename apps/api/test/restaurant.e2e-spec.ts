@@ -141,6 +141,8 @@ describe("Phase 1 : menu, commandes, cuisine, encaissement (e2e)", () => {
         categoryId: ids.plats, name: "X", price: 1, optionGroups: [{ name: "G", minChoices: 2, maxChoices: 1, options: [{ name: "a" }] }],
       })).status).toBe(400);
       expect((await api().post(`${V}/tenant/menu/items`).set(as("waiter")).send({ categoryId: ids.plats, name: "X", price: 1 })).status).toBe(403);
+      const fr = await api().post(`${V}/tenant/menu/categories`).set(as("manager")).send({ name: "" });
+      expect(fr.body.errors).toEqual([{ path: "name", message: "Obligatoire" }]);       // messages de validation en français
       expect((await api().delete(`${V}/tenant/menu/categories/${ids.plats}`).set(as("manager"))).status).toBe(409);
     });
 

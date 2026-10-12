@@ -1,10 +1,13 @@
 import type {
-  BrandingInput, BusinessInput, CompanyInput, CreateTenantInput, LicensingSettings, LocalizationInput, OperationsInput,
-  PaymentInstructionsInput, PlanInput, PlatformSecurityInput, RecordPaymentInput, RegistrationInput, TenantSecurityInput,
+  BrandingInput, BusinessInput, CategoryInput, CompanyInput, CreateOrderInput, CreateStaffInput, CreateTenantInput, LicensingSettings,
+  LocalizationInput, MenuItemInput, OperationsInput, OrderItemInput, OrderPaymentInput, PaymentInstructionsInput, PlanInput,
+  PlatformSecurityInput, RecordPaymentInput, RegistrationInput, TableInput, TenantSecurityInput,
 } from "@restaurant/validation";
 import type { ApiClient } from "./client";
 import type {
-  AccountSummary, AssetKind, BrandingSettings, LoginEvent, LoginResponse, LoginResult, LoginSuccess, Paginated, PaymentList,
+  AccountSummary, Allergen, AssetKind, BrandingSettings, DiningTable, LoginEvent, MenuCategory, MenuItem, Order, OrderItemStatus,
+  OrderPaymentResult, OrderReceipt, OrdersQuery, PublicMenu, RegisterCloseResult, RegisterCurrent, RegisterSession, StaffMember,
+  StaffRole, TableStatus, TenantDashboard, LoginResponse, LoginResult, LoginSuccess, Paginated, PaymentList,
   Plan, PlatformDashboard, PlatformPublicBranding, PlatformRole, PlatformSettingsAll, PlatformUserView, Profile, PublicPlan, Receipt,
   RecordPaymentResult, Registration, RegistrationStatus, SessionRow, SubscriptionWithPayments, Tenant, TenantDetail, TenantLicense,
   TenantListItem, TenantPublicBranding, TenantSettingsAll, TenantStatus, TenantUserSecurity, TwoFactorSetup,
@@ -50,6 +53,8 @@ export function publicApi(c: ApiClient) {
     register: (body: RegistrationInput) => c.post<{ id: string; status: string; message: string }>("/public/registrations", body, { auth: false }),
     platformBranding: () => c.get<PlatformPublicBranding>("/public/branding", { auth: false }),
     tenantBranding: (slug: string) => c.get<TenantPublicBranding>(`/public/tenants/${enc(slug)}/branding`, { auth: false }),
+    /** Carte publique d'un restaurant (catégories actives, plats disponibles). */
+    tenantMenu: (slug: string) => c.get<PublicMenu>(`/public/tenants/${enc(slug)}/menu`, { auth: false }),
   };
 }
 
@@ -172,6 +177,61 @@ export function tenantApi(c: ApiClient) {
       setActive: (userId: string, isActive: boolean) => c.patch<{ ok: true; isActive: boolean }>(`/tenant/security/users/${enc(userId)}/active`, { isActive }),
     },
     license: () => c.get<TenantLicense>("/tenant/license"),
+
+    // ── Phase 1 ──
+    staff: {
+      list: () => c.get<StaffMember[]>("/tenant/staff"),
+      create: (body: CreateStaffInput) => c.post<StaffMember & { temporaryPassword: string }>("/tenant/staff", body),
+      update: (id: string, body: { firstName?: string; lastName?: string; phone?: string; role?: StaffRole }) =>
+        c.patch<StaffMember>(`/tenant/staff/${enc(id)}`, body),
+    },
+    tables: {
+      list: (q: { all?: boolean } = {}) => c.get<DiningTable[]>("/tenant/tables", { query: { all: q.all ? "true" : undefined } }),
+      create: (body: TableInput) => c.post<DiningTable>("/tenant/tables", body),
+      update: (id: string, body: Partial<TableInput>) => c.patch<DiningTable>(`/tenant/tables/${enc(id)}`, body),
+      setStatus: (id: string, status: TableStatus) => c.patch<DiningTable>(`/tenant/tables/${enc(id)}/status`, { status }),
+      remove: (id: string) => c.delete<{ archived?: true; deleted?: true }>(`/tenant/tables/${enc(id)}`),
+    },
+    menu: {
+      get: () => c.get<MenuCategory[]>("/tenant/menu"),
+      allergens: () => c.get<Allergen[]>("/tenant/menu/allergens"),
+      createCategory: (body: Partial<CategoryInput> & { name: string }) => c.post<Omit<MenuCategory, "items">>("/tenant/menu/categories", body),
+      updateCategory: (id: string, body: Partial<CategoryInput>) => c.patch<Omit<MenuCategory, "items">>(`/tenant/menu/categories/${enc(id)}`, body),
+      deleteCategory: (id: string) => c.delete<{ archived?: true; deleted?: true }>(`/tenant/menu/categories/${enc(id)}`),
+      reorderCategories: (ids: string[]) => c.post<{ ok: true }>("/tenant/menu/categories/reorder", { ids }),
+      reorderItems: (ids: string[]) => c.post<{ ok: true }>("/tenant/menu/items/reorder", { ids }),
+      createItem: (body: MenuItemInput) => c.post<MenuItem>("/tenant/menu/items", body),
+      updateItem: (id: string, body: Partial<MenuItemInput>) => c.patch<MenuItem>(`/tenant/menu/items/${enc(id)}`, body),
+      setAvailability: (id: string, isAvailable: boolean) => c.patch<MenuItem>(`/tenant/menu/items/${enc(id)}/availability`, { isAvailable }),
+      deleteItem: (id: string) => c.delete<{ archived?: true; deleted?: true }>(`/tenant/menu/items/${enc(id)}`),
+      uploadImage: (id: string, file: Blob) => c.upload<{ imageUrl: string }>(`/tenant/menu/items/${enc(id)}/image`, file),
+      removeImage: (id: string) => c.delete<void>(`/tenant/menu/items/${enc(id)}/image`),
+    },
+    orders: {
+      list: (q: OrdersQuery = {}) => c.get<Paginated<Order>>("/tenant/orders", { query: { ...q } }),
+      get: (id: string) => c.get<Order>(`/tenant/orders/${enc(id)}`),
+      receipt: (id: string) => c.get<OrderReceipt>(`/tenant/orders/${enc(id)}/receipt`),
+      create: (body: CreateOrderInput) => c.post<Order>("/tenant/orders", body),
+      addItems: (id: string, items: OrderItemInput[]) => c.post<Order>(`/tenant/orders/${enc(id)}/items`, { items }),
+      updateItem: (id: string, itemId: string, body: { quantity?: number; instructions?: string }) =>
+        c.patch<Order>(`/tenant/orders/${enc(id)}/items/${enc(itemId)}`, body),
+      setItemStatus: (id: string, itemId: string, status: Exclude<OrderItemStatus, "CANCELLED">) =>
+        c.post<Order>(`/tenant/orders/${enc(id)}/items/${enc(itemId)}/status`, { status }),
+      advance: (id: string, status: "IN_PROGRESS" | "READY" | "SERVED") => c.post<Order>(`/tenant/orders/${enc(id)}/advance`, { status }),
+      cancelItem: (id: string, itemId: string, reason: string) => c.post<Order>(`/tenant/orders/${enc(id)}/items/${enc(itemId)}/cancel`, { reason }),
+      cancel: (id: string, reason: string) => c.post<Order>(`/tenant/orders/${enc(id)}/cancel`, { reason }),
+      pay: (id: string, body: OrderPaymentInput) => c.post<OrderPaymentResult>(`/tenant/orders/${enc(id)}/payments`, body),
+      refund: (id: string, paymentId: string, reason: string) => c.post<Order>(`/tenant/orders/${enc(id)}/payments/${enc(paymentId)}/refund`, { reason }),
+    },
+    /** Écran cuisine : commandes ouvertes avec des articles à préparer ou prêts (les plus anciennes d'abord). */
+    kitchen: () => c.get<Order[]>("/tenant/kitchen"),
+    register: {
+      current: () => c.get<RegisterCurrent>("/tenant/register/current"),
+      sessions: () => c.get<RegisterSession[]>("/tenant/register/sessions"),
+      open: (opening: number) => c.post<RegisterCurrent>("/tenant/register/open", { opening }),
+      close: (body: { counted: number; notes?: string }) => c.post<RegisterCloseResult>("/tenant/register/close", body),
+    },
+    dashboard: (date?: string) => c.get<TenantDashboard>("/tenant/dashboard", { query: { date } }),
   };
 }
 

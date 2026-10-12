@@ -1,7 +1,7 @@
 import type { AssetKind } from "@restaurant/api-client";
 
 /** Règles alignées sur l'API (apps/api/src/storage/image-validation.ts). L'API revérifie la signature binaire. */
-export type UploadKind = AssetKind | "avatar";
+export type UploadKind = AssetKind | "avatar" | "menuPhoto";
 
 export const UPLOAD_RULES: Record<UploadKind, { maxBytes: number; types: string[]; extensions: string[]; label: string }> = {
   logo: { maxBytes: 2 * 1024 * 1024, types: ["image/png", "image/jpeg", "image/webp"], extensions: ["png", "jpg", "jpeg", "webp"], label: "PNG, JPEG ou WebP · 2 Mo max" },
@@ -13,6 +13,7 @@ export const UPLOAD_RULES: Record<UploadKind, { maxBytes: number; types: string[
     label: "PNG, ICO ou WebP · 512 Ko max",
   },
   avatar: { maxBytes: 1024 * 1024, types: ["image/png", "image/jpeg", "image/webp"], extensions: ["png", "jpg", "jpeg", "webp"], label: "PNG, JPEG ou WebP · 1 Mo max" },
+  menuPhoto: { maxBytes: 3 * 1024 * 1024, types: ["image/png", "image/jpeg", "image/webp"], extensions: ["png", "jpg", "jpeg", "webp"], label: "PNG, JPEG ou WebP · 3 Mo max" },
 };
 
 export function formatBytes(n: number): string {

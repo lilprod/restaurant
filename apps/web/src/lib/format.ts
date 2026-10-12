@@ -70,3 +70,8 @@ export function initials(first?: string | null, last?: string | null, fallback =
 export function pluralize(n: number, singular: string, plural = `${singular}s`) {
   return `${formatNumber(n)} ${n > 1 ? plural : singular}`;
 }
+
+/** 14:05 (fuseau d'affichage) */
+export function formatTime(d: string | Date | null | undefined): string {
+  return formatDate(d, { day: undefined, month: undefined, year: undefined, hour: "2-digit", minute: "2-digit" });
+}

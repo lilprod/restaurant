@@ -19,7 +19,7 @@ export function TenantSecurityPage() {
   if (!t.isAdmin) return <Navigate to={to("/")} replace />;
   return (
     <>
-      <PageHeader title="Sécurité" description="Comptes de votre équipe et journal des connexions. La création des comptes du personnel arrive avec le module Personnel." />
+      <PageHeader title="Sécurité" description="Sécurité des comptes de votre équipe et journal des connexions. Les membres se créent depuis l’écran Équipe." />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="utilisateurs">Utilisateurs</TabsTrigger>

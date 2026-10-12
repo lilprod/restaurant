@@ -35,6 +35,8 @@ export default defineConfig({
     proxy: {
       "/api": { target: API_TARGET, changeOrigin: false },
       "/uploads": { target: API_TARGET, changeOrigin: false },
+      // Temps réel (Socket.io, espace de noms /realtime) : WebSocket relayé vers l'API.
+      "/socket.io": { target: API_TARGET, ws: true, changeOrigin: false },
     },
   },
   preview: {
@@ -42,6 +44,7 @@ export default defineConfig({
     proxy: {
       "/api": { target: API_TARGET },
       "/uploads": { target: API_TARGET },
+      "/socket.io": { target: API_TARGET, ws: true },
     },
   },
   build: {
@@ -59,6 +62,7 @@ export default defineConfig({
           if (/^(zod|react-hook-form|@hookform\/resolvers)$/.test(pkg)) return "forms-vendor";
           if (/^(@radix-ui\/.*|radix-ui|@floating-ui\/.*|cmdk|react-remove-scroll.*|aria-hidden|use-sidecar|tslib|react-style-singleton|use-callback-ref|get-nonce|detect-node-es)$/.test(pkg)) return "ui";
           if (/^(@tanstack\/.*)$/.test(pkg)) return "query";
+          if (/^(socket\.io-client|socket\.io-parser|engine\.io-client|engine\.io-parser|@socket\.io\/.*|xmlhttprequest-ssl|debug|ms)$/.test(pkg)) return "realtime";
           return "vendor";
         },
       },

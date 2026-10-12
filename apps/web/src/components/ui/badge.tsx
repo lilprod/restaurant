@@ -32,17 +32,24 @@ export function Badge({ tone = "gray", dot, className, children, ...props }: Bad
   );
 }
 
-/** Badge de statut : couleur dérivée de la règle commune (@restaurant/ui-tokens). */
-export function StatusBadge({ status, labels, className }: { status: string | null | undefined; labels: Record<string, string>; className?: string }) {
+/**
+ * Badge de statut : couleur dérivée de la règle commune (@restaurant/ui-tokens). `toneOf` choisit une autre table
+ * de la même source (ex. `orderStatusTone` pour les commandes, `tableStatusTone` pour les tables).
+ */
+export function StatusBadge({ status, labels, className, toneOf = statusTone }: {
+  status: string | null | undefined; labels: Record<string, string>; className?: string; toneOf?: (s: string) => StatusTone;
+}) {
   if (!status) return <Badge tone="gray" className={className}>—</Badge>;
   return (
-    <Badge tone={statusTone(status)} dot className={className}>
+    <Badge tone={toneOf(status)} dot className={className}>
       {labels[status] ?? status}
     </Badge>
   );
 }
 
 /** Pastille de couleur seule (accompagne toujours un texte). */
+export { dotClass as toneDotClass, toneClass as toneSurfaceClass };
+
 export function ToneDot({ tone, className }: { tone: StatusTone; className?: string }) {
   return <span aria-hidden className={cn("inline-block size-1.5 shrink-0 rounded-full", dotClass[tone], className)} />;
 }

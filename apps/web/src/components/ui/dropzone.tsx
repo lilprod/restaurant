@@ -15,11 +15,13 @@ interface DropzoneProps {
   disabled?: boolean;
   /** Fond de l'aperçu (logo sombre → fond sombre). */
   previewTone?: "light" | "dark";
+  /** `cover` : photo affichée en grand (plats) ; `contain` : logo centré (par défaut). */
+  previewFit?: "contain" | "cover";
   className?: string;
 }
 
 /** Envoi d'image par glisser-déposer ou parcourir, avec pré-vérification locale (type, taille, SVG refusé). */
-export function Dropzone({ kind, label, currentUrl, onUpload, onRemove, disabled, previewTone = "light", className }: DropzoneProps) {
+export function Dropzone({ kind, label, currentUrl, onUpload, onRemove, disabled, previewTone = "light", previewFit = "contain", className }: DropzoneProps) {
   const inputRef = React.useRef<HTMLInputElement>(null);
   const [over, setOver] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -83,9 +85,10 @@ export function Dropzone({ kind, label, currentUrl, onUpload, onRemove, disabled
         <AnimatePresence mode="wait" initial={false}>
           {shown ? (
             <motion.div key={shown} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }}
-              className={cn("flex h-20 w-full items-center justify-center rounded-md", previewTone === "dark" ? "bg-[#0a0a0a]" : "bg-[repeating-conic-gradient(var(--muted)_0%_25%,transparent_0%_50%)] bg-[length:12px_12px]")}
+              className={cn("flex w-full items-center justify-center overflow-hidden rounded-md", previewFit === "cover" ? "h-36" : "h-20",
+                previewTone === "dark" ? "bg-[#0a0a0a]" : "bg-[repeating-conic-gradient(var(--muted)_0%_25%,transparent_0%_50%)] bg-[length:12px_12px]")}
             >
-              <img src={shown} alt="" onError={() => setBroken(true)} className={cn("max-h-16 max-w-[80%] object-contain", kind === "favicon" && "size-10")} />
+              <img src={shown} alt="" onError={() => setBroken(true)} className={cn(previewFit === "cover" ? "size-full object-cover" : "max-h-16 max-w-[80%] object-contain", kind === "favicon" && "size-10")} />
             </motion.div>
           ) : (
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center gap-2">

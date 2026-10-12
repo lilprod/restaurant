@@ -33,3 +33,26 @@ export const FEATURE_LABEL: Record<string, string> = {
   reports: "Rapports", delivery: "Livraison", kitchen: "Écran cuisine", loyalty: "Fidélité",
 };
 export const KNOWN_FEATURES = ["orders", "reservations", "inventory", "staff", "reports", "delivery"] as const;
+
+// ── Phase 1 : service ──
+export const ORDER_STATUS_LABEL: Record<string, string> = {
+  PENDING: "En attente", IN_PROGRESS: "En préparation", READY: "Prête", DELIVERED: "Servie", CANCELLED: "Annulée",
+};
+export const ITEM_STATUS_LABEL: Record<string, string> = {
+  PENDING: "En attente", IN_PROGRESS: "En préparation", READY: "Prêt", SERVED: "Servi", CANCELLED: "Annulé",
+};
+export const ORDER_TYPE_LABEL: Record<string, string> = { DINE_IN: "Sur place", TAKEAWAY: "À emporter", DELIVERY: "Livraison" };
+export const ORDER_PAYMENT_STATUS_LABEL: Record<string, string> = { UNPAID: "À payer", PARTIAL: "Payée en partie", PAID: "Réglée" };
+export const ORDER_PAYMENT_RECORD_LABEL: Record<string, string> = { PAID: "Encaissé", REFUNDED: "Remboursé" };
+/** Encaissement en salle : ordre d'affichage du sélecteur. */
+export const ORDER_PAYMENT_METHODS = ["CASH", "CARD", "FLOOZ", "TMONEY", "OTHER"] as const;
+export const ORDER_PAYMENT_METHOD_LABEL: Record<string, string> = { ...PAYMENT_METHOD_LABEL, OTHER: "Autre" };
+export const TABLE_STATUS_LABEL: Record<string, string> = { FREE: "Libre", OCCUPIED: "Occupée", CLEANING: "À débarrasser", RESERVED: "Réservée" };
+export const STAFF_ROLES = ["ADMIN", "MANAGER", "WAITER", "KITCHEN"] as const;
+export const STAFF_ROLE_HINT: Record<string, string> = {
+  ADMIN: "Accès complet : réglages, équipe, sécurité, licence.",
+  MANAGER: "Menu, tables, caisse, remboursements et annulations.",
+  WAITER: "Prise de commande, service et encaissement.",
+  KITCHEN: "Écran cuisine et disponibilité des plats.",
+};
+export const courseLabel = (n: number) => (n === 1 ? "1er envoi" : `${n}e envoi`);

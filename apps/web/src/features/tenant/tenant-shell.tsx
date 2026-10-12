@@ -1,8 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { CalendarClock, LayoutDashboard, Settings, ShieldCheck, WalletCards } from "lucide-react";
+import {
+  BookOpen, CalendarClock, ChefHat, ClipboardList, HandPlatter, Landmark, LayoutDashboard, LayoutGrid, Settings, ShieldCheck,
+  ShoppingBag, SquarePlus, Users, WalletCards,
+} from "lucide-react";
 import { motion } from "motion/react";
 import * as React from "react";
-import { Link, Outlet } from "react-router-dom";
+import { Link, Outlet, useNavigate } from "react-router-dom";
+import type { CommandEntry } from "@/components/command-palette";
 import { AppShell, type NavItem } from "@/layouts/app-shell";
 import { daysUntil, formatDate } from "@/lib/format";
 import { TENANT_ROLE_LABEL } from "@/lib/labels";
@@ -10,21 +14,53 @@ import { useSession } from "@/providers/session";
 import { useSpacePath } from "@/providers/space";
 import { useTenant } from "./hooks";
 
+/**
+ * Navigation selon le rôle (voir le tableau des rôles de docs/API.md) :
+ * - salle (ADMIN, MANAGER, WAITER) : prise de commande, commandes, tables, caisse ;
+ * - cuisine (ADMIN, MANAGER, KITCHEN) : écran cuisine ; la cuisine gère aussi la disponibilité des plats ;
+ * - responsables (ADMIN, MANAGER) : tableau de bord, menu, équipe, licence ; ADMIN seul : sécurité.
+ */
+export function useTenantNav(): NavItem[] {
+  const to = useSpacePath();
+  const t = useTenant();
+  return React.useMemo(() => {
+    const S = "Service", G = "Gestion";
+    const items: (NavItem | false)[] = [
+      t.role !== "KITCHEN" && { to: to("/"), label: t.isManager ? "Tableau de bord" : "Mon service", icon: t.isManager ? <LayoutDashboard /> : <HandPlatter />, end: true, section: S },
+      t.isFloor && { to: to("/commandes/nouvelle"), label: "Nouvelle commande", icon: <SquarePlus />, keywords: ["prise de commande", "caisse", "pos"], section: S },
+      { to: to("/commandes"), label: "Commandes", icon: <ClipboardList />, keywords: ["addition", "encaisser", "ticket"], section: S },
+      t.isFloor && { to: to("/tables"), label: "Tables", icon: <LayoutGrid />, keywords: ["salle", "débarrasser"], section: S },
+      t.isKitchen && { to: to("/cuisine"), label: "Écran cuisine", icon: <ChefHat />, keywords: ["kds", "préparation"], section: S },
+      t.isFloor && { to: to("/caisse"), label: "Caisse", icon: <Landmark />, keywords: ["fond de caisse", "clôture", "espèces"], section: S },
+      (t.isManager || t.role === "KITCHEN") && { to: to("/menu"), label: t.isManager ? "Menu" : "Disponibilités", icon: <BookOpen />, keywords: ["carte", "plats", "épuisé", "allergènes"], section: G },
+      t.isManager && { to: to("/equipe"), label: "Équipe", icon: <Users />, keywords: ["personnel", "serveur", "rôle"], section: G },
+      { to: to("/parametres"), label: "Paramètres", icon: <Settings />, keywords: ["marque", "logo", "tva", "réservations"], section: G },
+      t.isAdmin && { to: to("/securite"), label: "Sécurité", icon: <ShieldCheck />, keywords: ["utilisateurs", "connexions"], section: G },
+      t.canSeeLicense && { to: to("/licence"), label: "Licence", icon: <WalletCards />, keywords: ["paiement", "abonnement", "flooz", "tmoney"], section: G },
+    ];
+    return items.filter(Boolean) as NavItem[];
+  }, [to, t.role, t.isManager, t.isFloor, t.isKitchen, t.isAdmin, t.canSeeLicense]);
+}
+
 export function TenantShell() {
   const { user } = useSession();
   const to = useSpacePath();
   const t = useTenant();
+  const navigate = useNavigate();
+  const nav = useTenantNav();
 
-  const nav: NavItem[] = React.useMemo(() => [
-    { to: to("/"), label: "Accueil", icon: <LayoutDashboard />, end: true },
-    { to: to("/parametres"), label: "Paramètres", icon: <Settings />, keywords: ["marque", "logo", "tva", "réservations"] },
-    ...(t.isAdmin ? [{ to: to("/securite"), label: "Sécurité", icon: <ShieldCheck />, keywords: ["utilisateurs", "connexions"] }] : []),
-    ...(t.canSeeLicense ? [{ to: to("/licence"), label: "Licence", icon: <WalletCards />, keywords: ["paiement", "abonnement", "flooz", "tmoney"] }] : []),
-  ], [to, t.isAdmin, t.canSeeLicense]);
+  const actions: CommandEntry[] = React.useMemo(() => [
+    ...(t.isFloor ? [
+      { id: "new-order", label: "Nouvelle commande sur place", icon: <SquarePlus />, keywords: ["table"], run: () => navigate(to("/commandes/nouvelle")) },
+      { id: "new-takeaway", label: "Nouvelle commande à emporter", icon: <ShoppingBag />, keywords: ["emporter"], run: () => navigate(to("/commandes/nouvelle?type=TAKEAWAY")) },
+    ] : []),
+    ...(t.isKitchen ? [{ id: "kds", label: "Ouvrir l'écran cuisine", icon: <ChefHat />, run: () => navigate(to("/cuisine")) }] : []),
+  ], [t.isFloor, t.isKitchen, navigate, to]);
 
   return (
     <AppShell
       nav={nav}
+      actions={actions}
       spaceLabel="Espace restaurant"
       roleLabel={TENANT_ROLE_LABEL[user?.role ?? ""] ?? ""}
       accountPath={to("/compte")}

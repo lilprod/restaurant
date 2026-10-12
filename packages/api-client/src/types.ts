@@ -332,3 +332,235 @@ export interface TenantLicense {
   howToPay: PaymentInstructionsInput;
   support: { email: string | null; phone: string | null; website: string | null };
 }
+
+// ── Phase 1 : équipe, tables, menu, commandes, cuisine, encaissement, caisse ──
+
+export type StaffRole = "ADMIN" | "MANAGER" | "WAITER" | "KITCHEN";
+
+export interface StaffMember {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  role: StaffRole;
+  isActive: boolean;
+  twoFactorEnabled: boolean;
+  mustChangePassword: boolean;
+  lastLoginAt: ISODate | null;
+  createdAt: ISODate;
+}
+
+export type TableStatus = "FREE" | "RESERVED" | "OCCUPIED" | "CLEANING";
+
+/** Résumé d'une commande ouverte sur une table. */
+export interface TableOpenOrder {
+  id: string;
+  number: number;
+  status: OrderStatus;
+  total: number;
+  paidAmount: number;
+  paymentStatus: OrderPaymentStatus;
+  createdAt: ISODate;
+}
+
+export interface DiningTable {
+  id: string;
+  tenantId: string;
+  label: string;
+  capacity: number;
+  status: TableStatus;
+  isActive: boolean;
+  openOrders: TableOpenOrder[];
+}
+
+export interface Allergen { code: string; name: string }
+
+export interface MenuOption { id: string; name: string; extra: number }
+
+export interface MenuOptionGroup {
+  id: string;
+  name: string;
+  minChoices: number;
+  maxChoices: number;
+  options: MenuOption[];
+}
+
+export interface MenuItem {
+  id: string;
+  categoryId: string;
+  name: string;
+  description: string | null;
+  /** Prix TTC en FCFA. */
+  price: number;
+  vatRate: number;
+  imageUrl: string | null;
+  prepMinutes: number;
+  isAvailable: boolean;
+  isDishOfDay: boolean;
+  sortOrder: number;
+  archived: boolean;
+  allergens: Allergen[];
+  optionGroups: MenuOptionGroup[];
+}
+
+export interface MenuCategory {
+  id: string;
+  name: string;
+  description: string | null;
+  sortOrder: number;
+  isActive: boolean;
+  items: MenuItem[];
+}
+
+export type PublicMenuItem = Omit<MenuItem, "sortOrder" | "archived" | "isAvailable" | "vatRate" | "prepMinutes">;
+export interface PublicMenu {
+  restaurant: { name: string; slug: string; currency: string };
+  categories: { id: string; name: string; description: string | null; items: PublicMenuItem[] }[];
+}
+
+export type OrderStatus = "PENDING" | "IN_PROGRESS" | "READY" | "DELIVERED" | "CANCELLED";
+export type OrderItemStatus = "PENDING" | "IN_PROGRESS" | "READY" | "SERVED" | "CANCELLED";
+export type OrderPaymentStatus = "UNPAID" | "PARTIAL" | "PAID";
+export type OrderType = "DINE_IN" | "TAKEAWAY";
+export type OrderPaymentMethod = "CASH" | "CARD" | "FLOOZ" | "TMONEY" | "OTHER";
+
+export interface OrderItem {
+  id: string;
+  menuItemId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  optionsExtra: number;
+  lineTotal: number;
+  vatRate: number;
+  status: OrderItemStatus;
+  instructions: string | null;
+  course: number;
+  options: { optionId: string; name: string; extra: number }[];
+  prepMinutes: number;
+  imageUrl: string | null;
+  createdAt: ISODate;
+  startedAt: ISODate | null;
+  readyAt: ISODate | null;
+  servedAt: ISODate | null;
+  cancelReason: string | null;
+  /** Quantité déjà encaissée (partage par article). */
+  paidQuantity: number;
+}
+
+export interface OrderPayment {
+  id: string;
+  method: OrderPaymentMethod;
+  status: "PAID" | "REFUNDED";
+  amount: number;
+  tip: number;
+  tendered: number | null;
+  change: number | null;
+  reference: string | null;
+  paidAt: ISODate | null;
+  refundedAt: ISODate | null;
+  refundReason: string | null;
+}
+
+/** Commande (même forme dans l'API et les événements temps réel). */
+export interface Order {
+  id: string;
+  number: number;
+  type: OrderType | "DELIVERY";
+  status: OrderStatus;
+  paymentStatus: OrderPaymentStatus;
+  table: { id: string; label: string } | null;
+  customerName: string | null;
+  notes: string | null;
+  waiter: { id: string; firstName: string; lastName: string } | null;
+  subtotal: number;
+  serviceCharge: number;
+  vat: number;
+  total: number;
+  tip: number;
+  paidAmount: number;
+  remaining: number;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+  closedAt: ISODate | null;
+  cancelledAt: ISODate | null;
+  cancelReason: string | null;
+  items: OrderItem[];
+  payments: OrderPayment[];
+}
+
+export interface OrdersQuery {
+  status?: OrderStatus;
+  paymentStatus?: OrderPaymentStatus;
+  type?: OrderType;
+  tableId?: string;
+  open?: boolean;
+  /** AAAA-MM-JJ, dans le fuseau du restaurant. */
+  date?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface OrderPaymentResult {
+  order: Order;
+  paymentId: string;
+  /** Monnaie rendue (espèces avec somme remise), sinon null. */
+  change: number | null;
+}
+
+export interface OrderReceipt {
+  restaurant: {
+    name: string;
+    legalName: string | null;
+    address: string | null;
+    phone: string | null;
+    email: string | null;
+    taxId: string | null;
+    registrationNumber: string | null;
+    logoUrl: string | null;
+    headerText: string | null;
+    footerText: string | null;
+  };
+  currency: string;
+  order: Order;
+  vatBreakdown: { rate: number; base: number; vat: number }[];
+  printedAt: ISODate;
+}
+
+export interface RegisterSession {
+  id: string;
+  tenantId: string;
+  openedById: string;
+  openedAt: ISODate;
+  closedAt: ISODate | null;
+  opening: number;
+  closing: number | null;
+  expectedCash: number | null;
+  difference: number | null;
+  closedById: string | null;
+  notes: string | null;
+}
+
+export interface RegisterSummary {
+  byMethod: Partial<Record<OrderPaymentMethod, { amount: number; tips: number; count: number }>>;
+  expectedCash: number;
+  paymentsCount: number;
+  total: number;
+}
+
+export type RegisterCurrent = { open: false } | ({ open: true; session: RegisterSession } & RegisterSummary);
+export type RegisterCloseResult = { session: RegisterSession } & RegisterSummary;
+
+export interface TenantDashboard {
+  date: string;
+  revenue: number;
+  tips: number;
+  ordersCount: number;
+  averageTicket: number;
+  openOrders: number;
+  byType: { DINE_IN: number; TAKEAWAY: number };
+  byMethod: { method: OrderPaymentMethod; amount: number }[];
+  byHour: { hour: number; orders: number }[];
+  topItems: { menuItemId: string; name: string; quantity: number; revenue: number }[];
+}
