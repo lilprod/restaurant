@@ -31,7 +31,6 @@ import { daysUntil, formatDate, formatDateTime, formatFcfa } from "@/lib/format"
 import { BILLING_CYCLE_LABEL, PAYMENT_METHOD_LABEL, PAYMENT_STATUS_LABEL, SUBSCRIPTION_STATUS_LABEL, TENANT_ROLE_LABEL, TENANT_STATUS_LABEL } from "@/lib/labels";
 import { useUrlParam } from "@/lib/use-url-state";
 import { brandingKeys } from "@/providers/branding";
-import { useSession } from "@/providers/session";
 import { LoginEventsTable } from "../../security/login-events-table";
 import { UsersSecurityTable } from "../../security/users-security-table";
 import { BrandingEditor } from "../../settings/branding-editor";
@@ -43,7 +42,6 @@ import { RecordPaymentDialog } from "../payments/record-payment-dialog";
 export function TenantDetailPage() {
   const { id = "" } = useParams();
   const canWrite = useCanWrite();
-  const superAdmin = useSession().user?.role === "SUPER_ADMIN";
   const qc = useQueryClient();
   const confirm = useConfirm();
   const [tab, setTab] = useUrlParam("onglet", "apercu");
@@ -121,15 +119,15 @@ export function TenantDetailPage() {
         <TabsList>
           <TabsTrigger value="apercu">Aperçu</TabsTrigger>
           <TabsTrigger value="licences" count={t.paymentsCount}>Licences et paiements</TabsTrigger>
-          {superAdmin && <TabsTrigger value="parametres">Paramètres</TabsTrigger>}
-          {superAdmin && <TabsTrigger value="securite" count={t.usersCount}>Sécurité</TabsTrigger>}
-          {superAdmin && <TabsTrigger value="connexions">Connexions</TabsTrigger>}
+          <TabsTrigger value="parametres">Paramètres</TabsTrigger>
+          <TabsTrigger value="securite" count={t.usersCount}>Sécurité</TabsTrigger>
+          <TabsTrigger value="connexions">Connexions</TabsTrigger>
         </TabsList>
         <TabsContent value="apercu"><Overview t={t} onPay={canWrite ? () => setPayOpen(true) : undefined} /></TabsContent>
         <TabsContent value="licences"><Subscriptions tenantId={id} canWrite={canWrite} onPay={() => setPayOpen(true)} /></TabsContent>
-        {superAdmin && <TabsContent value="parametres"><TenantSettingsSupport t={t} /></TabsContent>}
-        {superAdmin && <TabsContent value="securite"><TenantUsers tenantId={id} /></TabsContent>}
-        {superAdmin && <TabsContent value="connexions"><TenantEvents tenantId={id} /></TabsContent>}
+        <TabsContent value="parametres"><TenantSettingsSupport t={t} canWrite={canWrite} /></TabsContent>
+        <TabsContent value="securite"><TenantUsers tenantId={id} canWrite={canWrite} /></TabsContent>
+        <TabsContent value="connexions"><TenantEvents tenantId={id} /></TabsContent>
       </Tabs>
 
       {canWrite && <RecordPaymentDialog open={payOpen} onOpenChange={setPayOpen} tenantId={id} />}
@@ -273,7 +271,7 @@ const SECTIONS = [
 ] as const;
 
 /** Vue support : réglages du restaurant, modifiables par le SuperAdmin. */
-function TenantSettingsSupport({ t }: { t: TenantDetail }) {
+function TenantSettingsSupport({ t, canWrite }: { t: TenantDetail; canWrite: boolean }) {
   const qc = useQueryClient();
   const [section, setSection] = useUrlParam("section", "business");
   const adapter = React.useMemo<SettingsAdapter>(() => ({
@@ -282,18 +280,18 @@ function TenantSettingsSupport({ t }: { t: TenantDetail }) {
     update: (s, body) => papi.tenants.updateSection(t.id, s as never, body as never),
     uploadAsset: (k, f) => papi.tenants.uploadAsset(t.id, k, f),
     removeAsset: (k) => papi.tenants.removeAsset(t.id, k),
-    canWrite: true,
+    canWrite,
     onSaved: (s) => {
       if (s === "branding") void qc.invalidateQueries({ queryKey: brandingKeys.tenant(t.slug) });
       if (s === "business" || s === "localization") void qc.invalidateQueries({ queryKey: pk.tenant(t.id) });
     },
-  }), [t.id, t.slug, qc]);
+  }), [t.id, t.slug, qc, canWrite]);
   return (
     <div className="flex flex-col gap-5">
       <div className="-mx-4 overflow-x-auto px-4 scrollbar-none sm:mx-0 sm:px-0">
         <Segmented ariaLabel="Section" size="sm" value={section as (typeof SECTIONS)[number]["v"]} onChange={setSection} className="w-auto min-w-max" options={SECTIONS.map((s) => ({ value: s.v, label: s.l }))} />
       </div>
-      <p className="text-[13px] text-muted-foreground">Vous intervenez sur les réglages de <span className="font-medium text-foreground">{t.name}</span> ; chaque modification est journalisée.</p>
+      {canWrite && <p className="text-[13px] text-muted-foreground">Vous intervenez sur les réglages de <span className="font-medium text-foreground">{t.name}</span> ; chaque modification est journalisée.</p>}
       {section === "business" && <BusinessForm adapter={adapter} />}
       {section === "branding" && <BrandingEditor adapter={adapter} contextLabel={t.name} />}
       {section === "operations" && <OperationsForm adapter={adapter} />}
@@ -303,15 +301,15 @@ function TenantSettingsSupport({ t }: { t: TenantDetail }) {
   );
 }
 
-function TenantUsers({ tenantId }: { tenantId: string }) {
+function TenantUsers({ tenantId, canWrite }: { tenantId: string; canWrite: boolean }) {
   return (
     <div className="flex flex-col gap-4">
-      <p className="flex items-center gap-2 text-[13px] text-muted-foreground"><Users className="size-4" /> La création des comptes du personnel arrive avec le module Personnel. Vous pouvez déjà intervenir sur leur sécurité.</p>
+      <p className="flex items-center gap-2 text-[13px] text-muted-foreground"><Users className="size-4" /> La création des comptes du personnel arrive avec le module Personnel.{canWrite ? " Vous pouvez déjà intervenir sur leur sécurité." : " Consultation en lecture seule."}</p>
       <UsersSecurityTable adapter={{
         key: pk.tenantUsers(tenantId),
         list: () => papi.tenants.users(tenantId),
         action: (uid, a) => papi.tenants.userAction(tenantId, uid, a),
-        canWrite: true,
+        canWrite,
         roleLabels: TENANT_ROLE_LABEL,
       }} />
     </div>

@@ -1075,6 +1075,7 @@ enum LoginResult {
   TWO_FACTOR_FAILED
   TWO_FACTOR_REQUIRED
   LICENSE_BLOCKED
+  ACCOUNT_DISABLED
 }
 
 // Journal des tentatives de connexion (plateforme et tenants). Hors RLS : filtré par tenantId dans le code.

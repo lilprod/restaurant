@@ -34,7 +34,6 @@ import { DEFAULT_POLICY_BY_SPACE } from "@/lib/policy";
 import { useUrlParam } from "@/lib/use-url-state";
 import { describeUserAgent } from "@/lib/user-agent";
 import { useSession, useUser } from "@/providers/session";
-import { platformSpace, getTenantSpace } from "@/app/spaces";
 import { TwoFactorSetupFlow } from "../auth/two-factor-setup";
 import { DeviceIcon, LoginEventsTable } from "../security/login-events-table";
 
@@ -128,20 +127,10 @@ function ProfileTab() {
   );
 }
 
-/** Politique effective quand le rôle peut la lire (SuperAdmin, administrateur du restaurant), sinon défauts de l'espace. */
+/** Politique effective de l'espace, renvoyée par le profil (`account/me`) pour tous les rôles. */
 function usePolicy(): PasswordPolicy {
   const session = useSession();
-  const user = useUser();
-  const canRead = session.space === "platform" ? user.role === "SUPER_ADMIN" : user.role === "ADMIN";
-  const q = useQuery({
-    queryKey: [...session.queryKey, "policy"],
-    queryFn: async () => session.space === "platform"
-      ? (await platformSpace.api.settings.get("security")).passwordPolicy
-      : (await getTenantSpace(session.slug!).api.settings.get("security")).passwordPolicy,
-    enabled: canRead,
-    staleTime: 5 * 60_000,
-  });
-  return q.data ?? DEFAULT_POLICY_BY_SPACE[session.space];
+  return useUser().passwordPolicy ?? DEFAULT_POLICY_BY_SPACE[session.space];
 }
 
 function PasswordCard() {

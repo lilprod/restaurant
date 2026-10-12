@@ -6,6 +6,7 @@ import { Account, AccountsRepo } from "./accounts.repo";
 import { accountSummary } from "./auth.service";
 import { LoginEventsService } from "./login-events.service";
 import { PasswordService } from "./password.service";
+import { restrictionFor } from "./restrictions";
 import { SecurityPolicyService } from "./security-policy.service";
 import { SessionService } from "./session.service";
 import { TotpService } from "./totp.service";
@@ -33,6 +34,11 @@ export class AccountService {
       passwordChangedAt: acc.passwordChangedAt,
       recoveryCodesLeft: acc.recoveryCodeHashes.length,
       twoFactorRequired: policy.requires2fa(acc.role),
+      mustChangePassword: acc.mustChangePassword,
+      // Permet à l'interface de reprendre une session restreinte après un rechargement,
+      // et d'afficher les règles de mot de passe à tous les rôles (elles ne sont pas secrètes).
+      restriction: restrictionFor(acc, policy),
+      passwordPolicy: policy.passwordPolicy,
     };
   }
 

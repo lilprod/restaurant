@@ -613,4 +613,51 @@ describe("Sécurité & paramètres (e2e)", () => {
       expect(events.body.every((e: { tenantId: string }) => e.tenantId === otherId)).toBe(true);
     });
   });
+
+  // ───────────────────────────── corrections (retours de l'interface web) ─────────────────────────────
+  describe("corrections", () => {
+    it("le filtre « jusqu'au » inclut le jour choisi", async () => {
+      const day = (offset: number) => new Date(Date.now() + offset * DAY).toISOString().slice(0, 10);
+      const all = (await api().get(`${V}/platform/payments`).set(bearer(root))).body;
+      expect(all.total).toBeGreaterThan(0);
+      expect((await api().get(`${V}/platform/payments?to=${day(0)}`).set(bearer(root))).body.total).toBe(all.total);
+      expect((await api().get(`${V}/platform/payments?to=${day(-1)}`).set(bearer(root))).body.total).toBe(0);
+      expect((await api().get(`${V}/platform/payments?from=${day(0)}&to=${day(0)}`).set(bearer(root))).body.total).toBe(all.total);
+    });
+
+    it("journalise la connexion à un compte désactivé comme telle", async () => {
+      const admin = await tok("kofi", "admin@kofi.tg", PW2);
+      const waiter = (await asPlatform(prisma, (tx) => tx.user.findFirstOrThrow({ where: { email: "waiter@kofi.tg" } }))).id;
+      expect((await api().patch(`${V}/tenant/security/users/${waiter}/active`).set(bearer(admin)).send({ isActive: false })).status).toBe(200);
+      const res = await tenantLogin("kofi", "waiter@kofi.tg", "Court-Mot2Passe");
+      expect([res.status, res.body.message]).toEqual([401, "Ce compte est désactivé"]);
+      const events = await api().get(`${V}/platform/security/login-events?result=ACCOUNT_DISABLED`).set(bearer(root));
+      expect(events.body.some((e: { email: string }) => e.email === "waiter@kofi.tg")).toBe(true);
+    });
+
+    it("le profil indique la restriction en cours et la politique de mot de passe", async () => {
+      await createTenant("restreint", "admin@restreint.tg");
+      const l = await tenantLogin("restreint", "admin@restreint.tg", PW);
+      const me = await api().get(`${V}/tenant/account/me`).set(bearer(l.body.accessToken));
+      expect(me.body.restriction).toBe("pwd-change");
+      expect(me.body.mustChangePassword).toBe(true);
+      expect(me.body.passwordPolicy.minLength).toBe(10);
+      const meRoot = await api().get(`${V}/platform/account/me`).set(bearer(root));
+      expect(meRoot.body.restriction).toBeNull();
+      expect(meRoot.body.passwordPolicy.requireSymbol).toBe(true);
+    });
+
+    it("le Support consulte un restaurant sans pouvoir le modifier", async () => {
+      const get = (p: string) => api().get(`${V}/platform/tenants/${tenantId}${p}`).set(bearer(supportTok));
+      expect((await get("/settings")).status).toBe(200);
+      expect((await get("/settings/business")).body.tradeName).toBe("Chez Kofi");
+      expect((await get("/security/users")).status).toBe(200);
+      expect((await get("/security/login-events")).status).toBe(200);
+      const manager = (await asPlatform(prisma, (tx) => tx.user.findFirstOrThrow({ where: { email: "manager@kofi.tg" } }))).id;
+      expect((await api().patch(`${V}/platform/tenants/${tenantId}/settings/business`).set(bearer(supportTok)).send({ tradeName: "Pirate" })).status).toBe(403);
+      expect((await api().post(`${V}/platform/tenants/${tenantId}/assets/logo`).set(bearer(supportTok)).attach("file", PNG, { filename: "l.png" })).status).toBe(403);
+      expect((await api().post(`${V}/platform/tenants/${tenantId}/security/users/${manager}/reset-password`).set(bearer(supportTok))).status).toBe(403);
+      expect((await api().post(`${V}/platform/tenants/${tenantId}/security/users/${manager}/unlock`).set(bearer(supportTok))).status).toBe(403);
+    });
+  });
 });

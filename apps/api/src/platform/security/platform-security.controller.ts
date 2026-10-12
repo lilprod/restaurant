@@ -14,7 +14,7 @@ import { CurrentPlatformUser, PlatformAuthGuard, PlatformPrincipal, PlatformRole
 type Kind = "logo" | "logoDark" | "favicon";
 const eventsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
-  result: z.enum(["SUCCESS", "BAD_PASSWORD", "UNKNOWN_ACCOUNT", "LOCKED", "TWO_FACTOR_FAILED", "TWO_FACTOR_REQUIRED", "LICENSE_BLOCKED"]).optional(),
+  result: z.enum(["SUCCESS", "BAD_PASSWORD", "UNKNOWN_ACCOUNT", "LOCKED", "TWO_FACTOR_FAILED", "TWO_FACTOR_REQUIRED", "LICENSE_BLOCKED", "ACCOUNT_DISABLED"]).optional(),
 });
 type EventsQuery = z.infer<typeof eventsQuery>;
 
@@ -36,11 +36,13 @@ export class PlatformSecurityController {
   }
 }
 
-/** Le SuperAdmin intervient sur un restaurant : réglages, marque, comptes (support). */
+/**
+ * Intervention sur un restaurant : lecture pour toute l'équipe plateforme (Support compris),
+ * modifications et actions sur les comptes réservées au SuperAdmin.
+ */
 @ApiTags("Plateforme · Support restaurant")
 @ApiBearerAuth()
 @UseGuards(PlatformAuthGuard)
-@PlatformRoles("SUPER_ADMIN")
 @Controller("platform/tenants/:tenantId")
 export class TenantAdminController {
   constructor(
@@ -56,12 +58,12 @@ export class TenantAdminController {
   @Get("settings/:section")
   get(@Param("tenantId", ParseUUIDPipe) id: string, @Param("section") section: string) { return this.settings.get(id, section); }
 
-  @Patch("settings/:section")
+  @Patch("settings/:section") @PlatformRoles("SUPER_ADMIN")
   update(@Param("tenantId", ParseUUIDPipe) id: string, @Param("section") section: string, @Body() body: unknown, @CurrentPlatformUser() u: PlatformPrincipal) {
     return this.settings.update(id, section, body, this.actor(u));
   }
 
-  @Post("assets/:kind") @HttpCode(201) @ApiConsumes("multipart/form-data")
+  @Post("assets/:kind") @HttpCode(201) @PlatformRoles("SUPER_ADMIN") @ApiConsumes("multipart/form-data")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: 3 * 1024 * 1024 } }))
   upload(
     @Param("tenantId", ParseUUIDPipe) id: string, @Param("kind", new ZodPipe(assetKindSchema)) kind: Kind,
@@ -70,7 +72,7 @@ export class TenantAdminController {
     return this.settings.uploadAsset(id, kind, file, this.actor(u));
   }
 
-  @Delete("assets/:kind") @HttpCode(204)
+  @Delete("assets/:kind") @HttpCode(204) @PlatformRoles("SUPER_ADMIN")
   remove(@Param("tenantId", ParseUUIDPipe) id: string, @Param("kind", new ZodPipe(assetKindSchema)) kind: Kind, @CurrentPlatformUser() u: PlatformPrincipal) {
     return this.settings.removeAsset(id, kind, this.actor(u));
   }
@@ -83,19 +85,19 @@ export class TenantAdminController {
     return this.events.list({ tenantId: id, ...(q.result ? { result: q.result } : {}) }, q.limit);
   }
 
-  @Post("security/users/:userId/reset-password") @HttpCode(200)
+  @Post("security/users/:userId/reset-password") @HttpCode(200) @PlatformRoles("SUPER_ADMIN")
   reset(@Param("tenantId", ParseUUIDPipe) t: string, @Param("userId", ParseUUIDPipe) id: string, @CurrentPlatformUser() u: PlatformPrincipal) {
     return this.admin.resetPassword("tenant", t, id, this.actor(u));
   }
-  @Post("security/users/:userId/unlock") @HttpCode(200)
+  @Post("security/users/:userId/unlock") @HttpCode(200) @PlatformRoles("SUPER_ADMIN")
   unlock(@Param("tenantId", ParseUUIDPipe) t: string, @Param("userId", ParseUUIDPipe) id: string, @CurrentPlatformUser() u: PlatformPrincipal) {
     return this.admin.unlock("tenant", t, id, this.actor(u));
   }
-  @Post("security/users/:userId/disable-2fa") @HttpCode(200)
+  @Post("security/users/:userId/disable-2fa") @HttpCode(200) @PlatformRoles("SUPER_ADMIN")
   disable2fa(@Param("tenantId", ParseUUIDPipe) t: string, @Param("userId", ParseUUIDPipe) id: string, @CurrentPlatformUser() u: PlatformPrincipal) {
     return this.admin.disableTwoFactor("tenant", t, id, this.actor(u));
   }
-  @Post("security/users/:userId/revoke-sessions") @HttpCode(200)
+  @Post("security/users/:userId/revoke-sessions") @HttpCode(200) @PlatformRoles("SUPER_ADMIN")
   revoke(@Param("tenantId", ParseUUIDPipe) t: string, @Param("userId", ParseUUIDPipe) id: string, @CurrentPlatformUser() u: PlatformPrincipal) {
     return this.admin.revokeSessions("tenant", t, id, this.actor(u));
   }

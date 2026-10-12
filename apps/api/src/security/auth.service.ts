@@ -72,7 +72,7 @@ export class AuthService {
       throw new UnauthorizedException(INVALID);
     }
     if (!acc.isActive) {
-      await this.events.record({ space, tenantId, accountId: acc.id, email, result: "BAD_PASSWORD", meta });
+      await this.events.record({ space, tenantId, accountId: acc.id, email, result: "ACCOUNT_DISABLED", meta });
       throw new UnauthorizedException("Ce compte est désactivé");
     }
     if (tenantId) {

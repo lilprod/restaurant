@@ -1,3 +1,4 @@
+import { DEFAULT_POLICY_BY_SPACE } from "@/lib/policy";
 import {
   ApiError, type AccountApi, type ApiClient, type AuthApi, type LicenseSummary, type LoginSuccess, type Profile, type Restriction,
 } from "@restaurant/api-client";
@@ -54,9 +55,8 @@ function writeLicense(key: string | undefined, v: LicenseSummary | null) {
 }
 
 /**
- * Session d'un espace. Au démarrage, si un refresh token existe : rafraîchit (via le client), lit le profil,
- * puis sonde une route non « restreinte » pour savoir si la session doit d'abord changer de mot de passe
- * ou activer la 2FA (l'API ne renvoie la restriction qu'à la connexion ou dans l'erreur RESTRICTED_SESSION).
+ * Session d'un espace. Au démarrage, si un refresh token existe : rafraîchit (via le client) et lit le profil,
+ * qui indique aussi la restriction en cours (mot de passe à changer, 2FA à activer).
  */
 export function SessionProvider({ space, client, auth, account, slug, licenseStorageKey, children }: ProviderProps) {
   const qc = useQueryClient();
@@ -68,13 +68,6 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
   const statusRef = React.useRef(state.status);
   statusRef.current = state.status;
 
-  const probeRestriction = React.useCallback(async (): Promise<Restriction | null> => {
-    try { await account.sessions(); return null; } catch (e) {
-      if (e instanceof ApiError && e.isRestricted) return e.restriction ?? null;
-      throw e;
-    }
-  }, [account]);
-
   // Démarrage : reprise de session
   React.useEffect(() => {
     let cancelled = false;
@@ -82,8 +75,7 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
     (async () => {
       try {
         const user = await account.me();
-        const restriction = await probeRestriction();
-        if (!cancelled) setState((s) => ({ ...s, status: "authenticated", user, restriction }));
+        if (!cancelled) setState((s) => ({ ...s, status: "authenticated", user, restriction: user.restriction }));
       } catch (e) {
         if (cancelled) return;
         const err = e instanceof ApiError ? e : null;
@@ -95,7 +87,7 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
       }
     })();
     return () => { cancelled = true; };
-  }, [client, account, probeRestriction]);
+  }, [client, account]);
 
   // Événements globaux du client : fin de session, restriction, licence bloquée
   React.useEffect(() => client.subscribe((ev) => {
@@ -116,10 +108,14 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
     writeLicense(licenseStorageKey, res.license ?? null);
     let user: Profile;
     try { user = await account.me(); } catch {
-      user = { ...res.user, lastLoginAt: null, passwordChangedAt: null, recoveryCodesLeft: 0, twoFactorRequired: res.restriction === "2fa-setup" };
+      user = {
+        ...res.user, lastLoginAt: null, passwordChangedAt: null, recoveryCodesLeft: 0,
+        twoFactorRequired: res.restriction === "2fa-setup", mustChangePassword: res.restriction === "pwd-change",
+        restriction: res.restriction, passwordPolicy: DEFAULT_POLICY_BY_SPACE[space],
+      };
     }
     setState({ status: "authenticated", user, restriction: res.restriction, license: res.license ?? null, blocked: null });
-  }, [client, account, licenseStorageKey]);
+  }, [client, account, licenseStorageKey, space]);
 
   const logout = React.useCallback(async (opts: { silent?: boolean; message?: string } = {}) => {
     await client.logout();

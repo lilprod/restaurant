@@ -6,6 +6,15 @@ import { PlatformSettingsService } from "../../settings/platform-settings.servic
 import { PlatformAuditService } from "../audit/platform-audit.service";
 import { computeRenewal, evaluateLicense, receiptNumber, tenantStatusFor } from "../licensing/licensing";
 
+/**
+ * Borne haute d'un filtre de dates. Une date seule (« 2026-10-12 », lue à minuit UTC) inclut toute la journée ;
+ * une date-heure précise est prise telle quelle.
+ */
+export function upperBound(to: Date): { lt: Date } | { lte: Date } {
+  const midnight = to.getUTCHours() === 0 && to.getUTCMinutes() === 0 && to.getUTCSeconds() === 0 && to.getUTCMilliseconds() === 0;
+  return midnight ? { lt: new Date(to.getTime() + 86_400_000) } : { lte: to };
+}
+
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -39,6 +48,8 @@ export class PaymentsService {
       if (amount <= 0) throw new BadRequestException("Montant nul : précisez le montant encaissé");
 
       // Licence échue/résiliée → on repart sur une nouvelle ligne (réactivation) ; sinon on prolonge.
+      // Le cycle de la licence est celui du dernier paiement : il décrit la période en cours (mensuelle ou annuelle).
+      // L'historique des cycles reste dans chaque paiement.
       const reactivation = !current || current.status === "EXPIRED" || current.status === "CANCELLED";
       const { periodStart, periodEnd } = computeRenewal({
         now,
@@ -146,7 +157,7 @@ export class PaymentsService {
     const where: Prisma.SubscriptionPaymentWhereInput = {
       ...(q.tenantId ? { tenantId: q.tenantId } : {}),
       ...(q.method ? { method: q.method as never } : {}),
-      ...(q.from || q.to ? { paidAt: { ...(q.from ? { gte: q.from } : {}), ...(q.to ? { lte: q.to } : {}) } } : {}),
+      ...(q.from || q.to ? { paidAt: { ...(q.from ? { gte: q.from } : {}), ...(q.to ? upperBound(q.to) : {}) } } : {}),
     };
     const [total, items, sum] = await Promise.all([
       this.prisma.subscriptionPayment.count({ where }),

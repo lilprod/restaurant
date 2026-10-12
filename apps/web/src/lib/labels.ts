@@ -22,10 +22,11 @@ export const LOGIN_RESULT_LABEL: Record<string, string> = {
   TWO_FACTOR_FAILED: "Code 2FA incorrect",
   TWO_FACTOR_REQUIRED: "2FA demandée",
   LICENSE_BLOCKED: "Licence bloquée",
+  ACCOUNT_DISABLED: "Compte désactivé",
 };
 export const LOGIN_RESULT_TONE: Record<string, "green" | "red" | "amber" | "gray" | "blue"> = {
   SUCCESS: "green", BAD_PASSWORD: "red", UNKNOWN_ACCOUNT: "gray", LOCKED: "red",
-  TWO_FACTOR_FAILED: "red", TWO_FACTOR_REQUIRED: "blue", LICENSE_BLOCKED: "amber",
+  TWO_FACTOR_FAILED: "red", TWO_FACTOR_REQUIRED: "blue", LICENSE_BLOCKED: "amber", ACCOUNT_DISABLED: "gray",
 };
 export const FEATURE_LABEL: Record<string, string> = {
   orders: "Commandes", reservations: "Réservations", inventory: "Stock", staff: "Personnel",

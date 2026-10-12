@@ -25,7 +25,7 @@ Rôles plateforme : `SUPER_ADMIN` (lecture + écriture), `SUPPORT` (lecture seul
 | GET | `/platform/registrations?status=` | | Demandes d'inscription |
 | POST | `/platform/registrations/:id/approve` · `/reject` | SUPER_ADMIN | Valide (crée tenant + admin + essai 14 j, atomique) / rejette avec motif |
 | POST | `/platform/payments` | SUPER_ADMIN | **Enregistre un paiement** `CASH`/`CARD`/`FLOOZ`/`TMONEY` et prolonge la licence |
-| GET | `/platform/payments` · `/platform/payments/:id` | | Liste filtrable (tenant, mode, dates) avec total / reçu |
+| GET | `/platform/payments` · `/platform/payments/:id` | | Liste filtrable (tenant, mode, dates `from`/`to` — une date seule inclut toute la journée) avec total / reçu |
 | POST | `/platform/payments/:id/void` | SUPER_ADMIN | Annule le **dernier** paiement d'une licence (restitue la période) |
 | GET | `/platform/dashboard` | | Tenants par statut, CA du mois par mode, licences expirant sous 7 jours |
 | POST | `/platform/licensing/sweep` | SUPER_ADMIN | Force le passage des licences échues (déjà exécuté chaque heure) |
@@ -70,10 +70,10 @@ Réponse de connexion : `{accessToken, refreshToken, user, restriction, license}
 - `restriction` vaut `"pwd-change"` (mot de passe temporaire ou expiré) ou `"2fa-setup"` (2FA obligatoire pour ce rôle) :
   la session ne peut alors appeler que les routes « Mon compte » ; les autres répondent `403 {code: "RESTRICTED_SESSION"}`.
 - Licence expirée ou restaurant suspendu : `403 {code: "LICENSE_BLOCKED"}` (connexion, rafraîchissement et toutes les routes du restaurant).
-- Compte verrouillé : `423 {code: "ACCOUNT_LOCKED"}`.
+- Compte verrouillé : `423 {code: "ACCOUNT_LOCKED"}`. Compte désactivé : `401`, journalisé `ACCOUNT_DISABLED`.
 
 ## Mon compte — `/platform/account/...` et `/tenant/account/...`
-`GET me` · `PATCH profile` · `POST avatar` · `POST change-password` · `GET sessions` · `DELETE sessions/:id` · `DELETE sessions` (toutes les autres) ·
+`GET me` (profil + `restriction`, `mustChangePassword`, `passwordPolicy`) · `PATCH profile` · `POST avatar` · `POST change-password` · `GET sessions` · `DELETE sessions/:id` · `DELETE sessions` (toutes les autres) ·
 `POST 2fa/setup` (secret + QR) · `POST 2fa/enable` (premier code → 8 codes de secours, affichés une seule fois) ·
 `POST 2fa/disable` · `POST 2fa/recovery-codes` (mot de passe + code requis) · `GET login-history`.
 
@@ -104,6 +104,7 @@ La réinitialisation renvoie un **mot de passe temporaire** (une seule fois) que
 - `/platform/users` : équipe plateforme (création avec mot de passe temporaire, rôle, activation, réinitialisation, déverrouillage, retrait de la 2FA).
 - `/platform/security/login-events` : connexions de toute la plateforme.
 - `/platform/tenants/:id/settings[/:section]`, `/assets/:kind`, `/security/users/...`, `/security/login-events` : intervenir sur un restaurant.
+  Lecture ouverte au Support ; modifications, envois de fichiers et actions sur les comptes réservés au SuperAdmin.
 
 ## Politique de sécurité (modifiable par espace)
 | Réglage | Plage | Défaut restaurant / plateforme |

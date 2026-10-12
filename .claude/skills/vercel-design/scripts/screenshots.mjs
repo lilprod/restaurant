@@ -66,45 +66,38 @@ const executablePath = process.env.CHROMIUM_PATH || (existsSync("/opt/pw-browser
 const browser = await chromium.launch({ executablePath });
 mkdirSync(out, { recursive: true });
 
-let storageState;
+// Une seule session de navigateur pour toutes les captures : l'app fait tourner son jeton de rafraîchissement,
+// donc réutiliser la même session dans plusieurs contextes déconnecterait les suivants.
+const ctx = await browser.newContext({ viewport: { width: widths[0], height: 900 }, locale: "fr-FR", timezoneId: "Africa/Lome" });
+const page = await ctx.newPage();
 if (loginScript) {
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const page = await ctx.newPage();
   const mod = await import(pathToFileURL(resolve(loginScript)).href);
   await mod.default(page, baseUrl);
-  storageState = await ctx.storageState();
-  await ctx.close();
 }
 
 const files = [];
 const problems = [];
+let current = "";
+page.on("pageerror", (e) => problems.push(`[${current}] erreur JS : ${e.message}`));
+page.on("console", (m) => { if (m.type() === "error") problems.push(`[${current}] console : ${m.text()}`); });
 for (const theme of themes) {
+  await page.emulateMedia({ colorScheme: theme === "dark" ? "dark" : "light", reducedMotion: flag("reduced-motion") ? "reduce" : "no-preference" });
   for (const width of widths) {
-    const ctx = await browser.newContext({
-      viewport: { width, height: width < 768 ? 844 : 900 },
-      deviceScaleFactor: width < 768 ? 2 : 1,
-      colorScheme: theme === "dark" ? "dark" : "light",
-      reducedMotion: flag("reduced-motion") ? "reduce" : "no-preference",
-      locale: "fr-FR",
-      timezoneId: "Africa/Lome",
-      storageState,
-    });
-    const page = await ctx.newPage();
-    page.on("pageerror", (e) => problems.push(`[${theme} ${width}px] erreur JS : ${e.message}`));
-    page.on("console", (m) => { if (m.type() === "error") problems.push(`[${theme} ${width}px] console : ${m.text()}`); });
+    await page.setViewportSize({ width, height: width < 768 ? 844 : 900 });
     for (const route of routes) {
+      current = `${theme} ${width}px ${route}`;
       await page.goto(baseUrl + route, { waitUntil: "networkidle" }).catch((e) => problems.push(`${route} : ${e.message}`));
       await page.waitForTimeout(wait);
       // Débordement horizontal : signe classique d'une mise en page mobile cassée.
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-      if (overflow > 1) problems.push(`[${theme} ${width}px] ${route} : débordement horizontal de ${overflow}px`);
+      if (overflow > 1) problems.push(`[${current}] débordement horizontal de ${overflow}px`);
       const file = join(out, `${slug(route)}-${theme}-${width}.png`);
       await page.screenshot({ path: file, fullPage: flag("full-page") });
       files.push(file);
     }
-    await ctx.close();
   }
 }
+await ctx.close();
 await browser.close();
 
 console.log(`${files.length} captures dans ${out}`);

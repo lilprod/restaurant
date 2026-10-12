@@ -25,7 +25,7 @@ function LogoutLink() {
 export function ForcePasswordChange() {
   const session = useSession();
   const user = session.user;
-  const policy = DEFAULT_POLICY_BY_SPACE[session.space];
+  const policy = user?.passwordPolicy ?? DEFAULT_POLICY_BY_SPACE[session.space];
   const [current, setCurrent] = React.useState("");
   const [next, setNext] = React.useState("");
   const [confirm, setConfirm] = React.useState("");

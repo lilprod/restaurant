@@ -7,7 +7,7 @@ import { formatDateTime, formatRelative } from "@/lib/format";
 import { LOGIN_RESULT_LABEL, LOGIN_RESULT_TONE } from "@/lib/labels";
 import { describeUserAgent } from "@/lib/user-agent";
 
-export const LOGIN_RESULTS: LoginResult[] = ["SUCCESS", "BAD_PASSWORD", "UNKNOWN_ACCOUNT", "LOCKED", "TWO_FACTOR_FAILED", "TWO_FACTOR_REQUIRED", "LICENSE_BLOCKED"];
+export const LOGIN_RESULTS: LoginResult[] = ["SUCCESS", "BAD_PASSWORD", "UNKNOWN_ACCOUNT", "LOCKED", "TWO_FACTOR_FAILED", "TWO_FACTOR_REQUIRED", "LICENSE_BLOCKED", "ACCOUNT_DISABLED"];
 
 export function DeviceIcon({ ua, className = "size-4 text-muted-foreground" }: { ua: string | null; className?: string }) {
   const k = describeUserAgent(ua).kind;

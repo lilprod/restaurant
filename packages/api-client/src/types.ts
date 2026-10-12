@@ -1,7 +1,7 @@
 import type {
   BillingCycle, PlatformPaymentMethod, PlatformRole, Role, SubscriptionStatus, TenantStatus,
 } from "@restaurant/shared-types";
-import type { Theme } from "@restaurant/utils";
+import type { PasswordPolicy, Theme } from "@restaurant/utils";
 import type {
   BusinessInput, CompanyInput, LicensingSettings, LocalizationInput, OperationsInput, PaymentInstructionsInput,
   PlatformSecurityInput, TenantSecurityInput,
@@ -15,7 +15,7 @@ export type { BillingCycle, PlatformPaymentMethod, PlatformRole, Role, Subscript
 export type RegistrationStatus = "PENDING" | "APPROVED" | "REJECTED";
 export type PaymentRecordStatus = "RECORDED" | "VOIDED";
 export type LoginResult =
-  | "SUCCESS" | "BAD_PASSWORD" | "UNKNOWN_ACCOUNT" | "LOCKED" | "TWO_FACTOR_FAILED" | "TWO_FACTOR_REQUIRED" | "LICENSE_BLOCKED";
+  | "SUCCESS" | "BAD_PASSWORD" | "UNKNOWN_ACCOUNT" | "LOCKED" | "TWO_FACTOR_FAILED" | "TWO_FACTOR_REQUIRED" | "LICENSE_BLOCKED" | "ACCOUNT_DISABLED";
 
 // ── Comptes & authentification ──
 
@@ -37,6 +37,12 @@ export interface Profile extends AccountSummary {
   passwordChangedAt: ISODate | null;
   recoveryCodesLeft: number;
   twoFactorRequired: boolean;
+  /** Mot de passe temporaire ou expiré à changer. */
+  mustChangePassword: boolean;
+  /** Restriction en cours de la session (permet de la retrouver après un rechargement). */
+  restriction: Restriction | null;
+  /** Règles de mot de passe de l'espace (lisibles par tous les rôles). */
+  passwordPolicy: PasswordPolicy;
 }
 
 export interface LicenseSummary {
