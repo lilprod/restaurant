@@ -39,6 +39,12 @@ enum TableStatus {
   CLEANING
 }
 
+enum OrderPaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
 enum OrderType {
   DINE_IN
   TAKEAWAY
@@ -292,13 +298,14 @@ model OpeningHours {
 
 // ───────── MENU ─────────
 model Category {
-  tenantId  String
-  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id        String     @id @default(uuid())
-  name      String
-  sortOrder Int        @default(0)
-  isActive  Boolean    @default(true)
-  items     MenuItem[]
+  tenantId    String
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id          String     @id @default(uuid())
+  name        String
+  description String?
+  sortOrder   Int        @default(0)
+  isActive    Boolean    @default(true)
+  items       MenuItem[]
 
   @@index([tenantId])
 }
@@ -312,20 +319,23 @@ model Allergen {
 
 model MenuItem {
   tenantId      String
-  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id            String   @id @default(uuid())
+  tenant        Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String    @id @default(uuid())
   categoryId    String
   name          String
   description   String?
   price         Int
-  vatRate       Decimal  @default(10.00) @db.Decimal(4, 2)
+  vatRate       Decimal   @default(10.00) @db.Decimal(4, 2)
   imageUrl      String?
-  prepMinutes   Int      @default(10)
-  isAvailable   Boolean  @default(true)
+  prepMinutes   Int       @default(10)
+  isAvailable   Boolean   @default(true)
   availableFrom String?
   availableTo   String?
-  isDishOfDay   Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  isDishOfDay   Boolean   @default(false)
+  sortOrder     Int       @default(0)
+  archivedAt    DateTime? // retiré de la carte mais conservé (historique des commandes)
+  updatedAt     DateTime  @default(now()) @updatedAt
+  createdAt     DateTime  @default(now())
 
   category     Category           @relation(fields: [categoryId], references: [id])
   allergens    MenuItemAllergen[]
@@ -351,13 +361,15 @@ model MenuItemAllergen {
 
 model OptionGroup {
   tenantId   String
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id         String   @id @default(uuid())
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id         String    @id @default(uuid())
   menuItemId String
   name       String
-  minChoices Int      @default(0)
-  maxChoices Int      @default(1)
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  minChoices Int       @default(0)
+  maxChoices Int       @default(1)
+  sortOrder  Int       @default(0)
+  archivedAt DateTime? // groupe remplacé mais encore référencé par des commandes
+  menuItem   MenuItem  @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   options    Option[]
 
   @@index([tenantId])
@@ -403,22 +415,28 @@ model FormulaItem {
 // ───────── COMMANDES ─────────
 model Order {
   tenantId      String
-  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id            String      @id @default(uuid())
+  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String             @id @default(uuid())
   number        Int
   type          OrderType
-  status        OrderStatus @default(PENDING)
+  status        OrderStatus        @default(PENDING)
   tableId       String?
   reservationId String?
   customerId    String?
   waiterId      String?
   notes         String?
-  subtotal      Int         @default(0)
-  vat           Int         @default(0)
-  tip           Int         @default(0)
-  total         Int         @default(0)
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
+  customerName  String? // à emporter : nom appelé au comptoir
+  serviceCharge Int                @default(0)
+  paidAmount    Int                @default(0)
+  paymentStatus OrderPaymentStatus @default(UNPAID)
+  cancelledAt   DateTime?
+  cancelReason  String?
+  subtotal      Int                @default(0)
+  vat           Int                @default(0)
+  tip           Int                @default(0)
+  total         Int                @default(0)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
   closedAt      DateTime?
 
   table       RestaurantTable? @relation(fields: [tableId], references: [id])
@@ -434,6 +452,8 @@ model Order {
   @@index([status, createdAt])
   @@index([waiterId, createdAt])
   @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, paymentStatus])
 }
 
 model OrderItem {
@@ -442,12 +462,19 @@ model OrderItem {
   id           String     @id @default(uuid())
   orderId      String
   menuItemId   String
+  name         String     @default("") // nom figé à la commande
+  optionsExtra Int        @default(0) // suppléments par unité
+  lineTotal    Int        @default(0) // (prix + suppléments) × quantité, TTC
   quantity     Int
   unitPrice    Int
   vatRate      Decimal    @db.Decimal(4, 2)
   status       ItemStatus @default(PENDING)
   instructions String?
   course       Int        @default(1)
+  startedAt    DateTime?
+  readyAt      DateTime?
+  servedAt     DateTime?
+  cancelReason String?
   createdAt    DateTime   @default(now())
 
   order       Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
@@ -464,6 +491,7 @@ model OrderItemOption {
   orderItemId String
   optionId    String
   extra       Int
+  name        String    @default("")
   orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   option      Option    @relation(fields: [optionId], references: [id])
 
@@ -482,6 +510,11 @@ model Payment {
   amount            Int
   tip               Int           @default(0)
   reference         String?
+  tendered          Int? // espèces : montant remis par le client
+  change            Int? // espèces : monnaie rendue
+  recordedById      String?
+  refundedAt        DateTime?
+  refundReason      String?
   registerSessionId String?
   paidAt            DateTime?
   createdAt         DateTime      @default(now())
@@ -508,15 +541,19 @@ model PaymentAllocation {
 }
 
 model RegisterSession {
-  tenantId   String
-  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id         String    @id @default(uuid())
-  openedById String
-  openedAt   DateTime  @default(now())
-  closedAt   DateTime?
-  opening    Int
-  closing    Int?
-  payments   Payment[]
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String    @id @default(uuid())
+  openedById   String
+  openedAt     DateTime  @default(now())
+  closedAt     DateTime?
+  opening      Int
+  closing      Int?
+  expectedCash Int?
+  difference   Int?
+  closedById   String?
+  notes        String?
+  payments     Payment[]
 
   @@index([tenantId])
 }

@@ -124,3 +124,62 @@ audit des changements, en-têtes HTTP de sécurité (Helmet), limitation de déb
 PNG / JPEG / WebP (favicon : PNG / ICO / WebP). Le format est vérifié sur le **contenu** du fichier, pas sur l'extension. SVG refusé (script embarqué).
 Logo 2 Mo, favicon 512 Ko, avatar 1 Mo. Fichiers servis sous `/uploads/...` avec `nosniff` et `Content-Security-Policy: sandbox`, nom aléatoire,
 isolés par restaurant ; l'ancien fichier est supprimé au remplacement. Le stockage passe par `StorageService` (disque aujourd'hui, Cloudinary / S3 plus tard).
+
+---
+
+# Phase 1 — Menu, commandes, cuisine, encaissement (`/tenant/...`)
+
+Rôles : **personnel** = ADMIN, MANAGER, WAITER, KITCHEN · **salle** = ADMIN, MANAGER, WAITER ·
+**cuisine** = ADMIN, MANAGER, KITCHEN · **responsables** = ADMIN, MANAGER. Prix du menu **TTC** en FCFA entiers.
+
+## Équipe — `/tenant/staff`
+`GET` (responsables) · `POST` (Admin : `{email, firstName, lastName, phone?, role}` → `temporaryPassword` affiché une fois) ·
+`PATCH /:id` (Admin ; pas son propre rôle). Activation, réinitialisation, 2FA : routes `/tenant/security/users/...`.
+Limite `maxUsers` du plan → `409 {code: "PLAN_LIMIT"}`.
+
+## Tables — `/tenant/tables`
+`GET` (personnel ; `openOrders` = commandes ouvertes) · `POST`/`PATCH /:id`/`DELETE /:id` (responsables ; une table déjà utilisée est désactivée)
+· `PATCH /:id/status` (salle : `FREE`, `CLEANING`…). Statut `OCCUPIED`/`FREE` mis à jour automatiquement par les commandes. Limite `maxTables`.
+
+## Menu — `/tenant/menu`
+`GET` (carte complète) · `GET allergens` · catégories `POST|PATCH|DELETE categories[/:id]`, `POST categories/reorder` ·
+plats `POST|PATCH|DELETE items[/:id]` (options : `optionGroups[{name, minChoices, maxChoices, options[{name, extra}]}]` remplacés en bloc ;
+`allergenCodes[]` ; `vatRate` par défaut = paramètre « exploitation ») · `POST items/reorder` · `PATCH items/:id/availability` (cuisine : « épuisé ») ·
+`POST|DELETE items/:id/image` (PNG/JPEG/WebP, 3 Mo). Un plat déjà commandé est **archivé** (retiré de la carte, historique conservé).
+Carte publique : `GET /public/tenants/:slug/menu` (catégories actives, plats disponibles, sans données internes).
+
+## Commandes — `/tenant/orders`
+| Méthode | Route | Rôle | Description |
+|---|---|---|---|
+| GET | `/` | personnel | Filtres `status`, `paymentStatus`, `type`, `tableId`, `open=true`, `date=AAAA-MM-JJ` (fuseau du restaurant), pagination |
+| POST | `/` | salle | `{type: DINE_IN\|TAKEAWAY, tableId?, customerName?, notes?, items[{menuItemId, quantity, optionIds[], instructions?, course?}]}` |
+| GET | `/:id` · `/:id/receipt` | personnel · salle | Détail · ticket (identité du restaurant, TVA par taux, paiements) |
+| POST | `/:id/items` | salle | Ajouter des articles (commande ouverte) |
+| PATCH | `/:id/items/:itemId` | salle | Quantité / instructions (article encore en attente et non encaissé) |
+| POST | `/:id/items/:itemId/status` | cuisine ou salle | `PENDING → IN_PROGRESS → READY` (cuisine, retour d'un cran possible) · `READY → SERVED` (salle) |
+| POST | `/:id/advance` | cuisine ou salle | Tous les articles éligibles : `IN_PROGRESS`, `READY` (cuisine) ou `SERVED` (salle) |
+| POST | `/:id/items/:itemId/cancel` | salle | `{reason}` ; article déjà lancé : responsables seulement ; article encaissé : refusé |
+| POST | `/:id/cancel` | responsables | `{reason}` ; refusé s'il reste des paiements encaissés |
+| POST | `/:id/payments` | salle | `{method: CASH\|CARD\|FLOOZ\|TMONEY\|OTHER, amount, tip?, tendered?, reference?, allocations?[{orderItemId, quantity}]}` → `{order, paymentId, change}` |
+| POST | `/:id/payments/:pid/refund` | responsables | `{reason}` ; rouvre la commande si elle n'est plus réglée |
+
+- Les prix, noms, options et TVA sont **figés** à la commande. Numérotation continue par restaurant.
+- Statut de commande déduit des articles : `PENDING`, `IN_PROGRESS`, `READY`, `DELIVERED` (tout servi), `CANCELLED`.
+- `paymentStatus` : `UNPAID`, `PARTIAL`, `PAID` ; `remaining` = reste à payer. Un encaissement ne peut pas dépasser le reste
+  (verrou en base : deux encaissements simultanés ne dépassent jamais le total). Référence obligatoire pour Flooz / TMoney.
+- Clôture automatique quand tout est **servi et réglé** ; la table redevient libre. Service : `serviceChargePercent` des paramètres.
+
+## Cuisine et temps réel
+`GET /tenant/kitchen` : commandes ouvertes avec des articles en attente, en préparation ou prêts (les plus anciennes d'abord).
+Socket.io, espace de noms **`/realtime`** (chemin `/socket.io`, hors préfixe `/api/v1`) :
+`io(API_URL + "/realtime", { auth: { token: accessToken } })` → `ready` ou `auth_error` puis déconnexion.
+Événements diffusés au restaurant : **`order.created`**, **`order.updated`** (commande complète, même forme que l'API).
+Les contrôles sont ceux de l'API (jeton, session, compte actif, licence).
+
+## Caisse — `/tenant/register`
+`GET current` (salle : fond, encaissements par moyen, espèces attendues) · `POST open {opening}` · `POST close {counted, notes?}`
+(responsables ; écart = compté − attendu) · `GET sessions` (historique). Les paiements sont rattachés à la caisse ouverte.
+
+## Tableau de bord — `GET /tenant/dashboard?date=` (responsables)
+Chiffre d'affaires encaissé, pourboires, nombre de commandes, ticket moyen, commandes ouvertes, répartition sur place / à emporter,
+par moyen de paiement, par heure, 5 plats les plus vendus — sur la journée du restaurant (son fuseau).

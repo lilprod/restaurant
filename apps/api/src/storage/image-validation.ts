@@ -5,7 +5,8 @@ export interface UploadRule {
   allowed: ReadonlyArray<"png" | "jpeg" | "webp" | "ico">;
 }
 
-export const ASSET_RULES: Record<"logo" | "logoDark" | "favicon" | "avatar", UploadRule> = {
+export const ASSET_RULES: Record<"logo" | "logoDark" | "favicon" | "avatar" | "menuPhoto", UploadRule> = {
+  menuPhoto: { maxBytes: 3 * 1024 * 1024, allowed: ["png", "jpeg", "webp"] },
   avatar: { maxBytes: 1024 * 1024, allowed: ["png", "jpeg", "webp"] },
   logo: { maxBytes: 2 * 1024 * 1024, allowed: ["png", "jpeg", "webp"] },
   logoDark: { maxBytes: 2 * 1024 * 1024, allowed: ["png", "jpeg", "webp"] },

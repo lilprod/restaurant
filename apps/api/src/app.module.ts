@@ -11,6 +11,7 @@ import { SettingsModule } from "./settings/settings.module";
 import { StorageModule } from "./storage/storage.module";
 import { TenantModule } from "./tenant/tenant.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { RestaurantModule } from "./restaurant/restaurant.module";
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 120 }], skipIf: () => !!process.env.DISABLE_THROTTLE }),
     PlatformModule,
     TenantModule,
+    RestaurantModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -18,11 +18,19 @@ export async function createApp() {
 /** Vide toutes les tables (hors historique de migrations). */
 export async function resetDb(prisma: PrismaClient) {
   const rows = await prisma.$queryRaw<{ tablename: string }[]>`
-    SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'`;
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('_prisma_migrations', 'Allergen')`;
   if (rows.length === 0) throw new Error("Base de test vide : lancez `pnpm test:e2e` (applique les migrations d'abord)");
   const list = rows.map((r) => `"${r.tablename}"`).join(", ");
   await prisma.$executeRawUnsafe(`TRUNCATE ${list} RESTART IDENTITY CASCADE`);
+  // Référentiel chargé par la migration : on le restaure s'il a été vidé.
+  for (const [code, name] of ALLERGENS) await prisma.allergen.upsert({ where: { code }, update: {}, create: { code, name } });
 }
+
+const ALLERGENS = [
+  ["GLUTEN", "Gluten"], ["CRUSTACEANS", "Crustacés"], ["EGGS", "Œufs"], ["FISH", "Poisson"], ["PEANUTS", "Arachides"],
+  ["SOY", "Soja"], ["MILK", "Lait"], ["NUTS", "Fruits à coque"], ["CELERY", "Céleri"], ["MUSTARD", "Moutarde"],
+  ["SESAME", "Sésame"], ["SULPHITES", "Sulfites"], ["LUPIN", "Lupin"], ["MOLLUSCS", "Mollusques"],
+] as const;
 
 export async function seedPlatform(prisma: PrismaClient) {
   const hash = await argon2.hash("Secret123!");

@@ -18,12 +18,15 @@ pnpm --filter api prisma:generate
 pnpm db:migrate
 psql "$DATABASE_URL" -f apps/api/prisma/sql/rls.sql   # isolation par tenant (RLS)
 pnpm db:seed
+pnpm --filter api seed:demo -- <slug>   # développement : carte, tables, équipe de démonstration
 pnpm dev
 ```
 
 API : `http://localhost:3000/api/v1` · Swagger : `/api/docs` · SuperAdmin de dev créé par le seed
 (`superadmin@restaurant.local`, mot de passe `ChangeMe123!` — à changer via `SEED_SUPERADMIN_PASSWORD`).
 Documentation des routes : `docs/API.md`.
+Le rôle SQL de l'application (non superuser, à cause de la RLS) doit recevoir les droits sur les nouvelles tables après chaque migration
+(`GRANT ALL ON ALL TABLES IN SCHEMA public TO <rôle>` ou `ALTER DEFAULT PRIVILEGES`), puis relancez `prisma/sql/rls.sql`.
 En production, définissez `DATA_ENCRYPTION_KEY`, `PUBLIC_API_URL`, `APP_URL`, `SEED_SUPERADMIN_PASSWORD` et un volume pour `UPLOAD_DIR`.
 
 ## Application web
