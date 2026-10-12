@@ -14,11 +14,16 @@ annuelle, montants en FCFA. Détails : `docs/ARCHITECTURE.md`.
 cp .env.example .env
 docker compose up -d
 pnpm install
+pnpm --filter api prisma:generate
 pnpm db:migrate
 psql "$DATABASE_URL" -f apps/api/prisma/sql/rls.sql   # isolation par tenant (RLS)
 pnpm db:seed
 pnpm dev
 ```
+
+API : `http://localhost:3000/api/v1` · Swagger : `/api/docs` · SuperAdmin de dev créé par le seed
+(`superadmin@restaurant.local`, mot de passe `ChangeMe123!` — à changer via `SEED_SUPERADMIN_PASSWORD`).
+Documentation des routes : `docs/API.md`.
 
 ## Structure
 Voir `docs/ARCHITECTURE.md`. Schéma de données : `apps/api/prisma/schema.prisma`.

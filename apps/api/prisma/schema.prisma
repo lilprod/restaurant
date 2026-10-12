@@ -860,11 +860,11 @@ model PlatformUser {
   isActive     Boolean      @default(true)
   createdAt    DateTime     @default(now())
 
-  refreshTokens   RefreshToken[]
-  passwordResets  PasswordReset[]
-  licensePayments SubscriptionPayment[]
-  registrations   TenantRegistration[]
-  auditLogs       PlatformAuditLog[]
+  refreshTokens    RefreshToken[]
+  passwordResets   PasswordReset[]
+  recordedPayments SubscriptionPayment[]
+  registrations    TenantRegistration[]
+  auditLogs        PlatformAuditLog[]
 }
 
 model Plan {
@@ -967,6 +967,7 @@ model TenantRegistration {
   @@index([status, createdAt])
 }
 
+// Licence : prolongée à chaque paiement ; une nouvelle ligne n'est créée qu'à la réactivation.
 model Subscription {
   id               String             @id @default(uuid())
   tenantId         String
@@ -981,9 +982,9 @@ model Subscription {
   reminderSentAt   DateTime?
   createdAt        DateTime           @default(now())
 
-  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  plan            Plan                  @relation(fields: [planId], references: [id])
-  licensePayments SubscriptionPayment[]
+  tenant   Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan     Plan                  @relation(fields: [planId], references: [id])
+  payments SubscriptionPayment[]
 
   @@index([tenantId, status])
   @@index([currentPeriodEnd])
@@ -1005,6 +1006,8 @@ model SubscriptionPayment {
   notes          String?
   status         PaymentRecordStatus   @default(RECORDED)
   recordedById   String
+  voidedAt       DateTime?
+  voidReason     String?
   createdAt      DateTime              @default(now())
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id])
@@ -1026,4 +1029,9 @@ model PlatformAuditLog {
   actor     PlatformUser? @relation(fields: [actorId], references: [id])
 
   @@index([entity, entityId])
+}
+
+model ReceiptCounter {
+  year Int @id
+  last Int @default(0)
 }
