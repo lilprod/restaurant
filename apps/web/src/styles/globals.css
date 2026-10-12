@@ -1,0 +1,214 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+/* `.light` permet d'afficher un aperçu clair à l'intérieur d'une page sombre (et inversement avec `.dark`). */
+@custom-variant dark (&:where(.dark, .dark *):not(:where(.light, .light *)));
+
+/*
+ * Jetons de design — esthétique « Geist » : gris neutres, bordures 1px nettes, ombres superposées discrètes.
+ * La couleur de marque (`--color-primary`, `--color-on-primary`, `--radius`, `--font-family`) est injectée sur
+ * :root par l'API de marque (plateforme ou restaurant) ; elle n'habille que ce qui doit l'être :
+ * bouton principal, anneau de focus, navigation active, graphiques.
+ */
+:root {
+  /* Valeurs par défaut de la marque (remplacées en ligne sur <html> par applyBranding) */
+  --color-primary: #171717;
+  --color-on-primary: #ffffff;
+  --color-primary-soft: #f2f2f2;
+  --color-accent: #f59e0b;
+  --color-on-accent: #111827;
+  --radius: 8px;
+  --font-family: "Geist Variable", system-ui, sans-serif;
+  --brand-font: "Geist Variable", system-ui, sans-serif;
+}
+
+/*
+ * Les variables dérivées (--brand-bg, --brand-ink…) sont résolues là où elles sont déclarées : elles sont donc
+ * redéclarées sur `.light` / `.dark` pour qu'un conteneur d'aperçu portant ses propres couleurs de marque
+ * (styles en ligne) les recalcule.
+ */
+:root, .light {
+  /* Fond / texte du bouton principal : la marque, ou sa variante sombre si elle disparaît sur fond noir */
+  --brand-bg: var(--color-primary);
+  --brand-fg: var(--color-on-primary);
+
+  --background: #ffffff;
+  --foreground: #0a0a0a;
+  --subtle: #fafafa;
+  --muted: #f2f2f2;
+  --muted-foreground: #666666;
+  --faint-foreground: #8f8f8f;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --border: #ebebeb;
+  --border-strong: #d4d4d4;
+  --input: #e0e0e0;
+  --hover: #f4f4f4;
+  --overlay: rgb(0 0 0 / 0.36);
+
+  /* Texte / icônes de marque sur fond neutre : garde du contraste en clair */
+  --brand-ink: color-mix(in oklab, var(--color-primary) 92%, black);
+  --brand-tint: color-mix(in oklab, var(--color-primary) 9%, var(--background));
+  --ring: color-mix(in oklab, var(--color-primary) 55%, transparent);
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 1px 1px rgb(0 0 0 / 0.02), 0 2px 4px rgb(0 0 0 / 0.04), 0 0 0 1px rgb(0 0 0 / 0.02);
+  --shadow-md: 0 2px 2px rgb(0 0 0 / 0.03), 0 8px 16px -4px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+  --shadow-lg: 0 4px 6px rgb(0 0 0 / 0.04), 0 24px 48px -12px rgb(0 0 0 / 0.18), 0 0 0 1px rgb(0 0 0 / 0.05);
+
+  /* Tonalités de statut (badges) */
+  --tone-blue-bg: #eaf2ff;   --tone-blue-fg: #0a58ca;   --tone-blue-dot: #3b82f6;
+  --tone-green-bg: #e7f8ec;  --tone-green-fg: #116932;  --tone-green-dot: #22c55e;
+  --tone-amber-bg: #fff4dc;  --tone-amber-fg: #8a4b00;  --tone-amber-dot: #f59e0b;
+  --tone-red-bg: #ffecec;    --tone-red-fg: #b4141c;    --tone-red-dot: #ef4444;
+  --tone-gray-bg: #f2f2f2;   --tone-gray-fg: #4d4d4d;   --tone-gray-dot: #a3a3a3;
+
+  --danger: #d9282f;
+  --danger-foreground: #ffffff;
+  --success: #16a34a;
+  --warning: #b45309;
+}
+
+.dark {
+  --brand-bg: var(--color-primary-dark, var(--color-primary));
+  --brand-fg: var(--color-on-primary-dark, var(--color-on-primary));
+  --background: #0a0a0a;
+  --foreground: #ededed;
+  --subtle: #0f0f0f;
+  --muted: #1a1a1a;
+  --muted-foreground: #a1a1a1;
+  --faint-foreground: #7a7a7a;
+  --card: #0f0f0f;
+  --popover: #141414;
+  --border: #262626;
+  --border-strong: #3a3a3a;
+  --input: #2e2e2e;
+  --hover: #1c1c1c;
+  --overlay: rgb(0 0 0 / 0.6);
+
+  /* En sombre, une marque foncée (ex. charbon) est éclaircie pour rester lisible */
+  --brand-ink: color-mix(in oklab, var(--brand-bg) 55%, white);
+  --brand-tint: color-mix(in oklab, var(--brand-bg) 16%, var(--background));
+  --ring: color-mix(in oklab, color-mix(in oklab, var(--brand-bg) 60%, white) 70%, transparent);
+
+  --shadow-xs: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-sm: 0 0 0 1px rgb(255 255 255 / 0.03), 0 2px 4px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 0 0 1px rgb(255 255 255 / 0.04), 0 8px 16px -4px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 0 0 1px rgb(255 255 255 / 0.06), 0 24px 48px -12px rgb(0 0 0 / 0.8);
+
+  --tone-blue-bg: #0f2547;   --tone-blue-fg: #8fbcff;   --tone-blue-dot: #60a5fa;
+  --tone-green-bg: #0d2e1a;  --tone-green-fg: #6fdc95;  --tone-green-dot: #4ade80;
+  --tone-amber-bg: #33230a;  --tone-amber-fg: #ffc35a;  --tone-amber-dot: #fbbf24;
+  --tone-red-bg: #3a1214;    --tone-red-fg: #ff9a9e;    --tone-red-dot: #f87171;
+  --tone-gray-bg: #222222;   --tone-gray-fg: #b5b5b5;   --tone-gray-dot: #737373;
+
+  --danger: #e5484d;
+  --success: #4ade80;
+  --warning: #fbbf24;
+}
+
+@theme inline {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Police de la marque : titres de marque, page de connexion, aperçu */
+  --font-brand: var(--brand-font);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-subtle: var(--subtle);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint-foreground);
+  --color-card: var(--card);
+  --color-popover: var(--popover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-hover: var(--hover);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --color-brand: var(--brand-bg);
+  --color-brand-foreground: var(--brand-fg);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-tint: var(--brand-tint);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 1.35);
+  --radius-xl: calc(var(--radius) * 1.75);
+
+  --shadow-xs: var(--shadow-xs);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+
+  --animate-shimmer: shimmer 1.6s linear infinite;
+  --animate-fade-in: fade-in 180ms ease-out;
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@layer base {
+  *, ::before, ::after { border-color: var(--border); }
+  html { -webkit-text-size-adjust: 100%; text-rendering: optimizeLegibility; }
+  html, body { background: var(--background); color: var(--foreground); }
+  body {
+    font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    min-height: 100dvh;
+  }
+  ::selection { background: color-mix(in oklab, var(--color-primary) 25%, transparent); }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  button, [role="button"] { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+  /* Pas de flèches sur les champs numériques (montants, quantités) : saisie au clavier ou boutons dédiés */
+  input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  .tabular { font-variant-numeric: tabular-nums; }
+}
+
+@layer utilities {
+  .skeleton {
+    background: linear-gradient(90deg, var(--muted) 0%, var(--hover) 40%, var(--muted) 80%);
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+  .bg-grid {
+    background-image:
+      linear-gradient(to right, var(--border) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  .scrollbar-none { scrollbar-width: none; }
+  .scrollbar-none::-webkit-scrollbar { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@media print {
+  .no-print { display: none !important; }
+  body { background: white !important; color: black !important; }
+  .print-area { box-shadow: none !important; border: none !important; }
+}

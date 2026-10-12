@@ -26,6 +26,14 @@ API : `http://localhost:3000/api/v1` · Swagger : `/api/docs` · SuperAdmin de d
 Documentation des routes : `docs/API.md`.
 En production, définissez `DATA_ENCRYPTION_KEY`, `PUBLIC_API_URL`, `APP_URL`, `SEED_SUPERADMIN_PASSWORD` et un volume pour `UPLOAD_DIR`.
 
+## Application web
+```bash
+pnpm --filter api build && node apps/api/dist/main.js   # API sur :3000 (variables de .env)
+pnpm --filter web dev                                    # http://localhost:5173 (proxy /api et /uploads vers :3000)
+```
+- Espace SuperAdmin : `/admin` · Espace restaurant : `/r/<slug>` (en production, via le sous-domaine) · Inscription : `/inscription`.
+- Design : skill `.claude/skills/vercel-design` (Geist, clair/sombre, thème du restaurant appliqué automatiquement).
+
 ## Structure
 Voir `docs/ARCHITECTURE.md`. Schéma de données : `apps/api/prisma/schema.prisma`.
 
