@@ -15,6 +15,7 @@ enum Role {
   KITCHEN
   CUSTOMER
 }
+
 enum ReservationStatus {
   PENDING
   CONFIRMED
@@ -23,23 +24,27 @@ enum ReservationStatus {
   CANCELLED
   NO_SHOW
 }
+
 enum WaitlistStatus {
   WAITING
   NOTIFIED
   CONVERTED
   EXPIRED
 }
+
 enum TableStatus {
   FREE
   RESERVED
   OCCUPIED
   CLEANING
 }
+
 enum OrderType {
   DINE_IN
   TAKEAWAY
   DELIVERY
 }
+
 enum OrderStatus {
   PENDING
   IN_PROGRESS
@@ -47,6 +52,7 @@ enum OrderStatus {
   DELIVERED
   CANCELLED
 }
+
 enum ItemStatus {
   PENDING
   IN_PROGRESS
@@ -54,18 +60,22 @@ enum ItemStatus {
   SERVED
   CANCELLED
 }
+
 enum PaymentMethod {
   CASH
   CARD
-  STRIPE
+  FLOOZ
+  TMONEY
   OTHER
 }
+
 enum PaymentStatus {
   PENDING
   PAID
   REFUNDED
   FAILED
 }
+
 enum MovementType {
   PURCHASE
   ORDER_DEDUCTION
@@ -73,6 +83,7 @@ enum MovementType {
   ADJUSTMENT
   RETURN
 }
+
 enum PurchaseStatus {
   DRAFT
   SENT
@@ -80,6 +91,7 @@ enum PurchaseStatus {
   RECEIVED
   CANCELLED
 }
+
 enum DeliveryStatus {
   PENDING
   ASSIGNED
@@ -87,6 +99,7 @@ enum DeliveryStatus {
   DELIVERED
   FAILED
 }
+
 enum AbsenceType {
   PAID_LEAVE
   SICK
@@ -96,8 +109,10 @@ enum AbsenceType {
 
 // ───────── UTILISATEURS ─────────
 model User {
+  tenantId     String
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id           String    @id @default(uuid())
-  email        String    @unique
+  email        String
   passwordHash String
   firstName    String
   lastName     String
@@ -119,38 +134,52 @@ model User {
   sentMessages   Message[]
   auditLogs      AuditLog[]
   passwordResets PasswordReset[]
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
 }
 
 model RefreshToken {
-  id        String    @id @default(uuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  revokedAt DateTime?
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String        @id @default(uuid())
+  userId         String?
+  platformUserId String?
+  tokenHash      String        @unique
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platformUser   PlatformUser? @relation(fields: [platformUserId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([platformUserId])
 }
 
 model PasswordReset {
-  id        String    @id @default(uuid())
-  userId    String
-  tokenHash String    @unique
-  expiresAt DateTime
-  usedAt    DateTime?
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String        @id @default(uuid())
+  userId         String?
+  platformUserId String?
+  tokenHash      String        @unique
+  expiresAt      DateTime
+  usedAt         DateTime?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platformUser   PlatformUser? @relation(fields: [platformUserId], references: [id], onDelete: Cascade)
 }
 
 // ───────── SALLE & RÉSERVATIONS ─────────
 model FloorPlan {
-  id     String            @id @default(uuid())
-  name   String
-  width  Int
-  height Int
-  tables RestaurantTable[]
+  tenantId String
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String            @id @default(uuid())
+  name     String
+  width    Int
+  height   Int
+  tables   RestaurantTable[]
+
+  @@index([tenantId])
 }
 
 model RestaurantTable {
+  tenantId     String
+  tenant       Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id           String      @id @default(uuid())
   floorPlanId  String
   label        String
@@ -171,9 +200,12 @@ model RestaurantTable {
   orders       Order[]
 
   @@unique([floorPlanId, label])
+  @@index([tenantId])
 }
 
 model Reservation {
+  tenantId        String
+  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id              String            @id @default(uuid())
   customerId      String?
   guestName       String
@@ -193,18 +225,24 @@ model Reservation {
   orders   Order[]
 
   @@index([startsAt, status])
+  @@index([tenantId])
 }
 
 model ReservationTable {
+  tenantId      String
+  tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   reservationId String
   tableId       String
   reservation   Reservation     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   table         RestaurantTable @relation(fields: [tableId], references: [id])
 
   @@id([reservationId, tableId])
+  @@index([tenantId])
 }
 
 model WaitlistEntry {
+  tenantId   String
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id         String         @id @default(uuid())
   customerId String?
   guestName  String
@@ -218,25 +256,33 @@ model WaitlistEntry {
   customer   User?          @relation(fields: [customerId], references: [id])
 
   @@index([desiredAt, status])
+  @@index([tenantId])
 }
 
 model OpeningHours {
+  tenantId    String
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id          String @id @default(uuid())
   weekday     Int
   opensAt     String
   closesAt    String
   slotMinutes Int    @default(15)
 
-  @@unique([weekday, opensAt])
+  @@unique([tenantId, weekday, opensAt])
+  @@index([tenantId])
 }
 
 // ───────── MENU ─────────
 model Category {
+  tenantId  String
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id        String     @id @default(uuid())
   name      String
   sortOrder Int        @default(0)
   isActive  Boolean    @default(true)
   items     MenuItem[]
+
+  @@index([tenantId])
 }
 
 model Allergen {
@@ -247,11 +293,13 @@ model Allergen {
 }
 
 model MenuItem {
+  tenantId      String
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id            String   @id @default(uuid())
   categoryId    String
   name          String
   description   String?
-  priceCents    Int
+  price         Int
   vatRate       Decimal  @default(10.00) @db.Decimal(4, 2)
   imageUrl      String?
   prepMinutes   Int      @default(10)
@@ -267,18 +315,25 @@ model MenuItem {
   recipe       RecipeLine[]
   orderItems   OrderItem[]
   formulaItems FormulaItem[]
+
+  @@index([tenantId])
 }
 
 model MenuItemAllergen {
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   menuItemId String
   allergenId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   allergen   Allergen @relation(fields: [allergenId], references: [id])
 
   @@id([menuItemId, allergenId])
+  @@index([tenantId])
 }
 
 model OptionGroup {
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id         String   @id @default(uuid())
   menuItemId String
   name       String
@@ -286,38 +341,53 @@ model OptionGroup {
   maxChoices Int      @default(1)
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   options    Option[]
+
+  @@index([tenantId])
 }
 
 model Option {
+  tenantId     String
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id           String            @id @default(uuid())
   groupId      String
   name         String
-  extraCents   Int               @default(0)
+  extra        Int               @default(0)
   group        OptionGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
   orderOptions OrderItemOption[]
+
+  @@index([tenantId])
 }
 
 model Formula {
-  id         String        @id @default(uuid())
-  name       String
-  priceCents Int
-  isActive   Boolean       @default(true)
-  items      FormulaItem[]
+  tenantId String
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id       String        @id @default(uuid())
+  name     String
+  price    Int
+  isActive Boolean       @default(true)
+  items    FormulaItem[]
+
+  @@index([tenantId])
 }
 
 model FormulaItem {
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   formulaId  String
   menuItemId String
   formula    Formula  @relation(fields: [formulaId], references: [id], onDelete: Cascade)
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
 
   @@id([formulaId, menuItemId])
+  @@index([tenantId])
 }
 
 // ───────── COMMANDES ─────────
 model Order {
+  tenantId      String
+  tenant        Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id            String      @id @default(uuid())
-  number        Int         @default(autoincrement())
+  number        Int
   type          OrderType
   status        OrderStatus @default(PENDING)
   tableId       String?
@@ -325,10 +395,10 @@ model Order {
   customerId    String?
   waiterId      String?
   notes         String?
-  subtotalCents Int         @default(0)
-  vatCents      Int         @default(0)
-  tipCents      Int         @default(0)
-  totalCents    Int         @default(0)
+  subtotal      Int         @default(0)
+  vat           Int         @default(0)
+  tip           Int         @default(0)
+  total         Int         @default(0)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
   closedAt      DateTime?
@@ -342,47 +412,58 @@ model Order {
   delivery    Delivery?
   feedback    Feedback?
 
+  @@unique([tenantId, number])
   @@index([status, createdAt])
   @@index([waiterId, createdAt])
+  @@index([tenantId])
 }
 
 model OrderItem {
-  id             String     @id @default(uuid())
-  orderId        String
-  menuItemId     String
-  quantity       Int
-  unitPriceCents Int
-  vatRate        Decimal    @db.Decimal(4, 2)
-  status         ItemStatus @default(PENDING)
-  instructions   String?
-  course         Int        @default(1)
-  createdAt      DateTime   @default(now())
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String     @id @default(uuid())
+  orderId      String
+  menuItemId   String
+  quantity     Int
+  unitPrice    Int
+  vatRate      Decimal    @db.Decimal(4, 2)
+  status       ItemStatus @default(PENDING)
+  instructions String?
+  course       Int        @default(1)
+  createdAt    DateTime   @default(now())
 
   order       Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
   menuItem    MenuItem            @relation(fields: [menuItemId], references: [id])
   options     OrderItemOption[]
   allocations PaymentAllocation[]
+
+  @@index([tenantId])
 }
 
 model OrderItemOption {
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   orderItemId String
   optionId    String
-  extraCents  Int
+  extra       Int
   orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
   option      Option    @relation(fields: [optionId], references: [id])
 
   @@id([orderItemId, optionId])
+  @@index([tenantId])
 }
 
 // ───────── PAIEMENT & CAISSE ─────────
 model Payment {
+  tenantId          String
+  tenant            Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id                String        @id @default(uuid())
   orderId           String
   method            PaymentMethod
   status            PaymentStatus @default(PENDING)
-  amountCents       Int
-  tipCents          Int           @default(0)
-  stripeIntentId    String?       @unique
+  amount            Int
+  tip               Int           @default(0)
+  reference         String?
   registerSessionId String?
   paidAt            DateTime?
   createdAt         DateTime      @default(now())
@@ -390,74 +471,97 @@ model Payment {
   order       Order               @relation(fields: [orderId], references: [id])
   session     RegisterSession?    @relation(fields: [registerSessionId], references: [id])
   allocations PaymentAllocation[]
+
+  @@index([tenantId])
 }
 
 model PaymentAllocation {
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   paymentId   String
   orderItemId String
   quantity    Int
-  amountCents Int
+  amount      Int
   payment     Payment   @relation(fields: [paymentId], references: [id], onDelete: Cascade)
   orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
 
   @@id([paymentId, orderItemId])
+  @@index([tenantId])
 }
 
 model RegisterSession {
-  id           String    @id @default(uuid())
-  openedById   String
-  openedAt     DateTime  @default(now())
-  closedAt     DateTime?
-  openingCents Int
-  closingCents Int?
-  payments     Payment[]
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id         String    @id @default(uuid())
+  openedById String
+  openedAt   DateTime  @default(now())
+  closedAt   DateTime?
+  opening    Int
+  closing    Int?
+  payments   Payment[]
+
+  @@index([tenantId])
 }
 
 // ───────── LIVRAISON ─────────
 model DeliveryZone {
-  id            String     @id @default(uuid())
-  name          String
-  postalCodes   String[]
-  feeCents      Int
-  minOrderCents Int        @default(0)
-  deliveries    Delivery[]
+  tenantId    String
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id          String     @id @default(uuid())
+  name        String
+  postalCodes String[]
+  fee         Int
+  minOrder    Int        @default(0)
+  deliveries  Delivery[]
+
+  @@index([tenantId])
 }
 
 model Delivery {
+  tenantId String
+  tenant   Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id       String         @id @default(uuid())
   orderId  String         @unique
   zoneId   String?
   driverId String?
   address  String
   phone    String
-  feeCents Int
+  fee      Int
   status   DeliveryStatus @default(PENDING)
   eta      DateTime?
   order    Order          @relation(fields: [orderId], references: [id])
   zone     DeliveryZone?  @relation(fields: [zoneId], references: [id])
   driver   StaffProfile?  @relation(fields: [driverId], references: [id])
+
+  @@index([tenantId])
 }
 
 // ───────── STOCK ─────────
 model Ingredient {
-  id                String  @id @default(uuid())
-  name              String  @unique
+  tenantId          String
+  tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                String              @id @default(uuid())
+  name              String
   unit              String
-  quantity          Decimal @default(0) @db.Decimal(12, 3)
-  lowStockThreshold Decimal @default(0) @db.Decimal(12, 3)
-  reorderQty        Decimal? @db.Decimal(12, 3)
-  avgCostCents      Int     @default(0)
+  quantity          Decimal             @default(0) @db.Decimal(12, 3)
+  lowStockThreshold Decimal             @default(0) @db.Decimal(12, 3)
+  reorderQty        Decimal?            @db.Decimal(12, 3)
+  avgCost           Int                 @default(0)
   supplierId        String?
-  isActive          Boolean @default(true)
+  isActive          Boolean             @default(true)
+  supplier          Supplier?           @relation(fields: [supplierId], references: [id])
+  recipeLines       RecipeLine[]
+  movements         StockMovement[]
+  purchaseLines     PurchaseOrderLine[]
+  waste             WasteRecord[]
 
-  supplier      Supplier?           @relation(fields: [supplierId], references: [id])
-  recipeLines   RecipeLine[]
-  movements     StockMovement[]
-  purchaseLines PurchaseOrderLine[]
-  waste         WasteRecord[]
+  @@unique([tenantId, name])
+  @@index([tenantId])
 }
 
 model RecipeLine {
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   menuItemId   String
   ingredientId String
   quantity     Decimal    @db.Decimal(12, 3)
@@ -465,9 +569,12 @@ model RecipeLine {
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
 
   @@id([menuItemId, ingredientId])
+  @@index([tenantId])
 }
 
 model StockMovement {
+  tenantId        String
+  tenant          Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id              String       @id @default(uuid())
   ingredientId    String
   type            MovementType
@@ -481,20 +588,27 @@ model StockMovement {
   ingredient      Ingredient   @relation(fields: [ingredientId], references: [id])
 
   @@index([ingredientId, createdAt])
+  @@index([tenantId])
 }
 
 model WasteRecord {
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id           String     @id @default(uuid())
   ingredientId String
   quantity     Decimal    @db.Decimal(12, 3)
   reason       String
-  costCents    Int
+  cost         Int
   recordedById String
   createdAt    DateTime   @default(now())
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@index([tenantId])
 }
 
 model Supplier {
+  tenantId       String
+  tenant         Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id             String          @id @default(uuid())
   name           String
   contact        String?
@@ -503,49 +617,65 @@ model Supplier {
   address        String?
   ingredients    Ingredient[]
   purchaseOrders PurchaseOrder[]
+
+  @@index([tenantId])
 }
 
 model PurchaseOrder {
+  tenantId    String
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id          String              @id @default(uuid())
   supplierId  String
   status      PurchaseStatus      @default(DRAFT)
   createdById String
   expectedAt  DateTime?
   receivedAt  DateTime?
-  totalCents  Int                 @default(0)
+  total       Int                 @default(0)
   createdAt   DateTime            @default(now())
   supplier    Supplier            @relation(fields: [supplierId], references: [id])
   lines       PurchaseOrderLine[]
+
+  @@index([tenantId])
 }
 
 model PurchaseOrderLine {
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id              String        @id @default(uuid())
   purchaseOrderId String
   ingredientId    String
   quantity        Decimal       @db.Decimal(12, 3)
   receivedQty     Decimal       @default(0) @db.Decimal(12, 3)
-  unitCostCents   Int
+  unitCost        Int
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   ingredient      Ingredient    @relation(fields: [ingredientId], references: [id])
+
+  @@index([tenantId])
 }
 
 // ───────── PERSONNEL ─────────
 model StaffProfile {
-  id                 String   @id @default(uuid())
-  userId             String   @unique
+  tenantId           String
+  tenant             Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                 String       @id @default(uuid())
+  userId             String       @unique
   position           String
-  hourlyRateCents    Int
-  overtimeMultiplier Decimal  @default(1.25) @db.Decimal(3, 2)
+  hourlyRate         Int
+  overtimeMultiplier Decimal      @default(1.25) @db.Decimal(3, 2)
   hiredAt            DateTime
   emergencyContact   String?
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   shifts             Shift[]
   attendances        Attendance[]
   absences           Absence[]
   deliveries         Delivery[]
+
+  @@index([tenantId])
 }
 
 model Shift {
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id          String       @id @default(uuid())
   staffId     String
   startsAt    DateTime
@@ -556,9 +686,12 @@ model Shift {
   attendances Attendance[]
 
   @@index([staffId, startsAt])
+  @@index([tenantId])
 }
 
 model Attendance {
+  tenantId     String
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id           String       @id @default(uuid())
   staffId      String
   shiftId      String?
@@ -569,9 +702,12 @@ model Attendance {
   shift        Shift?       @relation(fields: [shiftId], references: [id])
 
   @@index([staffId, clockIn])
+  @@index([tenantId])
 }
 
 model Absence {
+  tenantId String
+  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id       String       @id @default(uuid())
   staffId  String
   type     AbsenceType
@@ -579,27 +715,38 @@ model Absence {
   to       DateTime
   approved Boolean      @default(false)
   staff    StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 // ───────── MESSAGERIE ─────────
 model Channel {
+  tenantId String
+  tenant   Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id       String          @id @default(uuid())
   name     String?
   isDirect Boolean         @default(false)
   members  ChannelMember[]
   messages Message[]
+
+  @@index([tenantId])
 }
 
 model ChannelMember {
+  tenantId   String
+  tenant     Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   channelId  String
   userId     String
   lastReadAt DateTime?
   channel    Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   @@id([channelId, userId])
+  @@index([tenantId])
 }
 
 model Message {
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id        String   @id @default(uuid())
   channelId String
   senderId  String
@@ -609,10 +756,13 @@ model Message {
   sender    User     @relation(fields: [senderId], references: [id])
 
   @@index([channelId, createdAt])
+  @@index([tenantId])
 }
 
 // ───────── AVIS, AUDIT, PARAMÈTRES ─────────
 model Feedback {
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id         String   @id @default(uuid())
   orderId    String   @unique
   customerId String
@@ -621,9 +771,13 @@ model Feedback {
   createdAt  DateTime @default(now())
   order      Order    @relation(fields: [orderId], references: [id])
   customer   User     @relation(fields: [customerId], references: [id])
+
+  @@index([tenantId])
 }
 
 model AuditLog {
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id        String   @id @default(uuid())
   userId    String?
   action    String
@@ -636,9 +790,240 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([createdAt])
+  @@index([tenantId])
 }
 
 model Setting {
-  key   String @id
-  value Json
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key      String
+  value    Json
+
+  @@id([tenantId, key])
+  @@index([tenantId])
+}
+
+// ═════════════════════════════════════════════════════════════
+//  PLATEFORME SaaS (espace SuperAdmin) — hors périmètre tenant
+// ═════════════════════════════════════════════════════════════
+enum PlatformRole {
+  SUPER_ADMIN
+  SUPPORT
+}
+
+enum TenantStatus {
+  PENDING // inscription en attente de validation
+  TRIAL // essai gratuit en cours
+  ACTIVE // licence payée et valide
+  SUSPENDED // licence expirée / suspendu par le SuperAdmin
+  CANCELLED
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  GRACE // expirée, période de grâce
+  EXPIRED
+  CANCELLED
+}
+
+enum PlatformPaymentMethod {
+  CASH
+  CARD
+  FLOOZ
+  TMONEY
+}
+
+enum PaymentRecordStatus {
+  RECORDED
+  VOIDED // annulé par le SuperAdmin (erreur de saisie)
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model PlatformUser {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         PlatformRole @default(SUPER_ADMIN)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+
+  refreshTokens   RefreshToken[]
+  passwordResets  PasswordReset[]
+  licensePayments SubscriptionPayment[]
+  registrations   TenantRegistration[]
+  auditLogs       PlatformAuditLog[]
+}
+
+model Plan {
+  id           String  @id @default(uuid())
+  code         String  @unique
+  name         String
+  description  String?
+  priceMonthly Int // FCFA
+  priceYearly  Int // FCFA
+  trialDays    Int     @default(14)
+  maxUsers     Int? // null = illimité
+  maxTables    Int?
+  features     Json    @default("{}") // modules activés : {"inventory":true,"delivery":false,...}
+  isActive     Boolean @default(true)
+  sortOrder    Int     @default(0)
+
+  subscriptions Subscription[]
+}
+
+model Tenant {
+  id              String       @id @default(uuid())
+  name            String
+  slug            String       @unique // sous-domaine : slug.monapp.com
+  status          TenantStatus @default(PENDING)
+  email           String
+  phone           String?
+  address         String?
+  logoUrl         String?
+  currency        String       @default("XOF")
+  timezone        String       @default("Africa/Lome")
+  locale          String       @default("fr")
+  nextOrderNumber Int          @default(1) // numérotation des commandes par tenant
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  subscriptions      Subscription[]
+  licensePayments    SubscriptionPayment[]
+  registration       TenantRegistration?
+  users              User[]
+  floorPlans         FloorPlan[]
+  restaurantTables   RestaurantTable[]
+  reservations       Reservation[]
+  reservationTables  ReservationTable[]
+  waitlistEntrys     WaitlistEntry[]
+  openingHourss      OpeningHours[]
+  categorys          Category[]
+  menuItems          MenuItem[]
+  menuItemAllergens  MenuItemAllergen[]
+  optionGroups       OptionGroup[]
+  options            Option[]
+  formulas           Formula[]
+  formulaItems       FormulaItem[]
+  orders             Order[]
+  orderItems         OrderItem[]
+  orderItemOptions   OrderItemOption[]
+  payments           Payment[]
+  paymentAllocations PaymentAllocation[]
+  registerSessions   RegisterSession[]
+  deliveryZones      DeliveryZone[]
+  deliverys          Delivery[]
+  ingredients        Ingredient[]
+  recipeLines        RecipeLine[]
+  stockMovements     StockMovement[]
+  wasteRecords       WasteRecord[]
+  suppliers          Supplier[]
+  purchaseOrders     PurchaseOrder[]
+  purchaseOrderLines PurchaseOrderLine[]
+  staffProfiles      StaffProfile[]
+  shifts             Shift[]
+  attendances        Attendance[]
+  absences           Absence[]
+  channels           Channel[]
+  channelMembers     ChannelMember[]
+  messages           Message[]
+  feedbacks          Feedback[]
+  auditLogs          AuditLog[]
+  settings           Setting[]
+}
+
+model TenantRegistration {
+  id              String             @id @default(uuid())
+  restaurantName  String
+  slug            String
+  ownerFirstName  String
+  ownerLastName   String
+  email           String
+  phone           String?
+  passwordHash    String
+  planId          String?
+  status          RegistrationStatus @default(PENDING)
+  rejectionReason String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  tenantId        String?            @unique
+  createdAt       DateTime           @default(now())
+
+  reviewedBy PlatformUser? @relation(fields: [reviewedById], references: [id])
+  tenant     Tenant?       @relation(fields: [tenantId], references: [id])
+
+  @@index([status, createdAt])
+}
+
+model Subscription {
+  id               String             @id @default(uuid())
+  tenantId         String
+  planId           String
+  status           SubscriptionStatus
+  billingCycle     BillingCycle
+  startsAt         DateTime
+  currentPeriodEnd DateTime
+  trialEndsAt      DateTime?
+  graceEndsAt      DateTime? // fin de la période de grâce (ex. +7 jours)
+  cancelledAt      DateTime?
+  reminderSentAt   DateTime?
+  createdAt        DateTime           @default(now())
+
+  tenant          Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan            Plan                  @relation(fields: [planId], references: [id])
+  licensePayments SubscriptionPayment[]
+
+  @@index([tenantId, status])
+  @@index([currentPeriodEnd])
+}
+
+model SubscriptionPayment {
+  id             String                @id @default(uuid())
+  tenantId       String
+  subscriptionId String
+  method         PlatformPaymentMethod
+  amount         Int // FCFA
+  currency       String                @default("XOF")
+  billingCycle   BillingCycle
+  periodStart    DateTime
+  periodEnd      DateTime
+  paidAt         DateTime
+  reference      String? // n° transaction Flooz / TMoney / carte
+  receiptNumber  String                @unique // ex. REC-2026-000123
+  notes          String?
+  status         PaymentRecordStatus   @default(RECORDED)
+  recordedById   String
+  createdAt      DateTime              @default(now())
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id])
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+  recordedBy   PlatformUser @relation(fields: [recordedById], references: [id])
+
+  @@index([tenantId, paidAt])
+  @@index([paidAt])
+}
+
+model PlatformAuditLog {
+  id        String        @id @default(uuid())
+  actorId   String?
+  action    String // "tenant.suspend", "payment.record"…
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime      @default(now())
+  actor     PlatformUser? @relation(fields: [actorId], references: [id])
+
+  @@index([entity, entityId])
 }
