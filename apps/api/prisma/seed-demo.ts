@@ -1,8 +1,9 @@
 /**
- * Données de démonstration pour un restaurant existant (développement uniquement) :
- * carte togolaise, tables, équipe (gérant, serveur, cuisine).
- *   pnpm --filter api seed:demo -- <slug>
+ * Données de démonstration (développement uniquement) : carte togolaise, tables, équipe (gérant, serveur, cuisine).
+ *   pnpm --filter api seed:demo -- <slug>            restaurant existant
+ *   pnpm --filter api seed:demo -- <slug> --create   crée aussi le restaurant (admin + essai sur le plan PRO)
  * Mot de passe des comptes créés : DEMO_PASSWORD (défaut « Demo-Resto-2026 »).
+ * Comptes : admin|manager|waiter|kitchen@<slug>.demo. Idempotent : relançable sans doublons.
  */
 import { PrismaClient } from "@prisma/client";
 import * as argon2 from "argon2";
@@ -39,11 +40,13 @@ const MENU: { category: string; items: { name: string; price: number; descriptio
 
 async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("seed-demo est réservé au développement");
-  const slug = process.argv.slice(2).find((a) => a !== "--");
-  if (!slug) throw new Error("Usage : seed:demo -- <slug du restaurant>");
-  const tenant = await prisma.tenant.findUnique({ where: { slug } });
-  if (!tenant) throw new Error(`Restaurant « ${slug} » introuvable`);
+  const args = process.argv.slice(2).filter((a) => a !== "--");
+  const slug = args.find((a) => !a.startsWith("--"));
+  if (!slug) throw new Error("Usage : seed:demo -- <slug du restaurant> [--create]");
   const password = process.env.DEMO_PASSWORD ?? "Demo-Resto-2026";
+  let tenant = await prisma.tenant.findUnique({ where: { slug } });
+  if (!tenant && args.includes("--create")) tenant = await createTenant(slug, password);
+  if (!tenant) throw new Error(`Restaurant « ${slug} » introuvable (ajoutez --create pour le créer)`);
 
   await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenant.id}, true)`;
@@ -51,7 +54,7 @@ async function main() {
 
     // Équipe
     const hash = await argon2.hash(password);
-    for (const [role, first] of [["MANAGER", "Gérant"], ["WAITER", "Serveur"], ["KITCHEN", "Cuisine"]] as const) {
+    for (const [role, first] of [["ADMIN", "Admin"], ["MANAGER", "Gérant"], ["WAITER", "Serveur"], ["KITCHEN", "Cuisine"]] as const) {
       const email = `${role.toLowerCase()}@${slug}.demo`;
       await tx.user.upsert({
         where: { tenantId_email: { tenantId, email } }, update: {},
@@ -88,7 +91,25 @@ async function main() {
       }
     }
   });
-  console.log(`Démo prête pour « ${slug} » : 8 tables, ${MENU.reduce((n, c) => n + c.items.length, 0)} plats, comptes manager|waiter|kitchen@${slug}.demo`);
+  console.log(`Démo prête pour « ${slug} » : 8 tables, ${MENU.reduce((n, c) => n + c.items.length, 0)} plats, comptes admin|manager|waiter|kitchen@${slug}.demo`);
+}
+
+/** Restaurant de démonstration en essai sur le plan PRO (lancer `pnpm db:seed` avant pour avoir les plans). */
+async function createTenant(slug: string, password: string) {
+  const plan = (await prisma.plan.findUnique({ where: { code: "PRO" } })) ?? (await prisma.plan.findFirst({ where: { isActive: true } }));
+  if (!plan) throw new Error("Aucun plan : lancez d'abord `pnpm db:seed`");
+  const now = new Date();
+  const trialEnd = new Date(now.getTime() + plan.trialDays * 86_400_000);
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', true)`;
+    const tenant = await tx.tenant.create({
+      data: { name: `Démo ${slug}`, slug, email: `contact@${slug}.demo`, status: "TRIAL", address: "Lomé, Togo" },
+    });
+    await tx.subscription.create({
+      data: { tenantId: tenant.id, planId: plan.id, status: "TRIALING", billingCycle: "MONTHLY", startsAt: now, trialEndsAt: trialEnd, currentPeriodEnd: trialEnd },
+    });
+    return tenant;
+  });
 }
 
 main().finally(() => prisma.$disconnect());

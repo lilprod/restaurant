@@ -8,3 +8,4 @@ coverage
 .expo
 *.log
 uploads
+.dev-pids

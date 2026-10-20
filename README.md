@@ -37,6 +37,10 @@ pnpm --filter web dev                                    # http://localhost:5173
 - Espace SuperAdmin : `/admin` · Espace restaurant : `/r/<slug>` (en production, via le sous-domaine) · Inscription : `/inscription`.
 - Design : skill `.claude/skills/vercel-design` (Geist, clair/sombre, thème du restaurant appliqué automatiquement).
 
+## Travail avec des agents
+Consignes communes : `CLAUDE.md` et `docs/agents/` (conventions, guides backend/frontend, vérification, orchestration, fiches de sous-projets).
+Environnement en une commande : `bash scripts/dev/setup-db.sh`, puis `bash scripts/dev/start.sh`.
+
 ## Structure
 Voir `docs/ARCHITECTURE.md`. Schéma de données : `apps/api/prisma/schema.prisma`.
 
