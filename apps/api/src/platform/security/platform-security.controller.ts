@@ -16,6 +16,7 @@ const eventsQuery = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(50),
   result: z.enum(["SUCCESS", "BAD_PASSWORD", "UNKNOWN_ACCOUNT", "LOCKED", "TWO_FACTOR_FAILED", "TWO_FACTOR_REQUIRED", "LICENSE_BLOCKED", "ACCOUNT_DISABLED"]).optional(),
 });
+const activeSchema = z.object({ isActive: z.boolean() });
 type EventsQuery = z.infer<typeof eventsQuery>;
 
 /** Journal de connexion de toute la plateforme (détection d'attaques, support). */
@@ -88,6 +89,13 @@ export class TenantAdminController {
   @Post("security/users/:userId/reset-password") @HttpCode(200) @PlatformRoles("SUPER_ADMIN")
   reset(@Param("tenantId", ParseUUIDPipe) t: string, @Param("userId", ParseUUIDPipe) id: string, @CurrentPlatformUser() u: PlatformPrincipal) {
     return this.admin.resetPassword("tenant", t, id, this.actor(u));
+  }
+  @Patch("security/users/:userId/active") @PlatformRoles("SUPER_ADMIN")
+  setActive(
+    @Param("tenantId", ParseUUIDPipe) t: string, @Param("userId", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(activeSchema)) body: { isActive: boolean }, @CurrentPlatformUser() u: PlatformPrincipal,
+  ) {
+    return this.admin.setActive("tenant", t, id, body.isActive, this.actor(u));
   }
   @Post("security/users/:userId/unlock") @HttpCode(200) @PlatformRoles("SUPER_ADMIN")
   unlock(@Param("tenantId", ParseUUIDPipe) t: string, @Param("userId", ParseUUIDPipe) id: string, @CurrentPlatformUser() u: PlatformPrincipal) {

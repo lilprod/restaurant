@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from "@nestjs/common
 import { Prisma } from "@prisma/client";
 import type { CategoryInput, MenuItemInput } from "@restaurant/validation";
 import { PrismaService, Tx } from "../prisma/prisma.service";
+import { RealtimeService } from "../realtime/realtime.service";
 import { LicenseGateService } from "../security/license-gate.service";
 import { TenantSettingsService } from "../settings/tenant-settings.service";
 import { ASSET_RULES, validateImage } from "../storage/image-validation";
@@ -33,7 +34,18 @@ export class MenuService {
     private readonly settings: TenantSettingsService,
     private readonly storage: StorageService,
     private readonly gate: LicenseGateService,
+    private readonly realtime: RealtimeService,
   ) {}
+
+  /** Diffuse `menu.updated` (charge utile = `menuItemView`) une fois la transaction terminée. */
+  private broadcast<T>(tenantId: string, view: T): T {
+    this.realtime.emit(tenantId, "menu.updated", view);
+    return view;
+  }
+
+  private async viewOf(tenantId: string, id: string) {
+    return this.prisma.asTenant(tenantId, async (tx) => menuItemView(await tx.menuItem.findUniqueOrThrow({ where: { id }, include: itemInclude })));
+  }
 
   allergens() {
     return this.prisma.allergen.findMany({ orderBy: { name: "asc" }, select: { code: true, name: true } });
@@ -118,7 +130,7 @@ export class MenuService {
   // ── Plats ──
   async createItem(tenantId: string, input: MenuItemInput) {
     const vatRate = input.vatRate ?? (await this.defaultVat(tenantId));
-    return this.prisma.asTenant(tenantId, async (tx) => {
+    const view = await this.prisma.asTenant(tenantId, async (tx) => {
       await this.category(tx, tenantId, input.categoryId);
       const item = await tx.menuItem.create({
         data: {
@@ -129,10 +141,11 @@ export class MenuService {
       await this.writeRelations(tx, tenantId, item.id, input.allergenCodes, input.optionGroups);
       return menuItemView(await tx.menuItem.findUniqueOrThrow({ where: { id: item.id }, include: itemInclude }));
     });
+    return this.broadcast(tenantId, view);
   }
 
   async updateItem(tenantId: string, id: string, patch: Partial<MenuItemInput>) {
-    return this.prisma.asTenant(tenantId, async (tx) => {
+    const view = await this.prisma.asTenant(tenantId, async (tx) => {
       await this.item(tx, tenantId, id);
       if (patch.categoryId) await this.category(tx, tenantId, patch.categoryId);
       const { allergenCodes, optionGroups, ...fields } = patch;
@@ -140,14 +153,16 @@ export class MenuService {
       await this.writeRelations(tx, tenantId, id, allergenCodes, optionGroups);
       return menuItemView(await tx.menuItem.findUniqueOrThrow({ where: { id }, include: itemInclude }));
     });
+    return this.broadcast(tenantId, view);
   }
 
   /** Disponibilité (« épuisé ») : la cuisine peut la changer en plein service. */
   async setAvailability(tenantId: string, id: string, isAvailable: boolean) {
-    return this.prisma.asTenant(tenantId, async (tx) => {
+    const view = await this.prisma.asTenant(tenantId, async (tx) => {
       await this.item(tx, tenantId, id);
       return menuItemView(await tx.menuItem.update({ where: { id }, data: { isAvailable }, include: itemInclude }));
     });
+    return this.broadcast(tenantId, view);
   }
 
   /** Un plat déjà commandé est retiré de la carte (historique conservé), sinon supprimé. */
@@ -155,12 +170,14 @@ export class MenuService {
     const item = await this.prisma.asTenant(tenantId, async (tx) => {
       const i = await this.item(tx, tenantId, id);
       if (await tx.orderItem.count({ where: { menuItemId: id } })) {
-        await tx.menuItem.update({ where: { id }, data: { archivedAt: new Date(), isAvailable: false } });
-        return { ...i, archived: true };
+        const row = await tx.menuItem.update({ where: { id }, data: { archivedAt: new Date(), isAvailable: false }, include: itemInclude });
+        return { ...i, archived: true, view: menuItemView(row) };
       }
       await tx.menuItem.delete({ where: { id } });
-      return { ...i, archived: false };
+      return { ...i, archived: false, view: null };
     });
+    // Plat retiré de la carte : `archived: true` ; plat supprimé : `{ id, deleted: true }`.
+    this.realtime.emit(tenantId, "menu.updated", item.view ?? { id, deleted: true });
     if (!item.archived) await this.storage.remove(item.imageUrl);
     return item.archived ? { archived: true } : { deleted: true };
   }
@@ -171,6 +188,7 @@ export class MenuService {
     const url = await this.storage.save(`tenants/${tenantId}/menu`, "plat", file!.buffer, type);
     await this.prisma.asTenant(tenantId, (tx) => tx.menuItem.update({ where: { id }, data: { imageUrl: url } }));
     await this.storage.remove(prev.imageUrl);
+    this.broadcast(tenantId, await this.viewOf(tenantId, id));
     return { imageUrl: url };
   }
 
@@ -181,6 +199,7 @@ export class MenuService {
       return i;
     });
     await this.storage.remove(prev.imageUrl);
+    this.broadcast(tenantId, await this.viewOf(tenantId, id));
   }
 
   private async item(tx: Tx, tenantId: string, id: string) {

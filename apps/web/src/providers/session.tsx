@@ -91,7 +91,10 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
 
   // Événements globaux du client : fin de session, restriction, licence bloquée
   React.useEffect(() => client.subscribe((ev) => {
-    if (ev.type === "session-ended") {
+    if (ev.type === "license") {
+      writeLicense(licenseStorageKey, ev.license);
+      setState((s) => ({ ...s, license: ev.license }));
+    } else if (ev.type === "session-ended") {
       const wasIn = statusRef.current === "authenticated";
       qc.removeQueries({ queryKey: [...queryKey] });
       setState((s) => ({ ...s, status: "anonymous", user: null, restriction: null }));
@@ -101,7 +104,7 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
       if (e.isRestricted && e.restriction) setState((s) => ({ ...s, restriction: e.restriction ?? s.restriction }));
       else if (e.isLicenseBlocked && space === "tenant") setState((s) => ({ ...s, blocked: e }));
     }
-  }), [client, qc, queryKey, space]);
+  }), [client, qc, queryKey, space, licenseStorageKey]);
 
   const completeLogin = React.useCallback(async (res: LoginSuccess) => {
     client.setSession(res);

@@ -235,6 +235,10 @@ describe("Phase 1 : menu, commandes, cuisine, encaissement (e2e)", () => {
       expect(added.body.total).toBe(12500);
       const fufu = added.body.items.find((i: { name: string }) => i.name === "Fufu sauce arachide").id;
       expect((await api().patch(`${V}/tenant/orders/${ids.order1}/items/${fufu}`).set(as("waiter")).send({ quantity: 2 })).body.total).toBe(15500);
+      const noted = await api().patch(`${V}/tenant/orders/${ids.order1}/items/${fufu}`).set(as("waiter")).send({ instructions: "Sans piment" });
+      expect(noted.body.items.find((i: { id: string }) => i.id === fufu).instructions).toBe("Sans piment");
+      const cleared = await api().patch(`${V}/tenant/orders/${ids.order1}/items/${fufu}`).set(as("waiter")).send({ instructions: "" });
+      expect(cleared.body.items.find((i: { id: string }) => i.id === fufu).instructions).toBeNull();   // consignes effacées
       const cancelled = await api().post(`${V}/tenant/orders/${ids.order1}/items/${fufu}/cancel`).set(as("waiter")).send({ reason: "Erreur de saisie" });
       expect(cancelled.body.total).toBe(9500);
       expect(cancelled.body.status).toBe("DELIVERED");
@@ -386,6 +390,52 @@ describe("Phase 1 : menu, commandes, cuisine, encaissement (e2e)", () => {
       await own;
       await new Promise((r) => setTimeout(r, 200));
       expect(leaked).toBe(false);
+    });
+  });
+
+  // ───────────── X0 : événements menu.updated / table.updated ─────────────
+  describe("événements menu.updated et table.updated", () => {
+    it("diffuse disponibilité, création, modification et archivage d'un plat, sans fuite vers un autre restaurant", async () => {
+      const other = await tenantLogin("voisin", "admin@voisin.tg");
+      const spy = await connect(other);
+      let leaked = 0;
+      spy.socket.on("menu.updated", () => { leaked++; });
+      spy.socket.on("table.updated", () => { leaked++; });
+      const kitchen = (await connect(tok.kitchen)).socket;
+
+      const off = next(kitchen, "menu.updated", (p: any) => p.id === ids.bissap && p.isAvailable === false);
+      expect((await api().patch(`${V}/tenant/menu/items/${ids.bissap}/availability`).set(as("kitchen")).send({ isAvailable: false })).status).toBe(200);
+      expect((await off).optionGroups).toBeDefined();   // charge utile = menuItemView
+
+      const cats = (await api().get(`${V}/tenant/menu`).set(as("manager"))).body;
+      const created = next(kitchen, "menu.updated", (p: any) => p.name === "Brochettes");
+      const item = await api().post(`${V}/tenant/menu/items`).set(as("manager")).send({ categoryId: cats[0].id, name: "Brochettes", price: 1500 });
+      expect(item.status).toBe(201);
+      expect((await created).id).toBe(item.body.id);
+      const edited = next(kitchen, "menu.updated", (p: { id: string; price?: number }) => p.id === item.body.id && p.price === 1800);
+      await api().patch(`${V}/tenant/menu/items/${item.body.id}`).set(as("manager")).send({ price: 1800 });
+      await edited;
+      const gone = next(kitchen, "menu.updated", (p: { id: string; deleted?: boolean }) => p.id === item.body.id && p.deleted === true);
+      expect((await api().delete(`${V}/tenant/menu/items/${item.body.id}`).set(as("manager"))).status).toBe(200);
+      await gone;
+      await api().patch(`${V}/tenant/menu/items/${ids.bissap}/availability`).set(as("kitchen")).send({ isAvailable: true });
+
+      // table : le statut suit les commandes (ouverture -> OCCUPIED), et les modifications sont diffusées
+      const tables = (await api().get(`${V}/tenant/tables`).set(as("waiter"))).body as { id: string; status: string; openOrders: unknown[] }[];
+      const free = tables.find((t) => t.openOrders.length === 0);
+      expect(free).toBeDefined();
+      if (free) {
+        ids.T2 = free.id;
+        const occupied = next(kitchen, "table.updated", (p: any) => p.id === free.id && p.status === "OCCUPIED");
+        expect((await api().post(`${V}/tenant/orders`).set(as("waiter")).send({ type: "DINE_IN", tableId: free.id, items: [{ menuItemId: ids.fufu, quantity: 1 }] })).status).toBe(201);
+        expect(Array.isArray((await occupied).openOrders)).toBe(true);
+      }
+      const renamed = next(kitchen, "table.updated", (p: { id: string; capacity: number }) => p.id === ids.T2 && p.capacity === 6);
+      await api().patch(`${V}/tenant/tables/${ids.T2}`).set(as("manager")).send({ capacity: 6 });
+      await renamed;
+
+      await new Promise((r) => setTimeout(r, 200));
+      expect(leaked).toBe(0);
     });
   });
 });

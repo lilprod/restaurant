@@ -1,6 +1,6 @@
 # API — Plateforme SaaS (espace SuperAdmin)
 
-Base : `/api/v1` · Documentation interactive (Swagger) : `/api/docs` · Montants en **FCFA** (entiers).
+Base : `/api/v1` · Documentation interactive (Swagger) : `/api/docs` (corps et paramètres de requête générés depuis les schémas Zod partagés) · Montants en **FCFA** (entiers).
 Authentification : `Authorization: Bearer <accessToken>` (15 min) + refresh token à rotation (30 j).
 Rôles plateforme : `SUPER_ADMIN` (lecture + écriture), `SUPPORT` (lecture seule).
 
@@ -66,6 +66,11 @@ Les jetons ne sont pas interchangeables : un jeton plateforme est refusé côté
 | POST | `.../auth/forgot-password` · `.../auth/reset-password` | Lien envoyé par email (1 h, usage unique) ; réponse identique que le compte existe ou non |
 
 Réponse de connexion : `{accessToken, refreshToken, user, restriction, license}`.
+Le rafraîchissement renvoie `{accessToken, refreshToken, expiresIn, license}` (côté restaurant : `license = {status, inGrace, currentPeriodEnd}`,
+comme à la connexion) : le bandeau de période de grâce n'attend pas une nouvelle connexion.
+
+**Limitation de débit** (`429`) sur `login` et `2fa/verify` : **10 par minute et par couple IP + email** (ou défi 2FA) **et 60 par minute par IP**
+(une équipe derrière le même réseau n'est donc pas bloquée par un seul compte fautif). Autres routes : 120/min par IP.
 
 - `restriction` vaut `"pwd-change"` (mot de passe temporaire ou expiré) ou `"2fa-setup"` (2FA obligatoire pour ce rôle) :
   la session ne peut alors appeler que les routes « Mon compte » ; les autres répondent `403 {code: "RESTRICTED_SESSION"}`.
@@ -105,6 +110,8 @@ La réinitialisation renvoie un **mot de passe temporaire** (une seule fois) que
 - `/platform/security/login-events` : connexions de toute la plateforme.
 - `/platform/tenants/:id/settings[/:section]`, `/assets/:kind`, `/security/users/...`, `/security/login-events` : intervenir sur un restaurant.
   Lecture ouverte au Support ; modifications, envois de fichiers et actions sur les comptes réservés au SuperAdmin.
+  `PATCH /platform/tenants/:tenantId/security/users/:userId/active {isActive}` (SuperAdmin) : active / désactive un compte du restaurant
+  (la désactivation ferme ses sessions ; audit `security.activate|deactivate`) ; 404 si le compte est d'un autre restaurant.
 
 ## Politique de sécurité (modifiable par espace)
 | Réglage | Plage | Défaut restaurant / plateforme |
@@ -155,7 +162,7 @@ Carte publique : `GET /public/tenants/:slug/menu` (catégories actives, plats di
 | POST | `/` | salle | `{type: DINE_IN\|TAKEAWAY, tableId?, customerName?, notes?, items[{menuItemId, quantity, optionIds[], instructions?, course?}]}` |
 | GET | `/:id` · `/:id/receipt` | personnel · salle | Détail · ticket (identité du restaurant, TVA par taux, paiements) |
 | POST | `/:id/items` | salle | Ajouter des articles (commande ouverte) |
-| PATCH | `/:id/items/:itemId` | salle | Quantité / instructions (article encore en attente et non encaissé) |
+| PATCH | `/:id/items/:itemId` | salle | Quantité / instructions (`""` efface les consignes) (article encore en attente et non encaissé) |
 | POST | `/:id/items/:itemId/status` | cuisine ou salle | `PENDING → IN_PROGRESS → READY` (cuisine, retour d'un cran possible) · `READY → SERVED` (salle) |
 | POST | `/:id/advance` | cuisine ou salle | Tous les articles éligibles : `IN_PROGRESS`, `READY` (cuisine) ou `SERVED` (salle) |
 | POST | `/:id/items/:itemId/cancel` | salle | `{reason}` ; article déjà lancé : responsables seulement ; article encaissé : refusé |
@@ -173,7 +180,12 @@ Carte publique : `GET /public/tenants/:slug/menu` (catégories actives, plats di
 `GET /tenant/kitchen` : commandes ouvertes avec des articles en attente, en préparation ou prêts (les plus anciennes d'abord).
 Socket.io, espace de noms **`/realtime`** (chemin `/socket.io`, hors préfixe `/api/v1`) :
 `io(API_URL + "/realtime", { auth: { token: accessToken } })` → `ready` ou `auth_error` puis déconnexion.
-Événements diffusés au restaurant : **`order.created`**, **`order.updated`** (commande complète, même forme que l'API).
+Événements diffusés au restaurant (charge utile = même forme que l'API, émis après la transaction) :
+- **`order.created`**, **`order.updated`** : commande complète.
+- **`menu.updated`** : plat (`menuItemView`) créé, modifié, rendu (in)disponible, photo changée ou archivé (`archived: true`) ;
+  `{ id, deleted: true }` pour un plat supprimé.
+- **`table.updated`** : table au format de `GET /tenant/tables` (création, modification, statut — y compris le passage `OCCUPIED`/`FREE` dû aux commandes —,
+  désactivation) ; `{ id, deleted: true }` pour une table supprimée.
 Les contrôles sont ceux de l'API (jeton, session, compte actif, licence).
 
 ## Caisse — `/tenant/register`

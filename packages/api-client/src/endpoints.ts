@@ -117,6 +117,8 @@ export function platformApi(c: ApiClient) {
       loginEvents: (id: string, q: LoginEventsQuery = {}) => c.get<LoginEvent[]>(`${tenantAdmin(id)}/security/login-events`, { query: { ...q } }),
       userAction: (id: string, userId: string, action: "reset-password" | "unlock" | "disable-2fa" | "revoke-sessions") =>
         c.post<{ temporaryPassword?: string; ok?: boolean; revoked?: number }>(`${tenantAdmin(id)}/security/users/${enc(userId)}/${action}`),
+      setUserActive: (id: string, userId: string, isActive: boolean) =>
+        c.patch<{ ok: true; isActive: boolean }>(`${tenantAdmin(id)}/security/users/${enc(userId)}/active`, { isActive }),
     },
 
     registrations: {

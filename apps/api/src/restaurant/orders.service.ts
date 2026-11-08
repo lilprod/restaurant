@@ -117,6 +117,7 @@ export class OrdersService {
     const tenantId = acc.tenantId!;
     const ops = await this.ops(tenantId);
     if (input.type === "TAKEAWAY" && !ops.takeawayEnabled) throw new ConflictException("La vente à emporter est désactivée dans les paramètres");
+    let tableChanged = false;
     const view = await this.prisma.asTenant(tenantId, async (tx) => {
       if (input.tableId) {
         const table = await tx.restaurantTable.findFirst({ where: { id: input.tableId, tenantId, isActive: true } });
@@ -132,10 +133,11 @@ export class OrdersService {
       });
       await this.insertLines(tx, tenantId, order.id, lines);
       await this.recompute(tx, order.id, ops);
-      await this.tables.syncStatus(tx, order.tableId);
+      tableChanged = await this.tables.syncStatus(tx, order.tableId);
       return orderView(await this.load(tx, tenantId, order.id));
     });
     this.realtime.emit(tenantId, "order.created", view);
+    if (tableChanged) await this.tables.broadcast(tenantId, view.table!.id);
     return view;
   }
 
@@ -155,7 +157,7 @@ export class OrdersService {
       const quantity = patch.quantity ?? item.quantity;
       await tx.orderItem.update({
         where: { id: itemId },
-        data: { quantity, instructions: patch.instructions ?? item.instructions, lineTotal: lineTotal(item.unitPrice, item.optionsExtra, quantity) },
+        data: { quantity, instructions: patch.instructions === undefined ? item.instructions : patch.instructions || null, lineTotal: lineTotal(item.unitPrice, item.optionsExtra, quantity) },
       });
     });
   }
@@ -302,15 +304,17 @@ export class OrdersService {
   private async mutate(acc: Account, orderId: string, fn: (tx: Tx, o: OrderRow, tenantId: string) => Promise<void>) {
     const tenantId = acc.tenantId!;
     const ops = await this.ops(tenantId);
+    let tableChanged = false;
     const view = await this.prisma.asTenant(tenantId, async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} AND "tenantId" = ${tenantId} FOR UPDATE`;
       const o = await this.load(tx, tenantId, orderId);
       await fn(tx, o, tenantId);
       await this.recompute(tx, o.id, ops);
-      await this.tables.syncStatus(tx, o.tableId);
+      tableChanged = await this.tables.syncStatus(tx, o.tableId);
       return orderView(await this.load(tx, tenantId, o.id));
     });
     this.realtime.emit(tenantId, "order.updated", view);
+    if (tableChanged && view.table) await this.tables.broadcast(tenantId, view.table.id);
     return view;
   }
 

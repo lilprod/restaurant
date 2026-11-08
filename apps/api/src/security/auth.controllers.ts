@@ -7,6 +7,7 @@ import {
   changePasswordSchema, forgotPasswordSchema, loginSchema, passwordConfirmSchema, profileUpdateSchema,
   refreshSchema, resetPasswordSchema, tenantLoginSchema, twoFactorEnableSchema, twoFactorVerifySchema,
 } from "@restaurant/validation";
+import { LoginThrottle } from "../common/throttling";
 import { Meta, RequestMeta } from "../common/request-meta";
 import { ZodPipe } from "../common/zod.pipe";
 import { Account, Space } from "./accounts.repo";
@@ -23,12 +24,12 @@ export function createAuthController(space: Space, prefix: string, tag: string):
   class SpaceAuthController {
     constructor(@Inject(AuthService) private readonly auth: AuthService) {}
 
-    @Post("login") @HttpCode(200) @Throttle({ default: { limit: 10, ttl: 60_000 } })
+    @Post("login") @HttpCode(200) @LoginThrottle()
     login(@Body(new ZodPipe(eq(space))) body: { email: string; password: string; tenantSlug?: string }, @Meta() meta: RequestMeta) {
       return this.auth.login(space, body, meta);
     }
 
-    @Post("2fa/verify") @HttpCode(200) @Throttle({ default: { limit: 10, ttl: 60_000 } })
+    @Post("2fa/verify") @HttpCode(200) @LoginThrottle()
     verify2fa(@Body(new ZodPipe(twoFactorVerifySchema)) body: { challengeToken: string; code: string }, @Meta() meta: RequestMeta) {
       return this.auth.verifyTwoFactor(body.challengeToken, body.code, meta);
     }
@@ -55,6 +56,8 @@ export function createAuthController(space: Space, prefix: string, tag: string):
       return { ok: true };
     }
   }
+  // Nom distinct par espace : le limiteur de débit dérive ses clés du nom de classe.
+  Object.defineProperty(SpaceAuthController, "name", { value: `${space}AuthController` });
   return SpaceAuthController;
 }
 

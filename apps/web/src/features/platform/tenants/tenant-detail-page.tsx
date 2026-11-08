@@ -309,6 +309,7 @@ function TenantUsers({ tenantId, canWrite }: { tenantId: string; canWrite: boole
         key: pk.tenantUsers(tenantId),
         list: () => papi.tenants.users(tenantId),
         action: (uid, a) => papi.tenants.userAction(tenantId, uid, a),
+        setActive: canWrite ? (uid, v) => papi.tenants.setUserActive(tenantId, uid, v) : undefined,
         canWrite,
         roleLabels: TENANT_ROLE_LABEL,
       }} />

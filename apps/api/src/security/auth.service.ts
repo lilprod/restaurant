@@ -129,8 +129,11 @@ export class AuthService {
 
     const acc = await this.repo.findById(space, (row.platformUserId ?? row.userId)!, row.tenantId);
     if (!acc || !acc.isActive) throw fail();
-    if (acc.tenantId) await this.gate.assertAccess(acc.tenantId);
-    return { accessToken: await this.sessions.signAccess(acc, row.id), refreshToken: next, expiresIn: 900 };
+    const license = acc.tenantId ? await this.gate.assertAccess(acc.tenantId) : undefined;
+    return {
+      accessToken: await this.sessions.signAccess(acc, row.id), refreshToken: next, expiresIn: 900,
+      license: license && { status: license.status, inGrace: license.inGrace, currentPeriodEnd: license.currentPeriodEnd },
+    };
   }
 
   logout(refreshToken: string) {

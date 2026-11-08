@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { API_BASE, getTenantSpace } from "@/app/spaces";
 import { RealtimeConnection, realtimeOrigin, type RealtimeStatus } from "@/lib/realtime/connection";
+import { applyMenuEvent, applyTableEvent, type MenuEvent, type TableEvent } from "@/lib/realtime/catalog-cache";
 import { applyOrderEvent, resyncServiceQueries } from "@/lib/realtime/order-cache";
 import { tenantKeys } from "@/lib/tenant-keys";
 import { useSession } from "./session";
@@ -52,9 +53,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           for (const l of [...listeners.current]) l(event, order);
         },
         onResync: () => resyncServiceQueries(qc, root),
-        onOther: (event) => {
-          if (event.startsWith("menu.")) void qc.invalidateQueries({ queryKey: tenantKeys.menu(root) });
-          if (event.startsWith("table.")) void qc.invalidateQueries({ queryKey: tenantKeys.tables(root) });
+        onOther: (event, payload) => {
+          if (event === "menu.updated") applyMenuEvent(qc, root, payload as MenuEvent);
+          else if (event === "table.updated") applyTableEvent(qc, root, payload as TableEvent);
         },
       },
     });

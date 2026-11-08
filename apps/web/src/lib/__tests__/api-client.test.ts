@@ -5,7 +5,7 @@ type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
 const json = (status: number, body: unknown) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 /** Faux serveur : jetons d'accès valides suivis, refresh token à rotation (comme l'API). */
-function fakeServer(opts: { refreshFails?: boolean; refreshDelayMs?: number; refreshBody?: unknown; refreshStatus?: number } = {}) {
+function fakeServer(opts: { refreshFails?: boolean; refreshDelayMs?: number; refreshBody?: unknown; refreshStatus?: number; license?: unknown } = {}) {
   let validAccess = "access-1";
   let validRefresh = "refresh-1";
   let n = 1;
@@ -22,7 +22,7 @@ function fakeServer(opts: { refreshFails?: boolean; refreshDelayMs?: number; ref
       n += 1;
       validAccess = `access-${n}`;
       validRefresh = `refresh-${n}`;
-      return json(200, { accessToken: validAccess, refreshToken: validRefresh, expiresIn: 900 });
+      return json(200, { accessToken: validAccess, refreshToken: validRefresh, expiresIn: 900, ...(opts.license ? { license: opts.license } : {}) });
     }
     if (path.endsWith("/auth/logout")) return json(204, undefined);
     const auth = (init.headers as Record<string, string>).Authorization;
@@ -53,6 +53,13 @@ describe("ApiClient — rafraîchissement des jetons", () => {
     expect(server.calls).toEqual(["POST /tenant/auth/refresh", "GET /tenant/settings"]);
     expect(storage.get()).toBe("refresh-2");
     expect(client.getAccessToken()).toBe("access-2");
+  });
+
+  it("publie la licence renvoyée par le rafraîchissement (bandeau de grâce à jour)", async () => {
+    const license = { status: "GRACE", inGrace: true, currentPeriodEnd: "2026-10-01T00:00:00.000Z" };
+    const { client, events } = setup(fakeServer({ license }));
+    await client.get("/tenant/settings");
+    expect(events).toContainEqual({ type: "license", license });
   });
 
   it("sur 401, fait tourner le refresh token puis rejoue la requête", async () => {

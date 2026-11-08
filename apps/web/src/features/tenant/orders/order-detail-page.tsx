@@ -1,7 +1,8 @@
 import type { Order, OrderItem } from "@restaurant/api-client";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import * as React from "react";
 import {
-  ArrowLeft, Ban, Banknote, ChevronRight, HandPlatter, MoreHorizontal, NotebookPen, Plus, Printer, Undo2, XCircle,
+  ArrowLeft, Ban, Banknote, ChevronRight, HandPlatter, MoreHorizontal, NotebookPen, Pencil, Plus, Printer, Undo2, XCircle,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -22,6 +23,7 @@ import { courseLabel, ORDER_TYPE_LABEL } from "@/lib/labels";
 import { tenantKeys } from "@/lib/tenant-keys";
 import { useSpacePath } from "@/providers/space";
 import { elapsedLabel, useApplyOrder, useNow, useOperations, useTenant } from "../hooks";
+import { ItemEditDialog } from "./item-edit-dialog";
 import {
   BillSummary, ItemDetails, ItemStatusBadge, OrderPlace, OrderStatusBadge, PaymentsList, PaymentStatusBadge, waiterName,
 } from "./order-bits";
@@ -164,7 +166,9 @@ function ItemRow({ order, item }: { order: Order; item: OrderItem }) {
     onSuccess: (r) => { apply(r); toast.success(`« ${item.name} » annulé`); },
     onError: (e) => toastError(e),
   });
+  const [editing, setEditing] = React.useState(false);
   const paid = item.paidQuantity > 0;
+  const canEdit = t.isFloor && item.status === "PENDING" && !paid && !order.closedAt && !order.cancelledAt;
   const canCancel = t.isFloor && !cancelled && !order.cancelledAt && !paid && (item.status === "PENDING" || t.isManager);
   const cancelHint = paid ? "Article déjà encaissé : remboursez d'abord le paiement" : !t.isManager && item.status !== "PENDING" ? "Déjà lancé en cuisine : un responsable peut l'annuler" : null;
 
@@ -195,6 +199,9 @@ function ItemRow({ order, item }: { order: Order; item: OrderItem }) {
             <Button variant="ghost" size="icon-sm" aria-label={`Remettre « ${item.name} » à servir`} onClick={() => setStatus.mutate("READY")}><Undo2 /></Button>
           </Tooltip>
         )}
+        {canEdit && (
+          <Button variant="ghost" size="icon-sm" aria-label={`Modifier « ${item.name} »`} onClick={() => setEditing(true)}><Pencil /></Button>
+        )}
         {t.isFloor && !cancelled && !order.cancelledAt && (
           canCancel ? (
             <Button variant="ghost" size="icon-sm" aria-label={`Annuler « ${item.name} »`} onClick={() => confirm({
@@ -209,6 +216,7 @@ function ItemRow({ order, item }: { order: Order; item: OrderItem }) {
           )
         )}
       </div>
+      {canEdit && <ItemEditDialog order={order} item={item} open={editing} onOpenChange={setEditing} />}
     </li>
   );
 }

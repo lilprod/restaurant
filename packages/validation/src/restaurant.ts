@@ -90,7 +90,8 @@ export const createOrderSchema = z
 export const addItemsSchema = z.object({ items: z.array(orderItemInputSchema).min(1).max(100) });
 export const updateOrderItemSchema = z.object({
   quantity: z.number().int().min(1).max(99).optional(),
-  instructions: optText(200),
+  /** Chaîne vide = effacer les consignes ; absent = inchangé. */
+  instructions: z.string().trim().max(200).optional(),
 });
 export const itemStatusSchema = z.object({ status: z.enum(["PENDING", "IN_PROGRESS", "READY", "SERVED"]) });
 export const reasonSchema = z.object({ reason: z.string().trim().min(3).max(200) });

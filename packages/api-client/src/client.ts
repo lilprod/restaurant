@@ -1,4 +1,5 @@
 import { ApiError } from "./errors";
+import type { LicenseSummary } from "./types";
 
 export type Space = "platform" | "tenant";
 
@@ -34,7 +35,9 @@ export function memoryTokenStorage(initial: string | null = null): TokenStorage 
 export type ClientEvent =
   | { type: "session-ended"; reason: ApiError | null }
   | { type: "error"; error: ApiError }
-  | { type: "tokens"; accessToken: string | null };
+  | { type: "tokens"; accessToken: string | null }
+  /** Licence renvoyée par le rafraîchissement de session (restaurant uniquement). */
+  | { type: "license"; license: LicenseSummary };
 
 export interface ApiClientOptions {
   /** Préfixe des routes, ex. `/api/v1` (proxy Vite) ou `https://api.monapp.com/api/v1`. */
@@ -55,6 +58,7 @@ export interface RequestOptions {
 export interface SessionTokens {
   accessToken: string;
   refreshToken: string;
+  license?: LicenseSummary;
 }
 
 /**
@@ -139,6 +143,7 @@ export class ApiClient {
     try {
       const res = await this.raw<SessionTokens>("POST", `/${this.space}/auth/refresh`, { body: { refreshToken: used }, auth: false });
       this.setSession(res);
+      if (res.license) this.emit({ type: "license", license: res.license });
       return true;
     } catch (e) {
       const err = e instanceof ApiError ? e : ApiError.network(e);
@@ -149,6 +154,7 @@ export class ApiClient {
         try {
           const res = await this.raw<SessionTokens>("POST", `/${this.space}/auth/refresh`, { body: { refreshToken: current }, auth: false });
           this.setSession(res);
+          if (res.license) this.emit({ type: "license", license: res.license });
           return true;
         } catch { /* on termine la session ci-dessous */ }
       }

@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ScheduleModule } from "@nestjs/schedule";
+import { pairThrottler } from "./common/throttling";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { PrismaExceptionFilter } from "./common/prisma-exception.filter";
 import { AppConfigModule } from "./config/config.module";
@@ -22,7 +23,7 @@ import { RestaurantModule } from "./restaurant/restaurant.module";
     SecurityModule,
     SettingsModule,
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 120 }], skipIf: () => !!process.env.DISABLE_THROTTLE }),
+    ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 120 }, pairThrottler], skipIf: () => !!process.env.DISABLE_THROTTLE }),
     PlatformModule,
     TenantModule,
     RestaurantModule,

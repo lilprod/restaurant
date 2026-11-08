@@ -357,6 +357,8 @@ describe("Sécurité & paramètres (e2e)", () => {
       const s = (await tenantLogin("kofi", "admin@kofi.tg", PW2)).body;
       const r = await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: s.refreshToken });
       expect(r.status).toBe(200);
+      expect(r.body.license).toMatchObject({ status: expect.any(String), inGrace: false, currentPeriodEnd: expect.any(String) });   // même forme qu'à la connexion
+      expect(r.body.license.status).toBe(s.license.status);
       expect((await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: s.refreshToken })).status).toBe(401);
       expect((await api().get(`${V}/tenant/account/me`).set(bearer(r.body.accessToken))).status).toBe(200);
       // un jeton de la plateforme ne fonctionne pas côté restaurant, et inversement
@@ -431,6 +433,25 @@ describe("Sécurité & paramètres (e2e)", () => {
       const t3 = await tok("kofi", "waiter@kofi.tg", "Court-Mot2Passe");
       const res3 = await api().post(`${V}/tenant/account/change-password`).set(bearer(t3)).send({ currentPassword: "Court-Mot2Passe", newPassword: "Court-Mot2P1" });
       expect(res3.status).toBe(400);  // 12 < 14
+    });
+
+    it("le SuperAdmin désactive puis réactive un compte du restaurant (le Support et un autre restaurant n'y ont pas accès)", async () => {
+      const waiter = (await addUser(tenantId, "WAITER", "serveur@kofi.tg")).id;
+      const url = `${V}/platform/tenants/${tenantId}/security/users/${waiter}/active`;
+      expect((await api().patch(url).set(bearer(supportTok)).send({ isActive: false })).status).toBe(403);
+      expect((await api().patch(url).set(bearer(root)).send({ isActive: "non" })).status).toBe(400);
+      const session = await tenantLogin("kofi", "serveur@kofi.tg", PW);
+      expect(session.status).toBe(200);
+      expect((await api().patch(url).set(bearer(root)).send({ isActive: false })).body).toEqual({ ok: true, isActive: false });
+      expect((await tenantLogin("kofi", "serveur@kofi.tg", PW)).status).toBe(401);
+      expect((await api().get(`${V}/tenant/account/me`).set(bearer(session.body.accessToken))).status).toBe(401);   // sessions révoquées
+      expect((await api().patch(url).set(bearer(root)).send({ isActive: true })).body).toEqual({ ok: true, isActive: true });
+      expect((await tenantLogin("kofi", "serveur@kofi.tg", PW)).status).toBe(200);
+      const log = await prisma.platformAuditLog.findMany({ where: { entityId: waiter, action: { in: ["security.activate", "security.deactivate"] } } });
+      expect(log.map((l) => l.action).sort()).toEqual(["security.activate", "security.deactivate"]);
+      // un utilisateur d'un autre restaurant est introuvable
+      const other = await createTenant("xtra", "admin@xtra.tg");
+      expect((await api().patch(`${V}/platform/tenants/${other}/security/users/${waiter}/active`).set(bearer(root)).send({ isActive: false })).status).toBe(404);
     });
 
     it("le SuperAdmin peut retirer la 2FA perdue et réinitialiser un mot de passe", async () => {

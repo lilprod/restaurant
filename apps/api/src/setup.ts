@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { installFrenchErrors } from "@restaurant/validation";
 import helmet from "helmet";
 import { resolve } from "node:path";
+import { describeZodSchemas } from "./common/openapi-zod";
 import type { Env } from "./config/env";
 
 /** Configuration HTTP commune à main.ts et aux tests e2e. */
@@ -28,12 +29,17 @@ export function setupApp(app: INestApplication, env: Pick<Env, "CORS_ORIGIN" | "
   app.enableShutdownHooks();
 }
 
-export function setupSwagger(app: INestApplication) {
-  const doc = new DocumentBuilder()
+/** Document OpenAPI : routes décrites par Nest, corps et requêtes décrits par les schémas Zod partagés. */
+export function buildApiDocument(app: INestApplication) {
+  const config = new DocumentBuilder()
     .setTitle("Restaurant SaaS — API")
     .setDescription("API REST. Espace plateforme (SuperAdmin) et espaces restaurants (tenants).")
     .setVersion("0.2.0")
     .addBearerAuth()
     .build();
-  SwaggerModule.setup("api/docs", app, SwaggerModule.createDocument(app, doc));
+  return describeZodSchemas(app, SwaggerModule.createDocument(app, config));
+}
+
+export function setupSwagger(app: INestApplication) {
+  SwaggerModule.setup("api/docs", app, buildApiDocument(app));
 }

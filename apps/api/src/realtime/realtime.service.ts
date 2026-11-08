@@ -11,7 +11,10 @@ export class RealtimeService {
     this.ns = ns;
   }
 
-  /** Événements émis aujourd'hui : `order.created`, `order.updated` (le statut des tables en découle). */
+  /**
+   * Événements émis : `order.created`, `order.updated` (charge utile = vue de la commande),
+   * `menu.updated` (= `menuItemView`, ou `{ id, deleted: true }`), `table.updated` (= élément de `GET /tenant/tables`, ou `{ id, deleted: true }`).
+   */
   emit(tenantId: string, event: string, payload: unknown) {
     if (!this.ns) return;
     this.ns.to(`tenant:${tenantId}`).emit(event, payload);
