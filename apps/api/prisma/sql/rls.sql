@@ -163,6 +163,24 @@ DROP POLICY IF EXISTS tenant_isolation ON "StockMovement";
 CREATE POLICY tenant_isolation ON "StockMovement"
   USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
 
+ALTER TABLE "OptionRecipeLine" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "OptionRecipeLine" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "OptionRecipeLine";
+CREATE POLICY tenant_isolation ON "OptionRecipeLine"
+  USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
+
+ALTER TABLE "StockCount" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "StockCount" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "StockCount";
+CREATE POLICY tenant_isolation ON "StockCount"
+  USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
+
+ALTER TABLE "StockCountLine" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "StockCountLine" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "StockCountLine";
+CREATE POLICY tenant_isolation ON "StockCountLine"
+  USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
+
 ALTER TABLE "WasteRecord" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "WasteRecord" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON "WasteRecord";

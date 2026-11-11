@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { StockService } from "../inventory/stock.service";
 import { RealtimeGateway } from "../realtime/realtime.gateway";
 import { RealtimeService } from "../realtime/realtime.service";
 import { TenantModule } from "../tenant/tenant.module";
@@ -24,6 +25,8 @@ import { TablesService } from "./tables.service";
   providers: [
     PlanLimitsService, StaffService, TablesService, MenuService, OrdersService, RegisterService, DashboardService,
     RealtimeService, RealtimeGateway,
+    StockService, // P3 : déduction de stock dans la transaction des commandes (module Stock : src/inventory)
   ],
+  exports: [RealtimeService, MenuService, StockService],
 })
 export class RestaurantModule {}

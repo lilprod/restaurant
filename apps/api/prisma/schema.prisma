@@ -90,6 +90,12 @@ enum MovementType {
   RETURN
 }
 
+enum StockCountStatus {
+  OPEN
+  VALIDATED
+  CANCELLED
+}
+
 enum PurchaseStatus {
   DRAFT
   SENT
@@ -384,6 +390,7 @@ model Option {
   extra        Int               @default(0)
   group        OptionGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
   orderOptions OrderItemOption[]
+  recipe       OptionRecipeLine[]
 
   @@index([tenantId])
 }
@@ -597,15 +604,22 @@ model Ingredient {
   tenant            Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id                String              @id @default(uuid())
   name              String
-  unit              String
+  unit              String // g | kg | ml | cl | l | piece (conversions : @restaurant/utils)
+  category          String?
   quantity          Decimal             @default(0) @db.Decimal(12, 3)
   lowStockThreshold Decimal             @default(0) @db.Decimal(12, 3)
   reorderQty        Decimal?            @db.Decimal(12, 3)
-  avgCost           Int                 @default(0)
+  avgCost           Int                 @default(0) // coût moyen pondéré, FCFA par unité de stock
   supplierId        String?
-  isActive          Boolean             @default(true)
+  isActive          Boolean             @default(true) // false = archivé
+  autoDisable       Boolean             @default(false) // à zéro : plats concernés rendus indisponibles
+  lowAlertedAt      DateTime? // alerte « stock bas » émise pour le franchissement en cours (remis à null au-dessus du seuil)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @default(now()) @updatedAt
   supplier          Supplier?           @relation(fields: [supplierId], references: [id])
   recipeLines       RecipeLine[]
+  optionRecipeLines OptionRecipeLine[]
+  countLines        StockCountLine[]
   movements         StockMovement[]
   purchaseLines     PurchaseOrderLine[]
   waste             WasteRecord[]
@@ -620,10 +634,59 @@ model RecipeLine {
   menuItemId   String
   ingredientId String
   quantity     Decimal    @db.Decimal(12, 3)
+  unit         String? // unité de saisie (null = unité de l'ingrédient)
   menuItem     MenuItem   @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
 
   @@id([menuItemId, ingredientId])
+  @@index([tenantId])
+}
+
+// Une option consomme aussi du stock (« Alloco » → banane plantain).
+model OptionRecipeLine {
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  optionId     String
+  ingredientId String
+  quantity     Decimal    @db.Decimal(12, 3)
+  unit         String?
+  option       Option     @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@id([optionId, ingredientId])
+  @@index([tenantId])
+}
+
+// Inventaire physique : quantités comptées → mouvements ADJUSTMENT valorisés à la validation.
+model StockCount {
+  tenantId      String
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String           @id @default(uuid())
+  status        StockCountStatus @default(OPEN)
+  category      String?
+  notes         String?
+  createdById   String
+  validatedById String?
+  varianceCost  Int              @default(0) // écart valorisé (FCFA, signé)
+  createdAt     DateTime         @default(now())
+  validatedAt   DateTime?
+  lines         StockCountLine[]
+
+  @@index([tenantId, status])
+}
+
+model StockCountLine {
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  countId      String
+  ingredientId String
+  countedQty   Decimal?   @db.Decimal(12, 3)
+  expectedQty  Decimal?   @db.Decimal(12, 3) // stock théorique au moment de la validation
+  varianceCost Int?
+  count        StockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
+
+  @@id([countId, ingredientId])
   @@index([tenantId])
 }
 
@@ -637,12 +700,16 @@ model StockMovement {
   balanceAfter    Decimal      @db.Decimal(12, 3)
   orderItemId     String?
   purchaseOrderId String?
+  stockCountId    String?
   userId          String?
   reason          String?
+  unitCost        Int? // coût unitaire retenu pour valoriser le mouvement
   createdAt       DateTime     @default(now())
   ingredient      Ingredient   @relation(fields: [ingredientId], references: [id])
 
   @@index([ingredientId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([orderItemId])
   @@index([tenantId])
 }
 
@@ -655,9 +722,11 @@ model WasteRecord {
   reason       String
   cost         Int
   recordedById String
+  orderItemId  String? // perte automatique : article annulé après lancement
   createdAt    DateTime   @default(now())
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id])
 
+  @@index([tenantId, createdAt])
   @@index([tenantId])
 }
 
@@ -670,6 +739,9 @@ model Supplier {
   email          String?
   phone          String?
   address        String?
+  notes          String?
+  isActive       Boolean         @default(true) // false = archivé
+  createdAt      DateTime        @default(now())
   ingredients    Ingredient[]
   purchaseOrders PurchaseOrder[]
 
@@ -684,9 +756,13 @@ model PurchaseOrder {
   status      PurchaseStatus      @default(DRAFT)
   createdById String
   expectedAt  DateTime?
+  sentAt      DateTime?
   receivedAt  DateTime?
+  cancelledAt DateTime?
+  notes       String?
   total       Int                 @default(0)
   createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @default(now()) @updatedAt
   supplier    Supplier            @relation(fields: [supplierId], references: [id])
   lines       PurchaseOrderLine[]
 
@@ -995,6 +1071,9 @@ model Tenant {
   deliverys          Delivery[]
   ingredients        Ingredient[]
   recipeLines        RecipeLine[]
+  optionRecipeLines  OptionRecipeLine[]
+  stockCounts        StockCount[]
+  stockCountLines    StockCountLine[]
   stockMovements     StockMovement[]
   wasteRecords       WasteRecord[]
   suppliers          Supplier[]

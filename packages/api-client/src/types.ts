@@ -595,3 +595,134 @@ export interface TenantDashboard {
   byHour: { hour: number; orders: number }[];
   topItems: { menuItemId: string; name: string; quantity: number; revenue: number }[];
 }
+
+// ── P3 : stock ──
+
+export type StockUnit = "g" | "kg" | "ml" | "cl" | "l" | "piece";
+export type StockState = "NEGATIVE" | "OUT" | "LOW" | "OK";
+export type MovementType = "PURCHASE" | "ORDER_DEDUCTION" | "WASTE" | "ADJUSTMENT" | "RETURN";
+export type PurchaseStatus = "DRAFT" | "SENT" | "PARTIAL" | "RECEIVED" | "CANCELLED";
+export type StockCountStatus = "OPEN" | "VALIDATED" | "CANCELLED";
+export type UserRef = { id: string; firstName: string; lastName: string } | null;
+export type IngredientRef = { id: string; name: string; unit: StockUnit };
+
+export interface Ingredient {
+  id: string;
+  name: string;
+  unit: StockUnit;
+  category: string | null;
+  quantity: number;
+  lowStockThreshold: number;
+  reorderQty: number | null;
+  avgCost: number;
+  /** Valeur du stock (FCFA), 0 si négatif. */
+  value: number;
+  state: StockState;
+  autoDisable: boolean;
+  isActive: boolean;
+  supplier: { id: string; name: string } | null;
+  lowAlertedAt: ISODate | null;
+  updatedAt: ISODate;
+}
+export interface StockAlert extends Ingredient { suggestedQty: number | null }
+/** Charge utile de `stock.updated` (`{ ingredients }`) et de `stock.low` (un élément) : sans coûts. */
+export type StockLight = Pick<Ingredient, "id" | "name" | "unit" | "quantity" | "lowStockThreshold" | "state">;
+export interface IngredientsQuery { search?: string; category?: string; state?: StockState | "ALERT"; archived?: boolean }
+
+export interface StockMovement {
+  id: string;
+  type: MovementType;
+  ingredient: IngredientRef;
+  quantity: number;
+  balanceAfter: number;
+  unitCost: number | null;
+  value: number | null;
+  reason: string | null;
+  orderItemId: string | null;
+  purchaseOrderId: string | null;
+  stockCountId: string | null;
+  user: UserRef;
+  createdAt: ISODate;
+}
+export interface MovementsQuery { ingredientId?: string; type?: MovementType; from?: string; to?: string; page?: number; pageSize?: number }
+
+export interface WasteRecord {
+  id: string;
+  ingredient: IngredientRef;
+  quantity: number;
+  reason: string;
+  cost: number;
+  /** Perte automatique (article annulé après lancement). */
+  automatic: boolean;
+  recordedBy?: UserRef;
+  createdAt: ISODate;
+}
+export interface WasteList extends Paginated<WasteRecord> { totalCost: number }
+
+export interface RecipeLineView {
+  ingredientId: string;
+  name: string;
+  quantity: number;
+  unit: StockUnit;
+  ingredientUnit: StockUnit;
+  avgCost: number;
+  cost: number;
+  archived: boolean;
+}
+export interface OptionRecipe { optionId: string; name: string; group: string; extra: number; lines: RecipeLineView[]; cost: number }
+export interface DishRecipe {
+  menuItemId: string;
+  name: string;
+  price: number;
+  vatRate: number;
+  lines: RecipeLineView[];
+  /** Prix hors TVA, coût matière, marge (FCFA) et taux de marge (% du prix HT). */
+  net: number;
+  cost: number;
+  margin: number;
+  marginRate: number | null;
+  options: OptionRecipe[];
+}
+export interface DishCost {
+  menuItemId: string; name: string; category: string; price: number; isAvailable: boolean; hasRecipe: boolean;
+  net: number; cost: number; margin: number; marginRate: number | null;
+}
+
+export interface StockCountSummary {
+  id: string; status: StockCountStatus; category: string | null; notes: string | null; varianceCost: number;
+  createdAt: ISODate; validatedAt: ISODate | null; lineCount: number; countedCount: number;
+}
+export interface StockCountLine {
+  ingredient: { id: string; name: string; unit: StockUnit; category: string | null };
+  expectedQty: number;
+  countedQty: number | null;
+  variance: number | null;
+  varianceCost: number | null;
+  /** Coût moyen actuel (FCFA par unité) : estimation de l'écart pendant la saisie. */
+  unitCost: number;
+}
+export interface StockCount {
+  id: string; status: StockCountStatus; category: string | null; notes: string | null; createdAt: ISODate; validatedAt: ISODate | null;
+  varianceCost: number; lines: StockCountLine[];
+}
+
+export interface Supplier {
+  id: string; name: string; contact: string | null; email: string | null; phone: string | null; address: string | null;
+  notes: string | null; isActive: boolean; ingredientCount: number; createdAt: ISODate;
+}
+export interface PurchaseOrderLine { id: string; ingredient: IngredientRef; quantity: number; receivedQty: number; unitCost: number; total: number }
+export interface PurchaseOrder {
+  id: string;
+  status: PurchaseStatus;
+  supplier: { id: string; name: string; phone: string | null; email: string | null };
+  expectedAt: ISODate | null;
+  sentAt: ISODate | null;
+  receivedAt: ISODate | null;
+  cancelledAt: ISODate | null;
+  notes: string | null;
+  total: number;
+  receivedValue: number;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+  lines: PurchaseOrderLine[];
+}

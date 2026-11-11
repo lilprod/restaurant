@@ -23,6 +23,7 @@ import { formatFcfa } from "@/lib/format";
 import { tenantKeys } from "@/lib/tenant-keys";
 import { useOperations, useTenant } from "../hooks";
 import { groupRuleLabel } from "../pos/cart";
+import { RecipeEditor } from "../stock/recipe-editor";
 
 type FormValues = z.input<typeof menuItemInputSchema>;
 
@@ -195,6 +196,8 @@ export function ItemEditor({ value, categories, allergens, onClose }: {
             <Plus /> Ajouter un groupe d'options
           </Button>
         </section>
+        {/* P3 : fiche recette (plats enregistrés, plan avec le module Stock) — enregistrée à part, coût et marge en direct. */}
+        {item && <RecipeEditor menuItemId={item.id} price={form.watch("price") ?? item.price} vatRate={form.watch("vatRate") ?? item.vatRate} />}
         <button type="submit" hidden />
       </form>
     </Dialog>

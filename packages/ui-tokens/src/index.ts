@@ -49,3 +49,11 @@ export const ORDER_PAYMENT_TONES: Record<string, StatusTone> = { UNPAID: "amber"
 export const orderStatusTone = (s: string | null | undefined): StatusTone => (s ? ORDER_STATUS_TONES[s] ?? "gray" : "gray");
 export const tableStatusTone = (s: string | null | undefined): StatusTone => (s ? TABLE_STATUS_TONES[s] ?? "gray" : "gray");
 export const orderPaymentTone = (s: string | null | undefined): StatusTone => (s ? ORDER_PAYMENT_TONES[s] ?? "gray" : "gray");
+
+/** Stock (P3) : état d'un ingrédient (bas = ambre, épuisé / négatif = rouge), commandes fournisseurs, inventaires. */
+export const STOCK_STATE_TONES: Record<string, StatusTone> = { OK: "green", LOW: "amber", OUT: "red", NEGATIVE: "red" };
+export const PURCHASE_STATUS_TONES: Record<string, StatusTone> = { DRAFT: "gray", SENT: "blue", PARTIAL: "amber", RECEIVED: "green", CANCELLED: "red" };
+export const STOCK_COUNT_TONES: Record<string, StatusTone> = { OPEN: "blue", VALIDATED: "green", CANCELLED: "gray" };
+export const stockStateTone = (s: string | null | undefined): StatusTone => (s ? STOCK_STATE_TONES[s] ?? "gray" : "gray");
+export const purchaseStatusTone = (s: string | null | undefined): StatusTone => (s ? PURCHASE_STATUS_TONES[s] ?? "gray" : "gray");
+export const stockCountTone = (s: string | null | undefined): StatusTone => (s ? STOCK_COUNT_TONES[s] ?? "gray" : "gray");

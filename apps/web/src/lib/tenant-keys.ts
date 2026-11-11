@@ -20,4 +20,16 @@ export const tenantKeys = {
   register: (root: Root) => [...root, "register"] as const,
   dashboard: (root: Root, date?: string) => (date ? [...root, "dashboard", date] as const : [...root, "dashboard"] as const),
   settings: (root: Root, section: string) => [...root, "settings", section] as const,
+  // ── P3 : stock ──
+  stock: (root: Root) => [...root, "stock"] as const,
+  ingredients: (root: Root, q: object = {}) => [...root, "stock", "ingredients", q] as const,
+  ingredientLists: (root: Root) => [...root, "stock", "ingredients"] as const,
+  stockAlerts: (root: Root) => [...root, "stock", "alerts"] as const,
+  movements: (root: Root, q: object = {}) => [...root, "stock", "movements", q] as const,
+  waste: (root: Root, q: object = {}) => [...root, "stock", "waste", q] as const,
+  counts: (root: Root) => [...root, "stock", "counts"] as const,
+  count: (root: Root, id: string) => [...root, "stock", "counts", id] as const,
+  recipe: (root: Root, menuItemId: string) => [...root, "stock", "recipe", menuItemId] as const,
+  suppliers: (root: Root) => [...root, "stock", "suppliers"] as const,
+  purchaseOrders: (root: Root) => [...root, "stock", "purchase-orders"] as const,
 };

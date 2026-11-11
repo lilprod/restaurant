@@ -187,6 +187,7 @@ Socket.io, espace de noms **`/realtime`** (chemin `/socket.io`, hors préfixe `/
   `{ id, deleted: true }` pour un plat supprimé.
 - **`table.updated`** : table au format de `GET /tenant/tables` (création, modification, statut — y compris le passage `OCCUPIED`/`FREE` dû aux commandes —,
   désactivation) ; `{ id, deleted: true }` pour une table supprimée.
+- **`stock.updated`** `{ ingredients: StockLight[] }` et **`stock.low`** (`StockLight`, une fois par franchissement de seuil) : voir « Stock ».
 Les contrôles sont ceux de l'API (jeton, session, compte actif, licence).
 
 ## Caisse — `/tenant/register`
@@ -233,3 +234,56 @@ La marque (nom, logo), les coordonnées et la signature du restaurant sont ajout
 Mot de passe oublié (email, lien jamais conservé) · relances de licence J-7 / J-1 / jour d'expiration aux administrateurs (tâche planifiée toutes les heures,
 `LicenseRemindersService.run()`, une seule fois par palier et par échéance ; SMS au numéro du restaurant si le canal est activé) ·
 inscription d'un restaurant (demande reçue, validée, rejetée). Aucun événement temps réel.
+
+# P3 — Stock (`/tenant/inventory`, `/tenant/suppliers`, `/tenant/purchase-orders`)
+
+Module du plan **`inventory`** (`plan.features.inventory === true`) ; sinon **`403 {code: "PLAN_FEATURE", feature: "inventory"}`** sur toutes ces routes
+(et sur les recettes). Rôles : **lecture cuisine + responsables** (`ADMIN, MANAGER, KITCHEN`), **écriture responsables** ; les **pertes** sont déclarables par la cuisine.
+Unités de stock : `g, kg, ml, cl, l, piece` (conversions g↔kg, ml↔cl↔l dans `@restaurant/utils`) ; quantités à 3 décimales ; montants entiers FCFA.
+
+## Ingrédients — `/tenant/inventory/ingredients`
+`GET ?search&category&state=LOW|OUT|NEGATIVE|OK|ALERT&archived=true` · `GET categories` · `GET :id` ·
+`POST {name, unit, category?, lowStockThreshold, reorderQty?, avgCost, supplierId?, autoDisable, initialQuantity?}` (stock initial = mouvement `ADJUSTMENT`) ·
+`PATCH :id` (unité figée dès qu'il y a mouvement ou recette → 409 ; `isActive: true` restaure) ·
+`DELETE :id` (supprimé s'il n'a aucun historique, sinon archivé ; 409 s'il figure dans une recette) · `POST :id/adjust {delta, reason}` (correction).
+Vue : `quantity, lowStockThreshold, avgCost` (FCFA / unité), `value` (stock × coût moyen, 0 si négatif), `state` (`OK|LOW|OUT|NEGATIVE`), `supplier`.
+
+## Recettes — `/tenant/menu/items/:id/recipe`, `/tenant/menu/options/:id/recipe`
+`GET` (cuisine + responsables) : lignes (`quantity`, `unit` de saisie, `cost`), `cost` (coût matière = Σ quantité × coût moyen), `net` (prix TTC hors TVA),
+`margin`, `marginRate` ; pour un plat, `options[]` avec leur recette. `PUT {lines: [{ingredientId, quantity, unit?}]}` (responsables) remplace la recette ;
+unité incompatible → 400 `errors[lines.N.unit]`. Quand un plat est réenregistré, les recettes des options suivent l'option de même nom dans le groupe de même nom.
+`GET /tenant/inventory/dish-costs` (responsables) : coût et marge de chaque plat (fonction pure `dishMargin`, réutilisable par les rapports).
+
+## Déduction automatique (commandes)
+Dans la **même transaction** que la commande (`OrdersService.mutate`, commande verrouillée), via `StockService.onItemTransitions` ;
+ingrédients verrouillés `SELECT … FOR UPDATE` **dans l'ordre des ID** (pas d'interblocage) :
+- article `PENDING → IN_PROGRESS | READY` (y compris « Tout lancer ») : `ORDER_DEDUCTION` = recette × quantité + recettes des options, une seule fois par article ;
+- `IN_PROGRESS → PENDING` : `RETURN` de ce qui a réellement été déduit (calculé depuis les mouvements, pas depuis la recette actuelle) ;
+- annulation d'un article lancé (ou de la commande) : `RETURN` puis `WASTE` (motif « Annulation (Commande n° X) : … ») + perte valorisée (`automatic: true`) ;
+  le stock reste consommé ; un article encore en attente n'a rien consommé.
+Le stock peut devenir **négatif** (le service n'est jamais bloqué) : `state: "NEGATIVE"`. À zéro, un ingrédient `autoDisable` rend indisponibles les plats
+dont la recette l'utilise (`menu.updated`, plat grisé partout). Les recettes servent telles qu'elles sont au moment du lancement.
+
+## Mouvements, pertes, alertes
+`GET /tenant/inventory/movements?ingredientId&type&from&to&page&pageSize` : `quantity` signée, `balanceAfter`, `unitCost`, `value`, `reason`, liens
+(`orderItemId`, `purchaseOrderId`, `stockCountId`), `user`. `GET /tenant/inventory/waste?from&to` (`totalCost`) · `POST /tenant/inventory/waste {ingredientId, quantity, unit?, reason}` (cuisine).
+`GET /tenant/inventory/alerts` : ingrédients actifs `LOW | OUT | NEGATIVE` (les plus graves d'abord) avec `suggestedQty` (quantité de réapprovisionnement, sinon 2 × seuil − stock).
+**Alerte** : quand le stock franchit le seuil (`quantity ≤ lowStockThreshold`, ou ≤ 0), `stock.low` est émis **une seule fois** (`Ingredient.lowAlertedAt`), réarmé quand le
+stock repasse au-dessus du seuil. Point d'accroche des notifications aux responsables (X1) : `StockService.publish` (TODO X1).
+
+## Inventaire physique — `/tenant/inventory/counts`
+`GET` · `GET :id` (lignes : théorique, compté, écart, écart valorisé) · `POST {category?, notes?}` (un seul inventaire ouvert → 409) ·
+`PATCH :id/lines {lines: [{ingredientId, countedQty|null}]}` · `POST :id/validate` (écart = compté − stock lu sous verrou → `ADJUSTMENT` valorisé au coût moyen ;
+lignes vides ignorées) · `POST :id/cancel`. Écriture : responsables.
+
+## Fournisseurs et commandes fournisseurs
+`/tenant/suppliers` : `GET ?all=true` · `POST` · `PATCH :id` · `DELETE :id` (archivé s'il est référencé).
+`/tenant/purchase-orders` : `GET ?status&supplierId` · `GET :id` · `POST {supplierId, expectedAt?, notes?, lines: [{ingredientId, quantity, unitCost}]}` (brouillon) ·
+`PATCH :id` (brouillon seulement, 409 sinon) · `POST :id/send` · `POST :id/receive {lines: [{lineId, quantity, unitCost?}]}` (commande verrouillée ; `PURCHASE`,
+**coût moyen pondéré** `(max(stock,0) × coût + reçu × prix) / (max(stock,0) + reçu)`, statut `PARTIAL` puis `RECEIVED` ; 409 si déjà reçue ou annulée) ·
+`POST :id/cancel`. Audit : `purchase.receive`, `purchase.cancel`, `inventory.waste`, `inventory.adjust`, `inventory.count.validate`, `inventory.ingredient.archive`.
+
+## Temps réel
+- **`stock.updated`** `{ ingredients: [{ id, name, unit, quantity, lowStockThreshold, state }] }` après chaque transaction de stock (sans coûts).
+- **`stock.low`** `{ id, name, unit, quantity, lowStockThreshold, state }` : une fois par franchissement de seuil.
+- **`menu.updated`** pour chaque plat rendu indisponible par `autoDisable`.

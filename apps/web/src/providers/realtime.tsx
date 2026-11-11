@@ -5,6 +5,10 @@ import { API_BASE, getTenantSpace } from "@/app/spaces";
 import { RealtimeConnection, realtimeOrigin, type RealtimeStatus } from "@/lib/realtime/connection";
 import { applyMenuEvent, applyTableEvent, type MenuEvent, type TableEvent } from "@/lib/realtime/catalog-cache";
 import { applyOrderEvent, resyncServiceQueries } from "@/lib/realtime/order-cache";
+import { applyStockEvent, type StockUpdatedEvent } from "@/lib/realtime/stock-cache";
+import { formatQty } from "@/lib/format";
+import type { StockLight } from "@restaurant/api-client";
+import { toast } from "sonner";
 import { tenantKeys } from "@/lib/tenant-keys";
 import { useSession } from "./session";
 
@@ -38,6 +42,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     enabled,
     staleTime: 5 * 60_000,
   });
+  const roleRef = React.useRef<string | undefined>(undefined);
+  roleRef.current = session.user?.role;
   const tzRef = React.useRef<string | undefined>(undefined);
   tzRef.current = localization.data?.timezone;
 
@@ -56,6 +62,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         onOther: (event, payload) => {
           if (event === "menu.updated") applyMenuEvent(qc, root, payload as MenuEvent);
           else if (event === "table.updated") applyTableEvent(qc, root, payload as TableEvent);
+          else if (event === "stock.updated") applyStockEvent(qc, root, payload as StockUpdatedEvent);
+          else if (event === "stock.low" && roleRef.current !== "WAITER") {
+            // Une seule fois par franchissement de seuil (garanti par l'API). Les notifications persistantes : X1.
+            const l = payload as StockLight;
+            toast.warning(l.state === "LOW" ? `Stock bas : ${l.name}` : `${l.name} : épuisé`, { description: `Reste ${formatQty(l.quantity, l.unit)}`, id: `stock-low-${l.id}` });
+          }
         },
       },
     });

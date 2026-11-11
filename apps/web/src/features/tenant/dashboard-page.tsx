@@ -6,6 +6,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import { AnimatedNumber } from "@/components/ui/animated-number";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { StockAlertsCard } from "./stock/stock-alerts";
 import { EmptyState } from "@/components/ui/empty-state";
 import { ErrorState } from "@/components/ui/error-state";
 import { Input } from "@/components/ui/input";
@@ -174,6 +175,7 @@ export function TenantDashboardPage() {
         </Card>
         <SetupCard className="lg:col-span-2" />
       </div>
+      <StockAlertsCard className="mt-6" />
     </>
   );
 }

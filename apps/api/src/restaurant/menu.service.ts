@@ -43,6 +43,13 @@ export class MenuService {
     return view;
   }
 
+  /** Diffuse l'état courant de plats modifiés hors de ce service (ex. rendus indisponibles par le stock). */
+  async broadcastItems(tenantId: string, ids: string[]) {
+    if (!ids.length) return;
+    const rows = await this.prisma.asTenant(tenantId, (tx) => tx.menuItem.findMany({ where: { tenantId, id: { in: ids } }, include: itemInclude }));
+    for (const r of rows) this.broadcast(tenantId, menuItemView(r));
+  }
+
   private async viewOf(tenantId: string, id: string) {
     return this.prisma.asTenant(tenantId, async (tx) => menuItemView(await tx.menuItem.findUniqueOrThrow({ where: { id }, include: itemInclude })));
   }
@@ -223,7 +230,9 @@ export class MenuService {
     }
     if (groups) {
       // Les options déjà commandées restent référencées par les commandes : on ne supprime que les inutilisées.
-      const old = await tx.optionGroup.findMany({ where: { menuItemId: itemId, archivedAt: null }, include: { options: { include: { _count: { select: { orderOptions: true } } } } } });
+      const old = await tx.optionGroup.findMany({ where: { menuItemId: itemId, archivedAt: null }, include: { options: { include: { recipe: true, _count: { select: { orderOptions: true } } } } } });
+      // Stock (P3) : les options sont recréées ; leurs recettes suivent l'option de même nom dans le groupe de même nom.
+      const recipes = new Map(old.flatMap((g) => g.options.filter((o) => o.recipe.length).map((o) => [`${g.name}\u0000${o.name}`, o.recipe] as const)));
       const used = old.some((g) => g.options.some((o) => o._count.orderOptions > 0));
       if (used) {
         await tx.optionGroup.updateMany({ where: { menuItemId: itemId, archivedAt: null }, data: { archivedAt: new Date() } });
@@ -231,12 +240,17 @@ export class MenuService {
         await tx.optionGroup.deleteMany({ where: { menuItemId: itemId, archivedAt: null } });
       }
       for (const [i, g] of groups.entries()) {
-        await tx.optionGroup.create({
+        const created = await tx.optionGroup.create({
           data: {
             tenantId, menuItemId: itemId, name: g.name, minChoices: g.minChoices, maxChoices: g.maxChoices, sortOrder: i,
             options: { create: g.options.map((o) => ({ tenantId, name: o.name, extra: o.extra })) },
           },
+          include: { options: true },
         });
+        for (const o of created.options) {
+          const lines = recipes.get(`${g.name}\u0000${o.name}`);
+          if (lines) await tx.optionRecipeLine.createMany({ data: lines.map((l) => ({ tenantId, optionId: o.id, ingredientId: l.ingredientId, quantity: l.quantity, unit: l.unit })) });
+        }
       }
     }
   }

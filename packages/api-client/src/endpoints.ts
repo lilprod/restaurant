@@ -2,6 +2,8 @@ import type {
   BrandingInput, BusinessInput, CategoryInput, CompanyInput, CreateOrderInput, CreateStaffInput, CreateTenantInput, LicensingSettings,
   LocalizationInput, MenuItemInput, NotificationsSettingsInput, OperationsInput, OrderItemInput, OrderPaymentInput, PaymentInstructionsInput, PlanInput,
   PlatformSecurityInput, RecordPaymentInput, RegistrationInput, TableInput, TenantSecurityInput,
+  CreateStockCountInput, IngredientInput, IngredientUpdate, PurchaseOrderInput, PurchaseOrderUpdate, ReceivePurchaseInput, RecipeInput,
+  StockAdjustInput, StockCountLinesInput, SupplierInput, SupplierUpdate, WasteInput,
 } from "@restaurant/validation";
 import type { ApiClient } from "./client";
 import type {
@@ -11,6 +13,8 @@ import type {
   Plan, PlatformDashboard, PlatformPublicBranding, PlatformRole, PlatformSettingsAll, PlatformUserView, Profile, PublicPlan, Receipt,
   RecordPaymentResult, Registration, RegistrationStatus, SessionRow, SubscriptionWithPayments, Tenant, TenantDetail, TenantLicense,
   TenantListItem, TenantPublicBranding, TenantSettingsAll, TenantStatus, TenantUserSecurity, TwoFactorSetup,
+  DishCost, DishRecipe, Ingredient, IngredientsQuery, MovementsQuery, OptionRecipe, PurchaseOrder, PurchaseStatus, StockAlert,
+  StockCount, StockCountSummary, StockMovement, Supplier, WasteList, WasteRecord,
 } from "./types";
 
 const enc = encodeURIComponent;
@@ -244,6 +248,50 @@ export function tenantApi(c: ApiClient) {
       close: (body: { counted: number; notes?: string }) => c.post<RegisterCloseResult>("/tenant/register/close", body),
     },
     dashboard: (date?: string) => c.get<TenantDashboard>("/tenant/dashboard", { query: { date } }),
+
+    // ── P3 : stock (module `inventory` du plan, sinon 403 PLAN_FEATURE) ──
+    inventory: {
+      ingredients: (q: IngredientsQuery = {}) =>
+        c.get<Ingredient[]>("/tenant/inventory/ingredients", { query: { ...q, archived: q.archived === undefined ? undefined : String(q.archived) } }),
+      categories: () => c.get<string[]>("/tenant/inventory/ingredients/categories"),
+      ingredient: (id: string) => c.get<Ingredient>(`/tenant/inventory/ingredients/${enc(id)}`),
+      createIngredient: (body: IngredientInput) => c.post<Ingredient>("/tenant/inventory/ingredients", body),
+      updateIngredient: (id: string, body: IngredientUpdate) => c.patch<Ingredient>(`/tenant/inventory/ingredients/${enc(id)}`, body),
+      removeIngredient: (id: string) => c.delete<{ archived?: true; deleted?: true }>(`/tenant/inventory/ingredients/${enc(id)}`),
+      adjust: (id: string, body: StockAdjustInput) => c.post<Ingredient>(`/tenant/inventory/ingredients/${enc(id)}/adjust`, body),
+      movements: (q: MovementsQuery = {}) => c.get<Paginated<StockMovement>>("/tenant/inventory/movements", { query: { ...q } }),
+      waste: (q: { from?: string; to?: string; page?: number; pageSize?: number } = {}) => c.get<WasteList>("/tenant/inventory/waste", { query: { ...q } }),
+      declareWaste: (body: WasteInput) => c.post<WasteRecord>("/tenant/inventory/waste", body),
+      alerts: () => c.get<StockAlert[]>("/tenant/inventory/alerts"),
+      dishCosts: () => c.get<DishCost[]>("/tenant/inventory/dish-costs"),
+      counts: () => c.get<StockCountSummary[]>("/tenant/inventory/counts"),
+      count: (id: string) => c.get<StockCount>(`/tenant/inventory/counts/${enc(id)}`),
+      createCount: (body: CreateStockCountInput) => c.post<StockCount>("/tenant/inventory/counts", body),
+      saveCount: (id: string, lines: StockCountLinesInput["lines"]) => c.patch<StockCount>(`/tenant/inventory/counts/${enc(id)}/lines`, { lines }),
+      validateCount: (id: string) => c.post<StockCount>(`/tenant/inventory/counts/${enc(id)}/validate`),
+      cancelCount: (id: string) => c.post<StockCount>(`/tenant/inventory/counts/${enc(id)}/cancel`),
+    },
+    recipes: {
+      dish: (menuItemId: string) => c.get<DishRecipe>(`/tenant/menu/items/${enc(menuItemId)}/recipe`),
+      setDish: (menuItemId: string, body: RecipeInput) => c.put<DishRecipe>(`/tenant/menu/items/${enc(menuItemId)}/recipe`, body),
+      option: (optionId: string) => c.get<OptionRecipe>(`/tenant/menu/options/${enc(optionId)}/recipe`),
+      setOption: (optionId: string, body: RecipeInput) => c.put<OptionRecipe>(`/tenant/menu/options/${enc(optionId)}/recipe`, body),
+    },
+    suppliers: {
+      list: (q: { all?: boolean } = {}) => c.get<Supplier[]>("/tenant/suppliers", { query: { all: q.all ? "true" : undefined } }),
+      create: (body: SupplierInput) => c.post<Supplier>("/tenant/suppliers", body),
+      update: (id: string, body: SupplierUpdate) => c.patch<Supplier>(`/tenant/suppliers/${enc(id)}`, body),
+      remove: (id: string) => c.delete<{ archived?: true; deleted?: true }>(`/tenant/suppliers/${enc(id)}`),
+    },
+    purchaseOrders: {
+      list: (q: { status?: PurchaseStatus; supplierId?: string } = {}) => c.get<PurchaseOrder[]>("/tenant/purchase-orders", { query: { ...q } }),
+      get: (id: string) => c.get<PurchaseOrder>(`/tenant/purchase-orders/${enc(id)}`),
+      create: (body: PurchaseOrderInput) => c.post<PurchaseOrder>("/tenant/purchase-orders", body),
+      update: (id: string, body: PurchaseOrderUpdate) => c.patch<PurchaseOrder>(`/tenant/purchase-orders/${enc(id)}`, body),
+      send: (id: string) => c.post<PurchaseOrder>(`/tenant/purchase-orders/${enc(id)}/send`),
+      receive: (id: string, body: ReceivePurchaseInput) => c.post<PurchaseOrder>(`/tenant/purchase-orders/${enc(id)}/receive`, body),
+      cancel: (id: string) => c.post<PurchaseOrder>(`/tenant/purchase-orders/${enc(id)}/cancel`),
+    },
   };
 }
 

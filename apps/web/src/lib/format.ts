@@ -56,6 +56,13 @@ export function daysUntil(d: string | Date | null | undefined, now = Date.now())
 
 export const formatNumber = (n: number) => new Intl.NumberFormat("fr-FR").format(n);
 
+/** Quantité de stock : « 1,25 kg », « 3 pièces » (3 décimales au plus). */
+export function formatQty(q: number, unit: string): string {
+  const n = new Intl.NumberFormat("fr-FR", { maximumFractionDigits: 3 }).format(q);
+  if (unit === "piece") return `${n} ${Math.abs(q) >= 2 ? "pièces" : "pièce"}`;
+  return `${n} ${unit}`;
+}
+
 /** Valeur `<input type="date">` (AAAA-MM-JJ) dans le fuseau d'affichage. */
 export function toDateInputValue(d: Date = new Date()): string {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: currentTimezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);

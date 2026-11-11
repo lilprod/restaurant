@@ -66,3 +66,15 @@ export const STAFF_ROLE_HINT: Record<string, string> = {
   KITCHEN: "Écran cuisine et disponibilité des plats.",
 };
 export const courseLabel = (n: number) => (n === 1 ? "1er envoi" : `${n}e envoi`);
+
+// ── P3 : stock ──
+export const STOCK_STATE_LABEL: Record<string, string> = { OK: "En stock", LOW: "Stock bas", OUT: "Épuisé", NEGATIVE: "Négatif" };
+export const MOVEMENT_TYPE_LABEL: Record<string, string> = {
+  PURCHASE: "Réception", ORDER_DEDUCTION: "Préparation", WASTE: "Perte", ADJUSTMENT: "Ajustement", RETURN: "Retour",
+};
+export const MOVEMENT_TYPES = ["ORDER_DEDUCTION", "RETURN", "PURCHASE", "WASTE", "ADJUSTMENT"] as const;
+export const PURCHASE_STATUS_LABEL: Record<string, string> = {
+  DRAFT: "Brouillon", SENT: "Envoyée", PARTIAL: "Reçue en partie", RECEIVED: "Reçue", CANCELLED: "Annulée",
+};
+export const STOCK_COUNT_STATUS_LABEL: Record<string, string> = { OPEN: "En cours", VALIDATED: "Validé", CANCELLED: "Annulé" };
+export const STOCK_UNIT_LABEL: Record<string, string> = { g: "g", kg: "kg", ml: "ml", cl: "cl", l: "l", piece: "pièce" };

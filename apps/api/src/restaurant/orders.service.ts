@@ -4,6 +4,7 @@ import {
   ItemStatus, canTransition, computeTotals, deriveOrderStatus, lineTotal, paymentStatusFor, vatIncluded, zonedDayRange,
 } from "@restaurant/utils";
 import type { CreateOrderInput, ListOrdersQuery, OrderItemInput, OrderPaymentInput } from "@restaurant/validation";
+import { StockEffects, StockService } from "../inventory/stock.service";
 import { PrismaService, Tx } from "../prisma/prisma.service";
 import { RealtimeService } from "../realtime/realtime.service";
 import type { Account } from "../security/accounts.repo";
@@ -62,6 +63,7 @@ export class OrdersService {
     private readonly settings: TenantSettingsService,
     private readonly tables: TablesService,
     private readonly realtime: RealtimeService,
+    private readonly stock: StockService,
   ) {}
 
   private async ops(tenantId: string): Promise<Ops> {
@@ -166,30 +168,34 @@ export class OrdersService {
 
   /** Avance (ou recule d'un cran) un article. Cuisine : en préparation / prêt. Salle : servi. */
   async setItemStatus(acc: Account, orderId: string, itemId: string, to: ItemStatus) {
-    return this.mutate(acc, orderId, async (tx, o) => {
+    return this.mutate(acc, orderId, async (tx, o, tenantId) => {
       if (o.cancelledAt) throw new ConflictException("Cette commande est annulée");
       const item = this.findItem(o, itemId);
       this.assertRoleFor(acc, item.status as ItemStatus, to);
       if (item.status === to) return;
       if (!canTransition(item.status as ItemStatus, to)) throw new ConflictException(`Passage impossible : ${item.status} → ${to}`);
       await tx.orderItem.update({ where: { id: itemId }, data: this.timestamps(item.status as ItemStatus, to) });
+      // Stock (P3) : déduction au lancement, retour si la cuisine revient en attente — même transaction.
+      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, [{ item, from: item.status as ItemStatus, to }]);
     });
   }
 
   /** Avance tous les articles éligibles d'une commande (ex. « Tout est prêt », « Tout servi »). */
   async advanceAll(acc: Account, orderId: string, to: "IN_PROGRESS" | "READY" | "SERVED") {
     const from: Record<string, ItemStatus[]> = { IN_PROGRESS: ["PENDING"], READY: ["PENDING", "IN_PROGRESS"], SERVED: ["READY"] };
-    return this.mutate(acc, orderId, async (tx, o) => {
+    return this.mutate(acc, orderId, async (tx, o, tenantId) => {
       if (o.cancelledAt) throw new ConflictException("Cette commande est annulée");
       this.assertRoleFor(acc, from[to][0], to);
       const targets = o.items.filter((i) => from[to].includes(i.status as ItemStatus));
       if (!targets.length) throw new ConflictException("Aucun article à faire avancer");
       for (const i of targets) await tx.orderItem.update({ where: { id: i.id }, data: this.timestamps(i.status as ItemStatus, to) });
+      // Un seul appel : tous les ingrédients de la commande sont verrouillés ensemble, dans l'ordre des ID.
+      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, targets.map((item) => ({ item, from: item.status as ItemStatus, to })));
     });
   }
 
   async cancelItem(acc: Account, orderId: string, itemId: string, reason: string) {
-    return this.mutate(acc, orderId, async (tx, o) => {
+    return this.mutate(acc, orderId, async (tx, o, tenantId) => {
       if (o.cancelledAt) throw new ConflictException("Cette commande est déjà annulée");
       const item = this.findItem(o, itemId);
       if (item.status === "CANCELLED") throw new ConflictException("Cet article est déjà annulé");
@@ -199,17 +205,21 @@ export class OrdersService {
       if (item.allocations.some((a) => a.payment.status === "PAID")) throw new ConflictException("Cet article a déjà été encaissé : remboursez d'abord le paiement");
       await tx.orderItem.update({ where: { id: itemId }, data: { status: "CANCELLED", cancelReason: reason } });
       await tx.auditLog.create({ data: { tenantId: o.tenantId, userId: acc.id, action: "order.item.cancel", entity: "OrderItem", entityId: itemId, metadata: { orderNumber: o.number, reason } } });
+      // Article déjà lancé : ce qui a été déduit devient une perte (motif « annulation »).
+      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, [{ item, from: item.status as ItemStatus, to: "CANCELLED" }], reason);
     });
   }
 
   async cancelOrder(acc: Account, orderId: string, reason: string) {
-    return this.mutate(acc, orderId, async (tx, o) => {
+    return this.mutate(acc, orderId, async (tx, o, tenantId) => {
       if (o.cancelledAt) throw new ConflictException("Cette commande est déjà annulée");
       if (o.payments.some((p) => p.status === "PAID")) throw new ConflictException("Des paiements ont été encaissés : remboursez-les avant d'annuler");
       const now = new Date();
       await tx.orderItem.updateMany({ where: { orderId: o.id, status: { not: "CANCELLED" } }, data: { status: "CANCELLED", cancelReason: reason } });
       await tx.order.update({ where: { id: o.id }, data: { cancelledAt: now, cancelReason: reason, closedAt: now } });
       await tx.auditLog.create({ data: { tenantId: o.tenantId, userId: acc.id, action: "order.cancel", entity: "Order", entityId: o.id, metadata: { number: o.number, reason } } });
+      const live = o.items.filter((i) => i.status !== "CANCELLED");
+      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, live.map((item) => ({ item, from: item.status as ItemStatus, to: "CANCELLED" as const })), reason);
     });
   }
 
@@ -301,20 +311,22 @@ export class OrdersService {
    * Verrouille la commande (SELECT … FOR UPDATE : deux encaissements simultanés ne peuvent pas dépasser le total),
    * applique la modification, recalcule totaux et statuts, met à jour la table puis diffuse la commande.
    */
-  private async mutate(acc: Account, orderId: string, fn: (tx: Tx, o: OrderRow, tenantId: string) => Promise<void>) {
+  private async mutate(acc: Account, orderId: string, fn: (tx: Tx, o: OrderRow, tenantId: string) => Promise<void | StockEffects>) {
     const tenantId = acc.tenantId!;
     const ops = await this.ops(tenantId);
     let tableChanged = false;
+    let stock: void | StockEffects = undefined;
     const view = await this.prisma.asTenant(tenantId, async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} AND "tenantId" = ${tenantId} FOR UPDATE`;
       const o = await this.load(tx, tenantId, orderId);
-      await fn(tx, o, tenantId);
+      stock = await fn(tx, o, tenantId);
       await this.recompute(tx, o.id, ops);
       tableChanged = await this.tables.syncStatus(tx, o.tableId);
       return orderView(await this.load(tx, tenantId, o.id));
     });
     this.realtime.emit(tenantId, "order.updated", view);
     if (tableChanged && view.table) await this.tables.broadcast(tenantId, view.table.id);
+    await this.stock.publish(tenantId, stock);
     return view;
   }
 

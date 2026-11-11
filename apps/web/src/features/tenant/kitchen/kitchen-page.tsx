@@ -22,6 +22,7 @@ import { useRealtime, useOrderEvents } from "@/providers/realtime";
 import { useSession } from "@/providers/session";
 import { useSpacePath } from "@/providers/space";
 import { useForcedTheme } from "@/providers/theme";
+import { KitchenStockButton } from "../stock/stock-alerts";
 import { useApplyOrder, useNow, useTenant } from "../hooks";
 import { useMenu } from "../pos/pos-page";
 import {
@@ -176,6 +177,7 @@ function KdsHeader({ counts, now, filter, setFilter, sound, toggleSound, openSol
       <div className="ml-auto flex items-center gap-2">
         <LiveIndicator size="lg" className="hidden md:inline-flex" />
         <Button variant="secondary" className={big} onClick={openSoldOut}><Ban /> Épuisé</Button>
+        <KitchenStockButton className={big} />
         <Button variant={sound ? "secondary" : "ghost"} className={big} onClick={toggleSound} aria-pressed={sound} aria-label={sound ? "Couper le son des nouvelles commandes" : "Activer le son des nouvelles commandes"}>
           {sound ? <Bell /> : <BellOff />}<span className="hidden xl:inline">{sound ? "Son activé" : "Son coupé"}</span>
         </Button>
