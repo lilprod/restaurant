@@ -968,6 +968,7 @@ model Tenant {
   updatedAt       DateTime     @updatedAt
 
   subscriptions      Subscription[]
+  notificationLogs   NotificationLog[]
   licensePayments    SubscriptionPayment[]
   registration       TenantRegistration?
   users              User[]
@@ -1140,4 +1141,41 @@ model PlatformSetting {
   value       Json
   updatedAt   DateTime @updatedAt
   updatedById String?
+}
+
+// ── Notifications (X1) : journal des messages email / SMS ──
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+model NotificationLog {
+  id          String              @id @default(uuid())
+  tenantId    String? // null = message de la plateforme
+  channel     NotificationChannel
+  to          String // adresse / numéro E.164 en clair (affiché masqué par l'API)
+  template    String // ex. "auth.password-reset"
+  category    String              @default("transactional") // transactional | reminder
+  subject     String?
+  status      NotificationStatus  @default(QUEUED)
+  error       String?
+  attempts    Int                 @default(0)
+  locale      String              @default("fr")
+  data        Json? // variables du modèle (absentes pour les modèles sensibles : renvoi impossible)
+  dedupeKey   String?             @unique // garantit « une seule fois » (ex. relance de licence par palier)
+  resendOfId  String?
+  createdAt   DateTime            @default(now())
+  sentAt      DateTime?
+  updatedAt   DateTime            @updatedAt
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([status])
 }

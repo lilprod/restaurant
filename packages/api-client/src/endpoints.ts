@@ -1,11 +1,11 @@
 import type {
   BrandingInput, BusinessInput, CategoryInput, CompanyInput, CreateOrderInput, CreateStaffInput, CreateTenantInput, LicensingSettings,
-  LocalizationInput, MenuItemInput, OperationsInput, OrderItemInput, OrderPaymentInput, PaymentInstructionsInput, PlanInput,
+  LocalizationInput, MenuItemInput, NotificationsSettingsInput, OperationsInput, OrderItemInput, OrderPaymentInput, PaymentInstructionsInput, PlanInput,
   PlatformSecurityInput, RecordPaymentInput, RegistrationInput, TableInput, TenantSecurityInput,
 } from "@restaurant/validation";
 import type { ApiClient } from "./client";
 import type {
-  AccountSummary, Allergen, AssetKind, BrandingSettings, DiningTable, LoginEvent, MenuCategory, MenuItem, Order, OrderItemStatus,
+  AccountSummary, Allergen, AssetKind, NotificationList, NotificationsQuery, BrandingSettings, DiningTable, LoginEvent, MenuCategory, MenuItem, Order, OrderItemStatus,
   OrderPaymentResult, OrderReceipt, OrdersQuery, PublicMenu, RegisterCloseResult, RegisterCurrent, RegisterSession, StaffMember,
   StaffRole, TableStatus, TenantDashboard, LoginResponse, LoginResult, LoginSuccess, Paginated, PaymentList,
   Plan, PlatformDashboard, PlatformPublicBranding, PlatformRole, PlatformSettingsAll, PlatformUserView, Profile, PublicPlan, Receipt,
@@ -65,6 +65,7 @@ type SettingsSectionMap = {
   operations: Section<OperationsInput>;
   localization: Section<LocalizationInput>;
   security: Section<TenantSecurityInput>;
+  notifications: Section<NotificationsSettingsInput>;
 };
 type PlatformSectionMap = {
   branding: Section<BrandingSettings>;
@@ -128,6 +129,11 @@ export function platformApi(c: ApiClient) {
       reject: (id: string, reason: string) => c.post<{ id: string; status: "REJECTED" }>(`/platform/registrations/${enc(id)}/reject`, { reason }),
     },
 
+    notifications: {
+      list: (q: NotificationsQuery = {}) => c.get<NotificationList>("/platform/notifications", { query: q }),
+      resend: (id: string) => c.post<{ id: string }>(`/platform/notifications/${enc(id)}/resend`),
+    },
+
     payments: {
       list: (q: { tenantId?: string; method?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
         c.get<PaymentList>("/platform/payments", { query: q }),
@@ -163,6 +169,10 @@ export function platformApi(c: ApiClient) {
 /** Espace d'un restaurant. */
 export function tenantApi(c: ApiClient) {
   return {
+    notifications: {
+      list: (q: NotificationsQuery = {}) => c.get<NotificationList>("/tenant/notifications", { query: q }),
+      resend: (id: string) => c.post<{ id: string }>(`/tenant/notifications/${enc(id)}/resend`),
+    },
     settings: {
       all: () => c.get<TenantSettingsAll>("/tenant/settings"),
       get: <S extends TenantSection>(s: S) => c.get<SettingsSectionMap[S]>(`/tenant/settings/${s}`),

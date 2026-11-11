@@ -25,6 +25,10 @@ export const STATUS_TONES: Record<string, StatusTone> = {
   // Paiement
   RECORDED: "green",
   VOIDED: "gray",
+  // Notification
+  QUEUED: "blue",
+  SENT: "green",
+  FAILED: "red",
 };
 
 export const statusTone = (status: string | null | undefined): StatusTone => (status ? STATUS_TONES[status] ?? "gray" : "gray");

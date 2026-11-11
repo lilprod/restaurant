@@ -84,7 +84,8 @@ comme à la connexion) : le bandeau de période de grâce n'attend pas une nouve
 
 ## Paramètres du restaurant — `/tenant/settings`
 Sections : `business` (identité légale, NIF, RCCM, adresse, contacts, réseaux sociaux, ticket de caisse), `branding` (nom affiché, slogan, thème),
-`operations` (TVA, service, pourboires, réservations, livraison…), `localization` (langue, fuseau, format de date), `security` (politique ci-dessous).
+`operations` (TVA, service, pourboires, réservations, livraison…), `localization` (langue, fuseau, format de date), `security` (politique ci-dessous),
+`notifications` (canaux email/SMS actifs, nom d'expéditeur, signature, préférences par événement `events.<clé>` ; Admin en lecture et écriture).
 
 `GET /tenant/settings` (tout) · `GET|PATCH /tenant/settings/:section` · `POST|DELETE /tenant/settings/assets/:kind` (`logo`, `logoDark`, `favicon` ; champ `file`).
 `PATCH` fusionne avec l'existant puis valide l'ensemble ; une chaîne vide efface un champ optionnel.
@@ -195,3 +196,40 @@ Les contrôles sont ceux de l'API (jeton, session, compte actif, licence).
 ## Tableau de bord — `GET /tenant/dashboard?date=` (responsables)
 Chiffre d'affaires encaissé, pourboires, nombre de commandes, ticket moyen, commandes ouvertes, répartition sur place / à emporter,
 par moyen de paiement, par heure, 5 plats les plus vendus — sur la journée du restaurant (son fuseau).
+
+## Notifications (X1) — email, SMS, journal
+Service unique `NotificationsService` (module global `src/notifications/`). `MailService` n'est plus qu'un adaptateur déprécié.
+
+### Routes
+| Route | Rôles | Rôle |
+|---|---|---|
+| `GET /tenant/notifications?channel=&status=&template=&page=&pageSize=` | Admin | Journal du restaurant (destinataires masqués : `k••••@gmail.com`, `+228 •• •• 34 56`) |
+| `POST /tenant/notifications/:id/resend` | Admin | Renvoi manuel (nouvelle ligne, `resendOfId`). 409 si le message est en cours ou confidentiel (mot de passe oublié), 404 si autre restaurant |
+| `GET /platform/notifications?tenantId=` | SuperAdmin, Support | Journal global ; `tenantId=none` = messages de la plateforme |
+| `POST /platform/notifications/:id/resend` | SuperAdmin | Renvoi manuel (audité) |
+
+Statuts : `QUEUED` (en file, éventuellement en cours de reprise) → `SENT` ou `FAILED` (après 5 tentatives, délai doublé à chaque fois).
+
+### Configuration (variables d'environnement, voir `.env.example`)
+- Email : `MAIL_DRIVER=log|smtp`, `SMTP_URL`, `MAIL_FROM` (Brevo, Mailjet, Gmail SMTP : seule l'URL change).
+- SMS : `SMS_DRIVER=log|twilio|http` ; `twilio` : `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `SMS_FROM` ; `http` (agrégateur générique) :
+  `SMS_HTTP_URL`, `SMS_HTTP_METHOD`, `SMS_HTTP_HEADERS` (JSON), `SMS_HTTP_CONTENT_TYPE=json|form`, `SMS_HTTP_BODY` (gabarit avec `{{to}}`, `{{message}}`, `{{from}}`) ; tout code 2xx = succès.
+- File : `NOTIFICATIONS_QUEUE=sync|bullmq` (`bullmq` exige `REDIS_URL`), `NOTIFICATIONS_RETRY_BASE_MS` (défaut 30 000).
+  `sync` (défaut, sans Redis) : première tentative immédiate, reprises en mémoire (perdues au redémarrage) : développement et tests seulement.
+- Défaut : `log` + `sync` ; une configuration incomplète empêche le démarrage (validation dans `config/env.ts`).
+
+### Envoyer un message depuis un module (P2A, X2, P5…)
+1. Créer `src/notifications/templates/<domaine>.ts` avec un `TemplateDef<Variables>` : `category` (`transactional` = toujours envoyé, `reminder` = respecte canaux et préférences),
+   `event` (clé de préférence), `sensitive` (secret dans les variables : rien n'est conservé, pas de renvoi), `email(data, brand)` → `{ subject, paragraphs, action?, note? }`,
+   `sms(data, brand)` → texte (tronqué à 160 caractères ; jamais de secret ni de code 2FA).
+2. L'enregistrer dans `templates/index.ts` (`TemplateDataMap` + `TEMPLATES`) et, pour un événement désactivable, dans `NOTIFICATION_EVENTS` (`packages/validation/src/notifications.ts`).
+3. Ajouter le libellé du modèle dans `apps/web/src/lib/labels.ts` (`NOTIFICATION_TEMPLATE_LABEL`).
+4. Envoyer, **après** la transaction métier : `await notifications.send({ channel: "EMAIL"|"SMS", to, template: "domaine.nom", data, tenantId, dedupeKey? })`.
+   `send` ne lève jamais d'exception, ne bloque pas sur le fournisseur (mise en file) et retourne `{ status: "queued", id }` ou `{ status: "skipped", reason }`.
+   `dedupeKey` garantit « une seule fois » (ex. `license:<abonnement>:<échéance>:<palier>:<destinataire>`). Numéros normalisés en E.164 (`normalizePhone` de `@restaurant/utils`, 8 chiffres = Togo).
+La marque (nom, logo), les coordonnées et la signature du restaurant sont ajoutées automatiquement.
+
+### Branchements livrés
+Mot de passe oublié (email, lien jamais conservé) · relances de licence J-7 / J-1 / jour d'expiration aux administrateurs (tâche planifiée toutes les heures,
+`LicenseRemindersService.run()`, une seule fois par palier et par échéance ; SMS au numéro du restaurant si le canal est activé) ·
+inscription d'un restaurant (demande reçue, validée, rejetée). Aucun événement temps réel.

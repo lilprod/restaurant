@@ -1,4 +1,5 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
+import { NotificationsService } from "../notifications/notifications.service";
 
 export interface MailMessage {
   to: string;
@@ -7,18 +8,19 @@ export interface MailMessage {
 }
 
 /**
- * Envoi d'emails. Pour l'instant : journalisation (+ boîte d'envoi en mémoire pour les tests).
- * Un fournisseur (Brevo, SMTP…) se branchera ici sans toucher aux appelants.
+ * @deprecated Adaptateur de compatibilité : utilisez `NotificationsService` avec un modèle (src/notifications/templates).
+ * Envoie un message libre par le nouveau service (pilote, file et journal inclus).
  */
 @Injectable()
 export class MailService {
-  private readonly log = new Logger("Mail");
-  readonly outbox: MailMessage[] = [];
+  constructor(private readonly notifications: NotificationsService) {}
+
+  /** Emails capturés par le pilote `log` (tests). */
+  get outbox() {
+    return this.notifications.outbox;
+  }
 
   async send(msg: MailMessage): Promise<void> {
-    this.outbox.push(msg);
-    if (this.outbox.length > 100) this.outbox.shift();
-    this.log.log(`→ ${msg.to} · ${msg.subject}`);
-    if (process.env.NODE_ENV !== "production") this.log.debug(msg.text);
+    await this.notifications.send({ channel: "EMAIL", to: msg.to, template: "generic.message", data: { subject: msg.subject, text: msg.text } });
   }
 }

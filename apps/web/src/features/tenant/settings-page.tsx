@@ -6,7 +6,7 @@ import { useUrlParam } from "@/lib/use-url-state";
 import { brandingKeys } from "@/providers/branding";
 import { BrandingEditor } from "../settings/branding-editor";
 import type { SettingsAdapter } from "../settings/common";
-import { BusinessForm, LocalizationForm, OperationsForm, SecurityPolicyForm } from "../settings/forms";
+import { BusinessForm, LocalizationForm, NotificationsForm, OperationsForm, SecurityPolicyForm } from "../settings/forms";
 import { SETTINGS_READ, useTenant } from "./hooks";
 
 const TABS = [
@@ -15,6 +15,7 @@ const TABS = [
   { v: "exploitation", s: "operations", l: "Exploitation" },
   { v: "localisation", s: "localization", l: "Localisation" },
   { v: "securite", s: "security", l: "Sécurité" },
+  { v: "notifications", s: "notifications", l: "Notifications" },
 ] as const;
 
 export function TenantSettingsPage() {
@@ -50,6 +51,7 @@ export function TenantSettingsPage() {
         <TabsContent value="exploitation"><OperationsForm adapter={adapter} /></TabsContent>
         <TabsContent value="localisation"><LocalizationForm adapter={adapter} /></TabsContent>
         {visible.some((x) => x.s === "security") && <TabsContent value="securite"><SecurityPolicyForm adapter={adapter} space="tenant" /></TabsContent>}
+        {visible.some((x) => x.s === "notifications") && <TabsContent value="notifications"><NotificationsForm adapter={adapter} /></TabsContent>}
       </Tabs>
     </>
   );

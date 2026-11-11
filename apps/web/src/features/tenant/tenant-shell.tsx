@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   BookOpen, CalendarClock, ChefHat, ClipboardList, HandPlatter, Landmark, LayoutDashboard, LayoutGrid, Settings, ShieldCheck,
-  ShoppingBag, SquarePlus, Users, WalletCards,
+  ShoppingBag, SquarePlus, Users, WalletCards, Bell,
 } from "lucide-react";
 import { motion } from "motion/react";
 import * as React from "react";
@@ -36,6 +36,7 @@ export function useTenantNav(): NavItem[] {
       t.isManager && { to: to("/equipe"), label: "Équipe", icon: <Users />, keywords: ["personnel", "serveur", "rôle"], section: G },
       { to: to("/parametres"), label: "Paramètres", icon: <Settings />, keywords: ["marque", "logo", "tva", "réservations"], section: G },
       t.isAdmin && { to: to("/securite"), label: "Sécurité", icon: <ShieldCheck />, keywords: ["utilisateurs", "connexions"], section: G },
+      t.isAdmin && { to: to("/notifications"), label: "Notifications", icon: <Bell />, keywords: ["email", "sms", "messages", "relances", "journal"], section: G },
       t.canSeeLicense && { to: to("/licence"), label: "Licence", icon: <WalletCards />, keywords: ["paiement", "abonnement", "flooz", "tmoney"], section: G },
     ];
     return items.filter(Boolean) as NavItem[];

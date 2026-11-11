@@ -43,7 +43,7 @@ DATABASE_URL=x npx prisma generate
 - Fonctionnalités par plan : `plan.features` (JSON) ; si un module est réservé à certains plans, refusez avec `403 {code: "PLAN_FEATURE"}` et documentez-le.
 - Fichiers : `StorageService` + `validateImage` (ajoutez une règle dans `storage/image-validation.ts`).
 - Audit : `tx.auditLog.create({ data: { tenantId, userId, action: "domaine.action", entity, entityId, metadata } })`.
-- Emails / SMS : passez par le service de notifications (fiche X1) ; tant qu'il n'existe pas, `MailService` (journalise).
+- Emails / SMS : `NotificationsService` (voir la section « Notifications » de `docs/API.md` pour déclarer un modèle et envoyer).
 - Fuseau horaire : `zonedDayRange`, `zonedDay`, `zonedHour` de `@restaurant/utils` avec `tenant.timezone` ; le serveur raisonne en UTC.
 
 ### 5. Contrôleur

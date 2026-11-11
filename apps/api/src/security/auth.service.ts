@@ -3,7 +3,7 @@ import { JwtService } from "@nestjs/jwt";
 import { createHash, randomBytes } from "node:crypto";
 import type { RequestMeta } from "../common/request-meta";
 import { APP_ENV, Env } from "../config/env";
-import { MailService } from "../mail/mail.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { Account, AccountsRepo, Space } from "./accounts.repo";
 import { LicenseGateService } from "./license-gate.service";
@@ -35,7 +35,7 @@ export class AuthService {
     private readonly totp: TotpService,
     private readonly events: LoginEventsService,
     private readonly gate: LicenseGateService,
-    private readonly mail: MailService,
+    private readonly notifications: NotificationsService,
     private readonly jwt: JwtService,
     @Inject(APP_ENV) private readonly env: Env,
   ) {}
@@ -160,10 +160,9 @@ export class AuthService {
     await this.prisma.passwordReset.create({ data: { ...owner, tokenHash: sha(token), expiresAt: new Date(Date.now() + 3_600_000) } });
 
     const params = new URLSearchParams({ token, space, ...(dto.tenantSlug ? { tenant: dto.tenantSlug } : {}) });
-    await this.mail.send({
-      to: acc.email,
-      subject: "Réinitialisation de votre mot de passe",
-      text: `Bonjour ${acc.firstName},\n\nPour choisir un nouveau mot de passe (lien valable 1 heure) :\n${this.env.APP_URL}/reset-password?${params}\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez ce message.`,
+    await this.notifications.send({
+      channel: "EMAIL", to: acc.email, template: "auth.password-reset", tenantId: space === "tenant" ? tenantId : null,
+      data: { firstName: acc.firstName, resetUrl: `${this.env.APP_URL}/reset-password?${params}` },
     });
   }
 

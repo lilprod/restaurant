@@ -1,3 +1,4 @@
+export * from "./notifications";
 import { z } from "zod";
 
 /** Schémas Zod partagés entre l'API, le web et le mobile. */

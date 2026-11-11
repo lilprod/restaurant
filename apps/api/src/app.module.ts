@@ -6,6 +6,7 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { PrismaExceptionFilter } from "./common/prisma-exception.filter";
 import { AppConfigModule } from "./config/config.module";
 import { MailModule } from "./mail/mail.module";
+import { NotificationsModule } from "./notifications/notifications.module";
 import { PlatformModule } from "./platform/platform.module";
 import { SecurityModule } from "./security/security.module";
 import { SettingsModule } from "./settings/settings.module";
@@ -19,6 +20,7 @@ import { RestaurantModule } from "./restaurant/restaurant.module";
     AppConfigModule,
     PrismaModule,
     MailModule,
+    NotificationsModule,
     StorageModule,
     SecurityModule,
     SettingsModule,

@@ -8,6 +8,16 @@ export const SUBSCRIPTION_STATUS_LABEL: Record<string, string> = {
 export const REGISTRATION_STATUS_LABEL: Record<string, string> = { PENDING: "En attente", APPROVED: "Validée", REJECTED: "Rejetée" };
 export const PAYMENT_STATUS_LABEL: Record<string, string> = { RECORDED: "Enregistré", VOIDED: "Annulé" };
 export const PAYMENT_METHOD_LABEL: Record<string, string> = { FLOOZ: "Flooz", TMONEY: "TMoney", CARD: "Carte", CASH: "Espèces" };
+export const NOTIFICATION_STATUS_LABEL: Record<string, string> = { QUEUED: "En cours", SENT: "Envoyé", FAILED: "Échec" };
+export const NOTIFICATION_CHANNEL_LABEL: Record<string, string> = { EMAIL: "Email", SMS: "SMS" };
+export const NOTIFICATION_TEMPLATE_LABEL: Record<string, string> = {
+  "auth.password-reset": "Réinitialisation de mot de passe",
+  "license.reminder": "Relance de licence",
+  "registration.received": "Inscription reçue",
+  "registration.approved": "Inscription validée",
+  "registration.rejected": "Inscription rejetée",
+  "generic.message": "Message libre",
+};
 export const PAYMENT_METHODS = ["FLOOZ", "TMONEY", "CARD", "CASH"] as const;
 export const BILLING_CYCLE_LABEL: Record<string, string> = { MONTHLY: "Mensuel", YEARLY: "Annuel" };
 export const PLATFORM_ROLE_LABEL: Record<string, string> = { SUPER_ADMIN: "Super admin", SUPPORT: "Support" };

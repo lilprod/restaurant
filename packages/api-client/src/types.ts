@@ -3,7 +3,7 @@ import type {
 } from "@restaurant/shared-types";
 import type { PasswordPolicy, Theme } from "@restaurant/utils";
 import type {
-  BusinessInput, CompanyInput, LicensingSettings, LocalizationInput, OperationsInput, PaymentInstructionsInput,
+  BusinessInput, CompanyInput, LicensingSettings, LocalizationInput, NotificationsSettingsInput, OperationsInput, PaymentInstructionsInput,
   PlatformSecurityInput, TenantSecurityInput,
 } from "@restaurant/validation";
 import type { Restriction } from "./errors";
@@ -301,7 +301,38 @@ export interface TenantUserSecurity {
 
 // ── Réglages ──
 
+/** Une ligne du journal des notifications (destinataire masqué par l'API). */
+export interface NotificationLogItem {
+  id: string;
+  tenantId: string | null;
+  /** Présent dans la vue plateforme uniquement. */
+  tenant?: { id: string; name: string; slug: string } | null;
+  channel: "EMAIL" | "SMS";
+  to: string;
+  template: string;
+  category: "transactional" | "reminder";
+  subject: string | null;
+  status: "QUEUED" | "SENT" | "FAILED";
+  error: string | null;
+  attempts: number;
+  createdAt: ISODate;
+  sentAt: ISODate | null;
+  resendOfId: string | null;
+  canResend: boolean;
+}
+export type NotificationList = Paginated<NotificationLogItem>;
+export type NotificationsQuery = {
+  channel?: "EMAIL" | "SMS";
+  status?: "QUEUED" | "SENT" | "FAILED";
+  template?: string;
+  /** Plateforme : `none` = messages de la plateforme, sinon identifiant d'un restaurant. */
+  tenantId?: string;
+  page?: number;
+  pageSize?: number;
+};
+
 export interface TenantSettingsAll {
+  notifications?: NotificationsSettingsInput;
   business?: BusinessInput;
   branding?: Omit<BrandingSettings, "preview">;
   operations?: OperationsInput;

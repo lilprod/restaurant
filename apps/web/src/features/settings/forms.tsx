@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  businessSchema, companySchema, licensingSettingsSchema, localizationSchema, operationsSchema, paymentInstructionsSchema,
+  NOTIFICATION_EVENTS, businessSchema, companySchema, licensingSettingsSchema, localizationSchema, notificationsSettingsSchema, operationsSchema, paymentInstructionsSchema,
   platformSecuritySchema, tenantSecuritySchema,
 } from "@restaurant/validation";
 import { X } from "lucide-react";
@@ -277,6 +277,32 @@ const TIMEZONES: string[] = (() => {
     return [...africa, ...all.filter((z) => !z.startsWith("Africa/"))];
   } catch { return ["Africa/Lome", "Africa/Abidjan", "Africa/Lagos", "Europe/Paris", "UTC"]; }
 })();
+
+// ── Notifications ──
+export function NotificationsForm({ adapter }: { adapter: SettingsAdapter }) {
+  const { query, save, form, submit } = useSectionForm(adapter, "notifications", notificationsSettingsSchema);
+  return (
+    <SectionShell adapter={adapter} query={query} form={form} save={save} submit={submit}>
+      <SettingsSection title="Canaux" description="Les messages importants (réinitialisation de mot de passe, inscription) sont toujours envoyés par email.">
+        <div className="divide-y divide-border">
+          <S form={form} name="channels.email" label="Email" description="Relances et messages non critiques par email." />
+          <S form={form} name="channels.sms" label="SMS" description="Relances par SMS au numéro du restaurant (8 chiffres au Togo, ou format international)." />
+        </div>
+      </SettingsSection>
+      <SettingsSection title="Événements" description="Choisissez les messages non critiques que vous souhaitez recevoir.">
+        <div className="divide-y divide-border">
+          {NOTIFICATION_EVENTS.map((e) => <S key={e.key} form={form} name={`events.${e.key}`} label={e.label} description={e.description} />)}
+        </div>
+      </SettingsSection>
+      <SettingsSection title="Expéditeur et signature">
+        <T form={form} name="senderName" label="Nom de l'expéditeur" hint="Affiché dans la boîte de réception. Par défaut : le nom de votre restaurant." maxLength={60} />
+        <Field label="Signature" hint="Ajoutée en bas des emails." error={errorAt(form, "signature")}>
+          <Textarea rows={3} maxLength={300} {...form.register("signature")} />
+        </Field>
+      </SettingsSection>
+    </SectionShell>
+  );
+}
 
 export function LocalizationForm({ adapter }: { adapter: SettingsAdapter }) {
   const { query, save, form, submit } = useSectionForm(adapter, "localization", localizationSchema);

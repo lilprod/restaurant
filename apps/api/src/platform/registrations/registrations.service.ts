@@ -1,4 +1,6 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { APP_ENV, Env } from "../../config/env";
+import { NotificationsService } from "../../notifications/notifications.service";
 import { BadRequestException } from "@nestjs/common";
 import * as argon2 from "argon2";
 import { DEFAULT_PASSWORD_POLICY, validatePassword } from "@restaurant/utils";
@@ -13,6 +15,8 @@ export class RegistrationsService {
     private readonly prisma: PrismaService,
     private readonly tenants: TenantsService,
     private readonly audit: PlatformAuditService,
+    private readonly notifications: NotificationsService,
+    @Inject(APP_ENV) private readonly env: Env,
   ) {}
 
   /** Inscription publique : crée une demande en attente de validation (aucun tenant n'existe encore). */
@@ -42,6 +46,9 @@ export class RegistrationsService {
         planId: input.planId,
       },
     });
+    await this.notifications.send({
+      channel: "EMAIL", to: reg.email, template: "registration.received", data: { firstName: reg.ownerFirstName, restaurantName: reg.restaurantName },
+    });
     return { id: reg.id, status: reg.status, message: "Demande reçue. Vous serez contacté après validation." };
   }
 
@@ -55,7 +62,7 @@ export class RegistrationsService {
 
   /** Validation : crée le tenant, son admin et l'essai gratuit, de façon atomique. */
   async approve(id: string, actorId: string, planId?: string) {
-    return this.prisma.asPlatform(async (tx) => {
+    const { result, reg } = await this.prisma.asPlatform(async (tx) => {
       // Verrou optimiste : une seule validation peut passer la demande de PENDING à APPROVED.
       const claimed = await tx.tenantRegistration.updateMany({
         where: { id, status: "PENDING" },
@@ -84,8 +91,14 @@ export class RegistrationsService {
       });
       await tx.tenantRegistration.update({ where: { id }, data: { tenantId: tenant.id, planId: chosenPlanId } });
       await this.audit.log({ actorId, action: "registration.approve", entity: "TenantRegistration", entityId: id, metadata: { tenantId: tenant.id } }, tx);
-      return { registrationId: id, tenantId: tenant.id, slug: tenant.slug, status: tenant.status };
+      return { reg, result: { registrationId: id, tenantId: tenant.id, slug: tenant.slug, status: tenant.status } };
     });
+    // Après la transaction : l'envoi ne doit jamais retarder ni faire échouer la validation.
+    await this.notifications.send({
+      channel: "EMAIL", to: reg.email, template: "registration.approved", tenantId: result.tenantId,
+      data: { firstName: reg.ownerFirstName, restaurantName: reg.restaurantName, loginUrl: `${this.env.APP_URL}/r/${result.slug}/login` },
+    });
+    return result;
   }
 
   async reject(id: string, reason: string, actorId: string) {
@@ -98,6 +111,10 @@ export class RegistrationsService {
       throw new ConflictException("Cette demande a déjà été traitée");
     }
     await this.audit.log({ actorId, action: "registration.reject", entity: "TenantRegistration", entityId: id, metadata: { reason } });
+    const reg = await this.prisma.tenantRegistration.findUniqueOrThrow({ where: { id } });
+    await this.notifications.send({
+      channel: "EMAIL", to: reg.email, template: "registration.rejected", data: { firstName: reg.ownerFirstName, restaurantName: reg.restaurantName, reason },
+    });
     return { id, status: "REJECTED" };
   }
 }

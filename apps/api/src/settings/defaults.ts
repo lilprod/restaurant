@@ -1,5 +1,5 @@
 import { DEFAULT_PASSWORD_POLICY, DEFAULT_THEME } from "@restaurant/utils";
-import type { LocalizationInput, OperationsInput, PaymentInstructionsInput, PlatformSecurityInput, TenantSecurityInput } from "@restaurant/validation";
+import type { LocalizationInput, NotificationsSettingsInput, OperationsInput, PaymentInstructionsInput, PlatformSecurityInput, TenantSecurityInput } from "@restaurant/validation";
 
 export const DEFAULT_TENANT_SECURITY: TenantSecurityInput = {
   passwordPolicy: { ...DEFAULT_PASSWORD_POLICY },
@@ -44,3 +44,8 @@ export const DEFAULT_PAYMENT_INSTRUCTIONS: PaymentInstructionsInput = { flooz: {
 export const DEFAULT_LICENSING = { graceDays: 7 };
 
 export const defaultBranding = (displayName: string) => ({ displayName, theme: { ...DEFAULT_THEME } });
+
+export const DEFAULT_NOTIFICATIONS: NotificationsSettingsInput = {
+  channels: { email: true, sms: false },
+  events: { licenseReminders: true },
+};

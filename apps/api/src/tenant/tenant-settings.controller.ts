@@ -19,6 +19,7 @@ const READ: Record<string, string[]> = {
   operations: ["ADMIN", "MANAGER", "WAITER", "KITCHEN"],
   localization: ["ADMIN", "MANAGER", "WAITER", "KITCHEN"],
   security: ["ADMIN"],
+  notifications: ["ADMIN"],
 };
 
 @ApiTags("Restaurant · Paramètres")

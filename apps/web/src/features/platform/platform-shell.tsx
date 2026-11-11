@@ -1,4 +1,4 @@
-import { CreditCard, Inbox, Layers, LayoutDashboard, Plus, Receipt, Settings, ShieldCheck, Store, Users } from "lucide-react";
+import { Bell, CreditCard, Inbox, Layers, LayoutDashboard, Plus, Receipt, Settings, ShieldCheck, Store, Users } from "lucide-react";
 import * as React from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import { AppShell, type NavItem } from "@/layouts/app-shell";
@@ -18,6 +18,7 @@ export function PlatformShell() {
     { to: "/admin/inscriptions", label: "Inscriptions", icon: <Inbox />, keywords: ["demandes", "validation"] },
     { to: "/admin/plans", label: "Plans", icon: <Layers />, keywords: ["tarifs", "offres"] },
     { to: "/admin/paiements", label: "Paiements", icon: <CreditCard />, keywords: ["reçus", "licences", "flooz", "tmoney"] },
+    { to: "/admin/notifications", label: "Notifications", icon: <Bell />, keywords: ["email", "sms", "messages", "journal"] },
     { to: "/admin/parametres", label: "Paramètres", icon: <Settings />, keywords: ["marque", "logo", "société"] },
     ...(superAdmin ? [
       { to: "/admin/equipe", label: "Équipe", icon: <Users />, keywords: ["utilisateurs", "support"] },

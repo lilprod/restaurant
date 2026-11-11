@@ -42,6 +42,7 @@ export const SETTINGS_READ: Record<string, string[]> = {
   operations: ["ADMIN", "MANAGER", "WAITER", "KITCHEN"],
   localization: ["ADMIN", "MANAGER", "WAITER", "KITCHEN"],
   security: ["ADMIN"],
+  notifications: ["ADMIN"],
 };
 
 const DEFAULT_OPS = { serviceChargePercent: 0, defaultVatRate: 18, tipsEnabled: true, tipPresets: [5, 10, 15], takeawayEnabled: true };

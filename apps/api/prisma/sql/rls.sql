@@ -247,6 +247,13 @@ DROP POLICY IF EXISTS tenant_isolation ON "Setting";
 CREATE POLICY tenant_isolation ON "Setting"
   USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
 
+ALTER TABLE "NotificationLog" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "NotificationLog" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "NotificationLog";
+-- tenantId nul = message de la plateforme : visible uniquement avec app.bypass_rls.
+CREATE POLICY tenant_isolation ON "NotificationLog"
+  USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
+
 -- TODO (phase réservations) : empêcher qu'une même table soit réservée sur deux plages
 -- qui se chevauchent, via une contrainte EXCLUDE USING gist (extension btree_gist) ;
 -- cela suppose de dénormaliser la plage horaire (tstzrange) sur ReservationTable.
