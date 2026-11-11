@@ -12,7 +12,7 @@ export const O = {
 
 export const poulet: MenuItem = {
   id: "11111111-1111-4111-8111-111111111111", categoryId: "c1", name: "Poulet braisé", description: null, price: 4000, vatRate: 18,
-  imageUrl: null, prepMinutes: 25, isAvailable: true, isDishOfDay: true, sortOrder: 0, archived: false, allergens: [],
+  imageUrl: null, prepMinutes: 25, isAvailable: true, availableFrom: null, availableTo: null, isDishOfDay: true, sortOrder: 0, archived: false, allergens: [],
   optionGroups: [
     { id: "g-acc", name: "Accompagnement", minChoices: 1, maxChoices: 1, options: [
       { id: O.att, name: "Attiéké", extra: 0 }, { id: O.fri, name: "Frites", extra: 300 }, { id: O.all, name: "Alloco", extra: 500 },
@@ -28,7 +28,7 @@ let seq = 0;
 export function item(p: Partial<OrderItem> = {}): OrderItem {
   seq += 1;
   return {
-    id: `item-${seq}`, menuItemId: poulet.id, name: "Poulet braisé", quantity: 1, unitPrice: 4000, optionsExtra: 0, lineTotal: 4000, vatRate: 18,
+    id: `item-${seq}`, menuItemId: poulet.id, formulaId: null, parentItemId: null, stepName: null, discount: 0, promotionName: null, name: "Poulet braisé", quantity: 1, unitPrice: 4000, optionsExtra: 0, lineTotal: 4000, vatRate: 18,
     status: "PENDING", instructions: null, course: 1, options: [], prepMinutes: 25, imageUrl: null, createdAt: "2026-10-12T12:00:00.000Z",
     startedAt: null, readyAt: null, servedAt: null, cancelReason: null, paidQuantity: 0, ...p,
   };
@@ -39,7 +39,7 @@ export function order(p: Partial<Order> = {}): Order {
   const subtotal = items.filter((i) => i.status !== "CANCELLED").reduce((n, i) => n + i.lineTotal, 0);
   return {
     id: "order-1", number: 12, type: "DINE_IN", status: "PENDING", paymentStatus: "UNPAID", table: { id: "table-1", label: "T1" },
-    customerName: null, notes: null, waiter: { id: "w1", firstName: "Awa", lastName: "K." }, subtotal, serviceCharge: 0, vat: 0, total: subtotal,
+    customerName: null, notes: null, waiter: { id: "w1", firstName: "Awa", lastName: "K." }, discountTotal: 0, subtotal, serviceCharge: 0, vat: 0, total: subtotal,
     tip: 0, paidAmount: 0, remaining: subtotal, createdAt: "2026-10-12T12:00:00.000Z", updatedAt: "2026-10-12T12:00:00.000Z",
     closedAt: null, cancelledAt: null, cancelReason: null, items, payments: [], ...p,
   };

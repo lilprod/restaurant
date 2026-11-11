@@ -1,3 +1,4 @@
+import { orderLines } from "@/lib/order-lines";
 import type { Order, OrderPaymentMethod, OrderPaymentResult } from "@restaurant/api-client";
 import { orderPaymentSchema } from "@restaurant/validation";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -61,10 +62,13 @@ export function CheckoutPage() {
         <Card className="lg:col-span-2">
           <div className="border-b border-border p-4 sm:px-5"><h2 className="text-[15px] font-semibold tracking-tight">Addition</h2></div>
           <ul className="divide-y divide-border">
-            {o.items.filter((i) => i.status !== "CANCELLED").map((i) => (
+            {orderLines(o.items.filter((i) => i.status !== "CANCELLED")).map((i) => i.parentItemId ? (
+              <li key={i.id} className="px-4 py-1 pl-9 text-xs text-muted-foreground sm:px-5 sm:pl-10">{i.stepName ? `${i.stepName} : ` : ""}{i.name}</li>
+            ) : (
               <li key={i.id} className="flex items-start justify-between gap-3 px-4 py-2.5 sm:px-5">
                 <div className="min-w-0">
                   <p className="text-sm"><span className="font-mono tabular-nums">{i.quantity}×</span> {i.name}</p>
+                  {i.discount > 0 && <p className="text-xs text-success">dont remise{i.promotionName ? ` « ${i.promotionName} »` : ""} : − {formatFcfa(i.discount)}</p>}
                   <ItemDetails item={{ options: i.options, instructions: null }} />
                   {i.paidQuantity > 0 && <p className="text-xs text-success">{i.paidQuantity === i.quantity ? "Encaissé" : `${i.paidQuantity}/${i.quantity} encaissé`}</p>}
                 </div>

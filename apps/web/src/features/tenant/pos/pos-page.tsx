@@ -1,8 +1,8 @@
-import { ApiError, type DiningTable, type MenuItem } from "@restaurant/api-client";
+import { ApiError, type DiningTable, type Formula, type MenuItem } from "@restaurant/api-client";
 import { tableStatusTone } from "@restaurant/ui-tokens";
 import { createOrderSchema, addItemsSchema } from "@restaurant/validation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, LayoutGrid, Layers, Search, ShoppingBag, ShoppingCart, Star, UtensilsCrossed, X } from "lucide-react";
+import { ArrowLeft, Clock, LayoutGrid, Layers, Search, ShoppingBag, ShoppingCart, Star, UtensilsCrossed, X } from "lucide-react";
 import * as React from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -24,10 +24,14 @@ import { useSpacePath } from "@/providers/space";
 import { useApplyOrder, useOperations, useTenant } from "../hooks";
 import { useOrder } from "../orders/order-detail-page";
 import { orderPlace } from "../orders/order-bits";
+import { useDishRules, useFormulas, usePromotions, type DishRules } from "../menu/extras-hooks";
 import { useTables } from "../tables/tables-page";
 import { cartCount, cartReducer, cartTotals, toOrderItems, type CartLine } from "./cart";
 import { CartPanel } from "./cart-panel";
+import { FormulaSheet } from "./formula-sheet";
 import { OptionSheet } from "./option-sheet";
+
+const FORMULAS_TAB = "__formules";
 
 /** Carte du restaurant (cache partagé : menu, prise de commande, écran cuisine). */
 export function useMenu() {
@@ -60,6 +64,9 @@ export function PosPage() {
   const ops = useOperations();
   const apply = useApplyOrder();
   const menu = useMenu();
+  const formulasQ = useFormulas();
+  const promos = usePromotions();
+  const rules = useDishRules(promos.data);
   const tables = useTables();
   const existing = useOrder(orderId);
   const adding = !!orderId;
@@ -73,28 +80,38 @@ export function PosPage() {
   const [category, setCategory] = React.useState<string>("");
   const [search, setSearch] = React.useState("");
   const [optionsFor, setOptionsFor] = React.useState<MenuItem | null>(null);
+  const [formulaFor, setFormulaFor] = React.useState<Formula | null>(null);
   const [pickTable, setPickTable] = React.useState(false);
   const [cartOpen, setCartOpen] = React.useState(false);
 
   const categories = (menu.data ?? []).filter((c) => c.isActive && c.items.length);
   const allItems = categories.flatMap((c) => c.items);
-  const currentCat = categories.find((c) => c.id === category) ?? categories[0];
+  const formulas = (formulasQ.data ?? []).filter((f) => f.isActive);
+  const onFormulas = category === FORMULAS_TAB && formulas.length > 0;
+  const currentCat = onFormulas ? undefined : categories.find((c) => c.id === category) ?? categories[0];
   const needle = search.trim().toLowerCase();
   const shown = needle ? allItems.filter((i) => i.name.toLowerCase().includes(needle)) : currentCat?.items ?? [];
+  const shownFormulas = needle ? formulas.filter((f) => f.name.toLowerCase().includes(needle)) : onFormulas ? formulas : [];
   const byId = new Map(allItems.map((i) => [i.id, i]));
-  const unavailable = new Set(lines.filter((l) => byId.size && !byId.get(l.menuItemId)?.isAvailable).map((l) => l.menuItemId));
-  const inCart = (id: string) => lines.filter((l) => l.menuItemId === id).reduce((n, l) => n + l.quantity, 0);
+  const fById = new Map(formulas.map((f) => [f.id, f]));
+  // Plats / formules du panier devenus indisponibles (épuisés, hors horaires, formule retirée).
+  const unavailable = new Set(lines.flatMap((l) => {
+    if (l.formulaId) return formulasQ.data && (!fById.get(l.formulaId) || !rules.formulaOpen(fById.get(l.formulaId)!)) ? [l.formulaId] : [];
+    const item = byId.get(l.menuItemId ?? "");
+    return byId.size && l.menuItemId && !(item && rules.state(item).available) ? [l.menuItemId] : [];
+  }));
+  const inCart = (id: string) => lines.filter((l) => l.menuItemId === id || l.formulaId === id).reduce((n, l) => n + l.quantity, 0);
   const totals = cartTotals(lines, ops);
   const table = tables.data?.find((x) => x.id === tableId) ?? null;
 
   const pick = (item: MenuItem) => {
-    if (!item.isAvailable) return;
+    if (!rules.state(item).available) return;
     if (item.optionGroups.length) setOptionsFor(item);
-    else dispatch({ type: "add", item });
+    else dispatch({ type: "add", item, promo: rules.promoFor(item) });
   };
 
   const onConflict = (e: unknown) => {
-    if (e instanceof ApiError && e.status === 409 && /plus disponible/i.test(e.message)) {
+    if (e instanceof ApiError && e.status === 409 && /plus disponible|n'est servie?/i.test(e.message)) {
       toast.error(e.message, { description: "La carte a été mise à jour : retirez ce plat du panier ou choisissez-en un autre." });
       void qc.invalidateQueries({ queryKey: tenantKeys.menu(t.root) });
       return true;
@@ -177,8 +194,11 @@ export function PosPage() {
                 trailing={search ? <Button variant="ghost" size="icon-sm" aria-label="Effacer la recherche" onClick={() => setSearch("")}><X /></Button> : undefined} />
               {!needle && (
                 <div role="tablist" aria-label="Catégories" className="-mx-3 flex gap-2 overflow-x-auto px-3 scrollbar-none">
-                  {menu.isLoading ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-11 w-24 shrink-0 rounded-full" />) : categories.map((c) => {
-                    const on = c.id === currentCat?.id;
+                  {menu.isLoading ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-11 w-24 shrink-0 rounded-full" />) : [
+                    ...(formulas.length ? [{ id: FORMULAS_TAB, name: "Formules", items: formulas }] : []),
+                    ...categories,
+                  ].map((c) => {
+                    const on = c.id === (onFormulas ? FORMULAS_TAB : currentCat?.id);
                     return (
                       <button key={c.id} role="tab" aria-selected={on} type="button" onClick={() => setCategory(c.id)}
                         className={cn("flex h-11 shrink-0 items-center gap-2 rounded-full border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -193,11 +213,12 @@ export function PosPage() {
             <div className="min-h-0 flex-1 overflow-y-auto p-3 pb-24 md:pb-3">
               {menu.isError ? <ErrorState error={menu.error} onRetry={() => menu.refetch()} /> : menu.isLoading ? (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-48 rounded-lg" />)}</div>
-              ) : shown.length === 0 ? (
+              ) : shown.length === 0 && shownFormulas.length === 0 ? (
                 <EmptyState icon={<UtensilsCrossed />} title={needle ? "Aucun plat trouvé" : "Aucun plat"} description={needle ? `Aucun plat ne contient « ${search} ».` : "Ajoutez des plats depuis l'écran Menu."} />
               ) : (
                 <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-                  {shown.map((item) => <li key={item.id}><DishTile item={item} count={inCart(item.id)} onPick={() => pick(item)} /></li>)}
+                  {shownFormulas.map((f) => <li key={f.id}><FormulaTile formula={f} open={rules.formulaOpen(f)} count={inCart(f.id)} onPick={() => setFormulaFor(f)} /></li>)}
+                  {shown.map((item) => <li key={item.id}><DishTile item={item} rules={rules} count={inCart(item.id)} onPick={() => pick(item)} /></li>)}
                 </ul>
               )}
             </div>
@@ -233,8 +254,12 @@ export function PosPage() {
       </Dialog>
 
       <OptionSheet item={optionsFor} onClose={() => setOptionsFor(null)} onAdd={(item, c) => {
-        dispatch({ type: "add", item, optionIds: c.optionIds, quantity: c.quantity, instructions: c.instructions, course: c.course });
+        dispatch({ type: "add", item, optionIds: c.optionIds, quantity: c.quantity, instructions: c.instructions, course: c.course, promo: rules.promoFor(item) });
         setOptionsFor(null);
+      }} />
+      <FormulaSheet formula={formulaFor} unavailable={new Set(allItems.filter((i) => !rules.state(i).available).map((i) => i.id))} onClose={() => setFormulaFor(null)} onAdd={(formula, c) => {
+        dispatch({ type: "addFormula", formula, vatRate: ops.defaultVatRate, choices: c.choices, quantity: c.quantity, instructions: c.instructions, course: c.course });
+        setFormulaFor(null);
       }} />
       <TablePicker open={pickTable} onOpenChange={setPickTable} tables={tables.data ?? []} loading={tables.isLoading} error={tables.error}
         value={tableId} onPick={(id) => { setTableId(id); setPickTable(false); }} />
@@ -242,11 +267,15 @@ export function PosPage() {
   );
 }
 
-function DishTile({ item, count, onPick }: { item: MenuItem; count: number; onPick: () => void }) {
-  const off = !item.isAvailable;
+function DishTile({ item, rules, count, onPick }: { item: MenuItem; rules: DishRules; count: number; onPick: () => void }) {
+  const st = rules.state(item);
+  const off = !st.available;
+  const promo = off ? null : rules.promoFor(item);
   const badges = (
     <>
-      {off && <Badge tone="red" dot>Épuisé</Badge>}
+      {off && st.reason === "UNAVAILABLE" && <Badge tone="red" dot>Épuisé</Badge>}
+      {off && st.reason === "OUT_OF_HOURS" && <Badge tone="gray"><Clock className="size-3" /> {st.hours ?? "Hors horaires"}</Badge>}
+      {!off && promo && <Badge tone="green">{promo.name}</Badge>}
       {!off && item.isDishOfDay && <Badge tone="amber"><Star className="size-3" /> Plat du jour</Badge>}
     </>
   );
@@ -258,7 +287,7 @@ function DishTile({ item, count, onPick }: { item: MenuItem; count: number; onPi
       type="button"
       onClick={onPick}
       disabled={off}
-      aria-label={`${item.name}, ${formatFcfa(item.price)}${off ? ", épuisé" : ""}${count ? `, ${count} dans le panier` : ""}`}
+      aria-label={`${item.name}, ${formatFcfa(promo?.unitPrice ?? item.price)}${off ? (st.reason === "OUT_OF_HOURS" ? `, servi ${st.hours ?? "à certaines heures"}` : ", épuisé") : ""}${count ? `, ${count} dans le panier` : ""}`}
       className={cn(
         "group relative flex h-full min-h-[120px] w-full flex-col overflow-hidden rounded-lg border bg-card text-left shadow-xs transition-[border-color,box-shadow,transform] active:scale-[0.98]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -274,12 +303,15 @@ function DishTile({ item, count, onPick }: { item: MenuItem; count: number; onPi
         </div>
       )}
       <div className={cn("flex flex-1 flex-col gap-1.5 p-3", off && "opacity-60")}>
-        {!item.imageUrl && (off || item.isDishOfDay || count > 0) && (
+        {!item.imageUrl && (off || promo || item.isDishOfDay || count > 0) && (
           <div className="flex min-h-7 items-start justify-between gap-2"><span className="flex flex-wrap gap-1">{badges}</span>{qty}</div>
         )}
         <span className="line-clamp-2 text-[15px] font-medium leading-snug">{item.name}</span>
         <span className="mt-auto flex items-center justify-between gap-2 pt-1">
-          <span className="font-mono text-sm font-semibold tabular-nums">{formatFcfa(item.price)}</span>
+          <span className="flex items-baseline gap-1.5 font-mono text-sm font-semibold tabular-nums">
+            {formatFcfa(promo?.unitPrice ?? item.price)}
+            {promo && <s className="text-xs font-normal text-faint">{formatFcfa(item.price)}</s>}
+          </span>
           {item.optionGroups.length > 0 && <span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground"><Layers className="size-3" /> Options</span>}
         </span>
       </div>
@@ -315,5 +347,27 @@ function TablePicker({ open, onOpenChange, tables, loading, error, value, onPick
       )}
       {error ? <p className="sr-only">{errorMessage(error)}</p> : null}
     </Dialog>
+  );
+}
+
+function FormulaTile({ formula, open, count, onPick }: { formula: Formula; open: boolean; count: number; onPick: () => void }) {
+  const hours = formula.availableFrom && formula.availableTo ? `de ${formula.availableFrom} à ${formula.availableTo}` : null;
+  return (
+    <button type="button" onClick={onPick} disabled={!open}
+      aria-label={`Formule ${formula.name}, ${formatFcfa(formula.price)}${open ? "" : `, servie ${hours ?? "à certaines heures"}`}${count ? `, ${count} dans le panier` : ""}`}
+      className={cn(
+        "relative flex h-full min-h-[120px] w-full flex-col gap-1.5 rounded-lg border bg-card p-3 text-left shadow-xs transition-[border-color,box-shadow,transform] active:scale-[0.98]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        count ? "border-brand-ink ring-1 ring-brand-ink" : "border-border hover:border-border-strong hover:shadow-sm",
+        !open && "cursor-not-allowed bg-subtle opacity-60 active:scale-100",
+      )}>
+      <span className="flex items-start justify-between gap-2">
+        <Badge tone={open ? "blue" : "gray"}>{open ? "Formule" : <><Clock className="size-3" /> {hours ?? "Hors horaires"}</>}</Badge>
+        {count > 0 && <span className="flex h-7 min-w-7 items-center justify-center rounded-full bg-brand px-2 font-mono text-sm font-semibold text-brand-foreground tabular-nums">{count}</span>}
+      </span>
+      <span className="line-clamp-2 text-[15px] font-medium leading-snug">{formula.name}</span>
+      <span className="line-clamp-2 text-xs text-muted-foreground">{formula.steps.map((s) => s.name).join(" · ")}</span>
+      <span className="mt-auto pt-1 font-mono text-sm font-semibold tabular-nums">{formatFcfa(formula.price)}</span>
+    </button>
   );
 }

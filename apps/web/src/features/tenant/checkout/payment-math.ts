@@ -4,7 +4,8 @@ import { splitEqually } from "@restaurant/utils";
 /** Articles encore à régler dans un partage « par article » (quantité restante > 0). */
 export function payableItems(order: Pick<Order, "items">): (OrderItem & { left: number })[] {
   return order.items
-    .filter((i) => i.status !== "CANCELLED")
+    // Les plats d'une formule ne s'encaissent pas séparément : on règle la ligne formule.
+    .filter((i) => i.status !== "CANCELLED" && !i.parentItemId)
     .map((i) => ({ ...i, left: Math.max(0, i.quantity - i.paidQuantity) }))
     .filter((i) => i.left > 0);
 }

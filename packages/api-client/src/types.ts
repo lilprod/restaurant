@@ -428,6 +428,9 @@ export interface MenuItem {
   imageUrl: string | null;
   prepMinutes: number;
   isAvailable: boolean;
+  /** Plage horaire de service « HH:MM » (fuseau du restaurant) ; null = toute la journée. */
+  availableFrom: string | null;
+  availableTo: string | null;
   isDishOfDay: boolean;
   sortOrder: number;
   archived: boolean;
@@ -444,10 +447,61 @@ export interface MenuCategory {
   items: MenuItem[];
 }
 
-export type PublicMenuItem = Omit<MenuItem, "sortOrder" | "archived" | "isAvailable" | "vatRate" | "prepMinutes">;
+export type PublicMenuItem = Omit<MenuItem, "sortOrder" | "archived" | "isAvailable" | "vatRate" | "prepMinutes"> & {
+  /** Faux hors de la plage horaire : plat grisé. */
+  availableNow: boolean;
+  /** Promotion en cours (prix remisé). */
+  promotion: { name: string; unitPrice: number } | null;
+};
+
+export interface FormulaStep {
+  id: string;
+  name: string;
+  minChoices: number;
+  maxChoices: number;
+  items: { menuItemId: string; name: string; price: number; isAvailable: boolean }[];
+}
+/** Menu à prix fixe : étapes avec choix parmi des plats. */
+export interface Formula {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  isActive: boolean;
+  availableFrom: string | null;
+  availableTo: string | null;
+  sortOrder: number;
+  steps: FormulaStep[];
+}
+export type PromotionKind = "PERCENT" | "AMOUNT";
+export interface Promotion {
+  id: string;
+  name: string;
+  kind: PromotionKind;
+  value: number;
+  menuItemId: string | null;
+  categoryId: string | null;
+  startsOn: string | null;
+  endsOn: string | null;
+  days: number[];
+  fromTime: string | null;
+  toTime: string | null;
+  isActive: boolean;
+}
+export interface PublicFormula {
+  id: string;
+  name: string;
+  description: string | null;
+  price: number;
+  availableFrom: string | null;
+  availableTo: string | null;
+  availableNow: boolean;
+  steps: { id: string; name: string; minChoices: number; maxChoices: number; items: { menuItemId: string; name: string }[] }[];
+}
 export interface PublicMenu {
   restaurant: { name: string; slug: string; currency: string };
   categories: { id: string; name: string; description: string | null; items: PublicMenuItem[] }[];
+  formulas: PublicFormula[];
 }
 
 export type OrderStatus = "PENDING" | "IN_PROGRESS" | "READY" | "DELIVERED" | "CANCELLED";
@@ -458,7 +512,15 @@ export type OrderPaymentMethod = "CASH" | "CARD" | "FLOOZ" | "TMONEY" | "OTHER";
 
 export interface OrderItem {
   id: string;
-  menuItemId: string;
+  /** Null pour une ligne « formule » (ses plats sont des lignes enfants à 0 FCFA). */
+  menuItemId: string | null;
+  formulaId: string | null;
+  parentItemId: string | null;
+  /** Ligne enfant : étape de la formule (« Entrée »). */
+  stepName: string | null;
+  /** Remise promotionnelle de la ligne (déjà déduite de unitPrice). */
+  discount: number;
+  promotionName: string | null;
   name: string;
   quantity: number;
   unitPrice: number;
@@ -505,6 +567,8 @@ export interface Order {
   customerName: string | null;
   notes: string | null;
   waiter: { id: string; firstName: string; lastName: string } | null;
+  /** Total des remises promotionnelles (« dont remise »). */
+  discountTotal: number;
   subtotal: number;
   serviceCharge: number;
   vat: number;
@@ -593,7 +657,7 @@ export interface TenantDashboard {
   byType: { DINE_IN: number; TAKEAWAY: number };
   byMethod: { method: OrderPaymentMethod; amount: number }[];
   byHour: { hour: number; orders: number }[];
-  topItems: { menuItemId: string; name: string; quantity: number; revenue: number }[];
+  topItems: { menuItemId: string | null; name: string; quantity: number; revenue: number }[];
 }
 
 // ── P3 : stock ──

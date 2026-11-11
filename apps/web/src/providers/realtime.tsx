@@ -61,6 +61,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         onResync: () => resyncServiceQueries(qc, root),
         onOther: (event, payload) => {
           if (event === "menu.updated") applyMenuEvent(qc, root, payload as MenuEvent);
+          else if (event === "menu.extras.updated") {
+            // Formules / promotions modifiées : les écrans de prise de commande se rechargent.
+            void qc.invalidateQueries({ queryKey: tenantKeys.formulas(root) });
+            void qc.invalidateQueries({ queryKey: tenantKeys.promotions(root) });
+          }
           else if (event === "table.updated") applyTableEvent(qc, root, payload as TableEvent);
           else if (event === "stock.updated") applyStockEvent(qc, root, payload as StockUpdatedEvent);
           else if (event === "stock.low" && roleRef.current !== "WAITER") {

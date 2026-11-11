@@ -8,7 +8,7 @@ import { Stepper } from "@/components/ui/stepper";
 import { cn } from "@/lib/cn";
 import { formatFcfa } from "@/lib/format";
 import { courseLabel } from "@/lib/labels";
-import { cartCount, cartLineTotal, MAX_QUANTITY, type CartAction, type CartLine } from "./cart";
+import { cartCount, cartDiscount, cartLineTotal, MAX_QUANTITY, type CartAction, type CartLine } from "./cart";
 
 interface CartPanelProps {
   lines: CartLine[];
@@ -30,7 +30,8 @@ interface CartPanelProps {
 export function CartPanel({ lines, dispatch, totals, serviceChargePercent, unavailable, notes, submitLabel, onSubmit, submitting, className, hideHeader }: CartPanelProps) {
   const [open, setOpen] = React.useState<string | null>(null);
   const [showNotes, setShowNotes] = React.useState(false);
-  const blocked = lines.some((l) => unavailable.has(l.menuItemId));
+  const idOf = (l: CartLine) => l.menuItemId ?? l.formulaId ?? "";
+  const blocked = lines.some((l) => unavailable.has(idOf(l)));
   const count = cartCount(lines);
   return (
     <div className={cn("flex min-h-0 flex-col bg-background", className)}>
@@ -48,7 +49,7 @@ export function CartPanel({ lines, dispatch, totals, serviceChargePercent, unava
         ) : (
           <ul className="divide-y divide-border">
             {lines.map((l) => {
-              const bad = unavailable.has(l.menuItemId);
+              const bad = unavailable.has(idOf(l));
               const expanded = open === l.key;
               return (
                 <li key={l.key} className={cn("flex flex-col gap-2 px-4 py-3", bad && "bg-[var(--tone-red-bg)]")}>
@@ -60,11 +61,13 @@ export function CartPanel({ lines, dispatch, totals, serviceChargePercent, unava
                         <span className="shrink-0 font-mono text-sm tabular-nums">{formatFcfa(cartLineTotal(l))}</span>
                       </span>
                       {l.options.length > 0 && <span className="text-xs text-muted-foreground">{l.options.map((o) => o.name).join(" · ")}</span>}
+                      {l.choices?.map((ch) => <span key={`${ch.stepId}${ch.menuItemId}`} className="text-xs text-muted-foreground">{ch.stepName} : {ch.name}</span>)}
+                      {l.promotionName && <span className="text-xs font-medium text-[var(--tone-green-fg)]">{l.promotionName} · − {formatFcfa((l.discountPerUnit ?? 0) * l.quantity)}</span>}
                       {l.instructions && <span className="inline-flex items-center gap-1 text-xs font-medium text-[var(--tone-amber-fg)]"><MessageSquareWarning className="size-3" />{l.instructions}</span>}
                       <span className="inline-flex items-center gap-1 text-[11px] text-faint">{l.course > 1 && <>{courseLabel(l.course)} · </>}Consigne, envoi <ChevronDown className={cn("size-3 transition-transform", expanded && "rotate-180")} /></span>
                     </button>
                   </div>
-                  {bad && <p role="alert" className="flex items-center gap-1.5 text-xs font-medium text-[var(--tone-red-fg)]"><TriangleAlert className="size-3.5" /> Épuisé : retirez ce plat pour envoyer la commande.</p>}
+                  {bad && <p role="alert" className="flex items-center gap-1.5 text-xs font-medium text-[var(--tone-red-fg)]"><TriangleAlert className="size-3.5" /> Indisponible : retirez-le pour envoyer la commande.</p>}
                   {expanded && (
                     <div className="flex flex-col gap-2 rounded-md border border-border bg-subtle p-2">
                       <label className="sr-only" htmlFor={`ins-${l.key}`}>Consigne pour {l.name}</label>
@@ -99,6 +102,7 @@ export function CartPanel({ lines, dispatch, totals, serviceChargePercent, unava
         )}
         <dl className="mb-3 flex flex-col gap-1 text-sm">
           <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Sous-total</dt><dd className="font-mono tabular-nums">{formatFcfa(totals.subtotal)}</dd></div>
+          {cartDiscount(lines) > 0 && <div className="flex justify-between gap-2 text-xs text-faint"><dt>dont remise</dt><dd className="font-mono tabular-nums">− {formatFcfa(cartDiscount(lines))}</dd></div>}
           {totals.serviceCharge > 0 && <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Service ({serviceChargePercent} %)</dt><dd className="font-mono tabular-nums">{formatFcfa(totals.serviceCharge)}</dd></div>}
           <div className="flex justify-between gap-2 text-base font-semibold"><dt>Total</dt><dd className="font-mono tabular-nums">{formatFcfa(totals.total)}</dd></div>
           <div className="flex justify-between gap-2 text-xs text-faint"><dt>dont TVA</dt><dd className="font-mono tabular-nums">{formatFcfa(totals.vat)}</dd></div>

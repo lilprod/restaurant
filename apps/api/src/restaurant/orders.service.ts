@@ -1,10 +1,12 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import {
-  ItemStatus, canTransition, computeTotals, deriveOrderStatus, lineTotal, paymentStatusFor, vatIncluded, zonedDayRange,
+  ItemStatus, availabilityAt, bestPromotion, canTransition, computeTotals, deriveOrderStatus, formulaChoiceError, formulaStatus, hoursLabel,
+  lineTotal, paymentStatusFor, vatIncluded, zonedDayRange,
 } from "@restaurant/utils";
 import type { CreateOrderInput, ListOrdersQuery, OrderItemInput, OrderPaymentInput } from "@restaurant/validation";
 import { StockEffects, StockService } from "../inventory/stock.service";
+import { Clock } from "../common/clock";
 import { PrismaService, Tx } from "../prisma/prisma.service";
 import { RealtimeService } from "../realtime/realtime.service";
 import type { Account } from "../security/accounts.repo";
@@ -34,14 +36,16 @@ export function orderView(o: OrderRow) {
   return {
     id: o.id, number: o.number, type: o.type, status: o.status, paymentStatus: o.paymentStatus,
     table: o.table, customerName: o.customerName, notes: o.notes, waiter: o.waiter,
+    discountTotal: o.items.filter((i) => i.status !== "CANCELLED").reduce((n, i) => n + i.discount, 0),
     subtotal: o.subtotal, serviceCharge: o.serviceCharge, vat: o.vat, total: o.total, tip: o.tip,
     paidAmount: o.paidAmount, remaining: o.total - o.paidAmount,
     createdAt: o.createdAt, updatedAt: o.updatedAt, closedAt: o.closedAt, cancelledAt: o.cancelledAt, cancelReason: o.cancelReason,
     items: o.items.map((i) => ({
-      id: i.id, menuItemId: i.menuItemId, name: i.name, quantity: i.quantity, unitPrice: i.unitPrice,
+      id: i.id, menuItemId: i.menuItemId, formulaId: i.formulaId, parentItemId: i.parentItemId, stepName: i.stepName,
+      discount: i.discount, promotionName: i.promotionName, name: i.name, quantity: i.quantity, unitPrice: i.unitPrice,
       optionsExtra: i.optionsExtra, lineTotal: i.lineTotal, vatRate: Number(i.vatRate), status: i.status,
-      instructions: i.instructions, course: i.course, options: i.options, prepMinutes: i.menuItem.prepMinutes,
-      imageUrl: i.menuItem.imageUrl, createdAt: i.createdAt, startedAt: i.startedAt, readyAt: i.readyAt,
+      instructions: i.instructions, course: i.course, options: i.options, prepMinutes: i.menuItem?.prepMinutes ?? 0,
+      imageUrl: i.menuItem?.imageUrl ?? null, createdAt: i.createdAt, startedAt: i.startedAt, readyAt: i.readyAt,
       servedAt: i.servedAt, cancelReason: i.cancelReason,
       paidQuantity: i.allocations.filter((a) => a.payment.status === "PAID").reduce((n, a) => n + a.quantity, 0),
     })),
@@ -64,6 +68,7 @@ export class OrdersService {
     private readonly tables: TablesService,
     private readonly realtime: RealtimeService,
     private readonly stock: StockService,
+    private readonly clock: Clock,
   ) {}
 
   private async ops(tenantId: string): Promise<Ops> {
@@ -108,7 +113,7 @@ export class OrdersService {
       });
       return rows.map((o) => {
         const v = orderView(o);
-        return { ...v, items: v.items.filter((i) => KITCHEN_STATES.includes(i.status as ItemStatus)) };
+        return { ...v, items: v.items.filter((i) => !i.formulaId && KITCHEN_STATES.includes(i.status as ItemStatus)) };
       });
     });
   }
@@ -125,7 +130,7 @@ export class OrdersService {
         const table = await tx.restaurantTable.findFirst({ where: { id: input.tableId, tenantId, isActive: true } });
         if (!table) throw new NotFoundException("Table introuvable");
       }
-      const lines = await this.buildLines(tx, tenantId, input.items);
+      const lines = await this.buildLines(tx, tenantId, input.items, ops);
       const counter = await tx.tenant.update({ where: { id: tenantId }, data: { nextOrderNumber: { increment: 1 } }, select: { nextOrderNumber: true } });
       const order = await tx.order.create({
         data: {
@@ -146,7 +151,7 @@ export class OrdersService {
   async addItems(acc: Account, orderId: string, items: OrderItemInput[]) {
     return this.mutate(acc, orderId, async (tx, o, tenantId) => {
       this.assertOpen(o);
-      await this.insertLines(tx, tenantId, o.id, await this.buildLines(tx, tenantId, items));
+      await this.insertLines(tx, tenantId, o.id, await this.buildLines(tx, tenantId, items, await this.ops(tenantId)));
     });
   }
 
@@ -154,13 +159,19 @@ export class OrdersService {
     return this.mutate(acc, orderId, async (tx, o) => {
       this.assertOpen(o);
       const item = this.findItem(o, itemId);
-      if (item.status !== "PENDING") throw new ConflictException("Cet article est déjà en préparation : il ne peut plus être modifié");
+      if (item.parentItemId) throw new ConflictException("Ce plat fait partie d'une formule : modifiez la formule elle-même");
+      const children = o.items.filter((c) => c.parentItemId === item.id && c.status !== "CANCELLED");
+      if (item.status !== "PENDING" || children.some((c) => c.status !== "PENDING")) throw new ConflictException("Cet article est déjà en préparation : il ne peut plus être modifié");
       if (item.allocations.some((a) => a.payment.status === "PAID")) throw new ConflictException("Cet article a déjà été encaissé");
       const quantity = patch.quantity ?? item.quantity;
+      const instructions = patch.instructions === undefined ? item.instructions : patch.instructions || null;
       await tx.orderItem.update({
         where: { id: itemId },
-        data: { quantity, instructions: patch.instructions === undefined ? item.instructions : patch.instructions || null, lineTotal: lineTotal(item.unitPrice, item.optionsExtra, quantity) },
+        // La remise est figée par unité : elle suit la quantité.
+        data: { quantity, instructions, lineTotal: lineTotal(item.unitPrice, item.optionsExtra, quantity), discount: Math.round(item.discount / item.quantity) * quantity },
       });
+      // Formule : chaque plat suit la quantité de la formule.
+      if (children.length) await tx.orderItem.updateMany({ where: { parentItemId: item.id, status: { not: "CANCELLED" } }, data: { quantity, instructions } });
     });
   }
 
@@ -171,12 +182,13 @@ export class OrdersService {
     return this.mutate(acc, orderId, async (tx, o, tenantId) => {
       if (o.cancelledAt) throw new ConflictException("Cette commande est annulée");
       const item = this.findItem(o, itemId);
+      if (item.formulaId) throw new ConflictException("Faites avancer les plats de la formule, pas la formule elle-même");
       this.assertRoleFor(acc, item.status as ItemStatus, to);
       if (item.status === to) return;
       if (!canTransition(item.status as ItemStatus, to)) throw new ConflictException(`Passage impossible : ${item.status} → ${to}`);
       await tx.orderItem.update({ where: { id: itemId }, data: this.timestamps(item.status as ItemStatus, to) });
       // Stock (P3) : déduction au lancement, retour si la cuisine revient en attente — même transaction.
-      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, [{ item, from: item.status as ItemStatus, to }]);
+      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, [{ item: item as typeof item & { menuItemId: string }, from: item.status as ItemStatus, to }]);
     });
   }
 
@@ -186,11 +198,11 @@ export class OrdersService {
     return this.mutate(acc, orderId, async (tx, o, tenantId) => {
       if (o.cancelledAt) throw new ConflictException("Cette commande est annulée");
       this.assertRoleFor(acc, from[to][0], to);
-      const targets = o.items.filter((i) => from[to].includes(i.status as ItemStatus));
+      const targets = o.items.filter((i) => !i.formulaId && from[to].includes(i.status as ItemStatus));
       if (!targets.length) throw new ConflictException("Aucun article à faire avancer");
       for (const i of targets) await tx.orderItem.update({ where: { id: i.id }, data: this.timestamps(i.status as ItemStatus, to) });
       // Un seul appel : tous les ingrédients de la commande sont verrouillés ensemble, dans l'ordre des ID.
-      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, targets.map((item) => ({ item, from: item.status as ItemStatus, to })));
+      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, this.forStock(targets).map((item) => ({ item, from: item.status as ItemStatus, to })));
     });
   }
 
@@ -199,14 +211,18 @@ export class OrdersService {
       if (o.cancelledAt) throw new ConflictException("Cette commande est déjà annulée");
       const item = this.findItem(o, itemId);
       if (item.status === "CANCELLED") throw new ConflictException("Cet article est déjà annulé");
-      if (!isManager(acc) && item.status !== "PENDING") {
+      if (item.parentItemId) throw new ConflictException("Ce plat fait partie d'une formule : annulez la formule entière");
+      const children = o.items.filter((c) => c.parentItemId === item.id && c.status !== "CANCELLED");
+      if (!isManager(acc) && (item.status !== "PENDING" || children.some((c) => c.status !== "PENDING"))) {
         throw new ForbiddenException("Article déjà lancé en cuisine : seul un responsable peut l'annuler");
       }
       if (item.allocations.some((a) => a.payment.status === "PAID")) throw new ConflictException("Cet article a déjà été encaissé : remboursez d'abord le paiement");
       await tx.orderItem.update({ where: { id: itemId }, data: { status: "CANCELLED", cancelReason: reason } });
+      if (children.length) await tx.orderItem.updateMany({ where: { parentItemId: itemId, status: { not: "CANCELLED" } }, data: { status: "CANCELLED", cancelReason: reason } });
       await tx.auditLog.create({ data: { tenantId: o.tenantId, userId: acc.id, action: "order.item.cancel", entity: "OrderItem", entityId: itemId, metadata: { orderNumber: o.number, reason } } });
       // Article déjà lancé : ce qui a été déduit devient une perte (motif « annulation »).
-      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, [{ item, from: item.status as ItemStatus, to: "CANCELLED" }], reason);
+      const lost = item.formulaId ? children : [item];
+      return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, this.forStock(lost).map((it) => ({ item: it, from: it.status as ItemStatus, to: "CANCELLED" as const })), reason);
     });
   }
 
@@ -218,7 +234,7 @@ export class OrdersService {
       await tx.orderItem.updateMany({ where: { orderId: o.id, status: { not: "CANCELLED" } }, data: { status: "CANCELLED", cancelReason: reason } });
       await tx.order.update({ where: { id: o.id }, data: { cancelledAt: now, cancelReason: reason, closedAt: now } });
       await tx.auditLog.create({ data: { tenantId: o.tenantId, userId: acc.id, action: "order.cancel", entity: "Order", entityId: o.id, metadata: { number: o.number, reason } } });
-      const live = o.items.filter((i) => i.status !== "CANCELLED");
+      const live = this.forStock(o.items.filter((i) => i.status !== "CANCELLED"));
       return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, live.map((item) => ({ item, from: item.status as ItemStatus, to: "CANCELLED" as const })), reason);
     });
   }
@@ -236,6 +252,7 @@ export class OrdersService {
       for (const a of input.allocations ?? []) {
         const item = o.items.find((i) => i.id === a.orderItemId);
         if (!item || item.status === "CANCELLED") throw new BadRequestException("Article à encaisser introuvable dans cette commande");
+        if (item.parentItemId) throw new BadRequestException("Un plat de formule ne s'encaisse pas séparément : sélectionnez la formule");
         const already = item.allocations.filter((x) => x.payment.status === "PAID").reduce((n, x) => n + x.quantity, 0);
         if (already + a.quantity > item.quantity) throw new ConflictException(`« ${item.name} » : quantité déjà encaissée`);
       }
@@ -278,7 +295,7 @@ export class OrdersService {
     const order = await this.get(tenantId, orderId);
     // TVA par taux : lignes non annulées + service (au taux par défaut), tel qu'enregistré sur la commande.
     const byRate = new Map<number, number>();
-    for (const i of order.items) if (i.status !== "CANCELLED") byRate.set(i.vatRate, (byRate.get(i.vatRate) ?? 0) + i.lineTotal);
+    for (const i of order.items) if (i.status !== "CANCELLED" && !i.parentItemId) byRate.set(i.vatRate, (byRate.get(i.vatRate) ?? 0) + i.lineTotal);
     if (order.serviceCharge) byRate.set(ops.defaultVatRate, (byRate.get(ops.defaultVatRate) ?? 0) + order.serviceCharge);
     const vatBreakdown = [...byRate.entries()].sort(([a], [b]) => a - b).map(([rate, ttc]) => {
       const vat = vatIncluded(ttc, rate);
@@ -333,14 +350,19 @@ export class OrdersService {
   /** Totaux, statut et état de paiement ; clôture quand tout est servi et réglé (réouverture après remboursement). */
   private async recompute(tx: Tx, orderId: string, ops: Ops) {
     const o = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true, payments: true } });
+    // Lignes formule : statut déduit de leurs plats.
+    for (const f of o.items.filter((i) => i.formulaId)) {
+      const st = formulaStatus(o.items.filter((c) => c.parentItemId === f.id));
+      if (st !== f.status) { await tx.orderItem.update({ where: { id: f.id }, data: { status: st } }); f.status = st; }
+    }
     const totals = computeTotals({
-      items: o.items.map((i) => ({ lineTotal: i.lineTotal, vatRate: Number(i.vatRate), status: i.status as ItemStatus })),
+      items: o.items.filter((i) => !i.parentItemId).map((i) => ({ lineTotal: i.lineTotal, vatRate: Number(i.vatRate), status: i.status as ItemStatus })),
       serviceChargePercent: ops.serviceChargePercent,
       defaultVatRate: ops.defaultVatRate,
     });
     const paid = o.payments.filter((p) => p.status === "PAID");
     const paidAmount = paid.reduce((n, p) => n + p.amount, 0);
-    const status = o.cancelledAt ? "CANCELLED" : deriveOrderStatus(o.items.map((i) => i.status as ItemStatus));
+    const status = o.cancelledAt ? "CANCELLED" : deriveOrderStatus(o.items.filter((i) => !i.parentItemId).map((i) => i.status as ItemStatus));
     const paymentStatus = paymentStatusFor(paidAmount, totals.total);
     const closedAt = o.cancelledAt ? o.closedAt : paymentStatus === "PAID" && status === "DELIVERED" ? o.closedAt ?? new Date() : null;
     await tx.order.update({
@@ -352,17 +374,66 @@ export class OrdersService {
     });
   }
 
-  /** Valide les plats (disponibles) et les options choisies, et fige prix, noms et TVA. */
-  private async buildLines(tx: Tx, tenantId: string, items: OrderItemInput[]) {
-    const ids = [...new Set(items.map((i) => i.menuItemId))];
+  /** Valide plats et formules (disponibilité, horaires, choix, options), applique les promotions et fige prix, noms et TVA. */
+  private async buildLines(tx: Tx, tenantId: string, items: OrderItemInput[], ops: Ops) {
+    const now = this.clock.now();
+    const tz = (await this.settings.tenant(tenantId)).timezone;
+    const formulas = await tx.formula.findMany({
+      where: { id: { in: [...new Set(items.flatMap((i) => (i.formulaId ? [i.formulaId] : [])))] }, tenantId, archivedAt: null },
+      include: { steps: { orderBy: { sortOrder: "asc" }, include: { items: true } } },
+    });
+    const ids = [...new Set([
+      ...items.flatMap((i) => (i.menuItemId ? [i.menuItemId] : [])),
+      ...items.flatMap((i) => i.choices.map((c) => c.menuItemId)),
+    ])];
     const menu = await tx.menuItem.findMany({
       where: { id: { in: ids }, tenantId, archivedAt: null },
       include: { optionGroups: { where: { archivedAt: null }, include: { options: true } } },
     });
-    return items.map((input) => {
+    const promos = await tx.promotion.findMany({ where: { tenantId, isActive: true, archivedAt: null } });
+    const orderable = (m: (typeof menu)[number]) => {
+      const a = availabilityAt(m, now, tz);
+      if (a.reason === "UNAVAILABLE") throw new ConflictException(`« ${m.name} » n'est plus disponible`);
+      if (a.reason === "OUT_OF_HOURS") throw new ConflictException(`« ${m.name} » n'est servi que ${hoursLabel(m.availableFrom, m.availableTo)}`);
+    };
+    type Opt = { optionId: string; name: string; extra: number };
+    type Line = {
+      menuItemId: string | null; formulaId: string | null; stepName: string | null; name: string; quantity: number; unitPrice: number;
+      optionsExtra: number; vatRate: Prisma.Decimal; lineTotal: number; discount: number; promotionId: string | null; promotionName: string | null;
+      instructions?: string; course: number; options: Opt[]; children?: Line[];
+    };
+    return items.map((input): Line => {
+      if (input.formulaId) {
+        const f = formulas.find((x) => x.id === input.formulaId);
+        if (!f) throw new NotFoundException("Formule introuvable");
+        if (!f.isActive) throw new ConflictException(`La formule « ${f.name} » n'est plus disponible`);
+        if (!availabilityAt({ availableFrom: f.availableFrom, availableTo: f.availableTo }, now, tz).available) {
+          throw new ConflictException(`La formule « ${f.name} » n'est servie que ${hoursLabel(f.availableFrom, f.availableTo)}`);
+        }
+        const bad = formulaChoiceError(
+          f.steps.map((st) => ({ id: st.id, name: st.name, minChoices: st.minChoices, maxChoices: st.maxChoices, menuItemIds: st.items.map((x) => x.menuItemId) })),
+          input.choices,
+        );
+        if (bad) throw new BadRequestException(`Formule « ${f.name} » : ${bad}`);
+        const children = f.steps.flatMap((st) => input.choices.filter((c) => c.stepId === st.id).map((c): Line => {
+          const m = menu.find((x) => x.id === c.menuItemId);
+          if (!m) throw new NotFoundException("Plat introuvable");
+          orderable(m);
+          return {
+            menuItemId: m.id, formulaId: null, stepName: st.name, name: m.name, quantity: input.quantity, unitPrice: 0, optionsExtra: 0,
+            vatRate: m.vatRate, lineTotal: 0, discount: 0, promotionId: null, promotionName: null, instructions: input.instructions,
+            course: input.course, options: [],
+          };
+        }));
+        return {
+          menuItemId: null, formulaId: f.id, stepName: null, name: f.name, quantity: input.quantity, unitPrice: f.price, optionsExtra: 0,
+          vatRate: new Prisma.Decimal(ops.defaultVatRate), lineTotal: lineTotal(f.price, 0, input.quantity), discount: 0, promotionId: null,
+          promotionName: null, instructions: input.instructions, course: input.course, options: [], children,
+        };
+      }
       const m = menu.find((x) => x.id === input.menuItemId);
       if (!m) throw new NotFoundException("Plat introuvable");
-      if (!m.isAvailable) throw new ConflictException(`« ${m.name} » n'est plus disponible`);
+      orderable(m);
       const chosen = [...new Set(input.optionIds)];
       const options = chosen.map((oid) => {
         for (const g of m.optionGroups) {
@@ -377,20 +448,30 @@ export class OrdersService {
         if (n > g.maxChoices) throw new BadRequestException(`« ${m.name} » : ${g.maxChoices} choix maximum pour « ${g.name} »`);
       }
       const optionsExtra = options.reduce((s, x) => s + x.opt.extra, 0);
+      // Promotion en cours : le prix remisé est figé sur la ligne (les suppléments ne sont pas remisés).
+      const promo = bestPromotion(m.price, { id: m.id, categoryId: m.categoryId }, promos, now, tz);
+      const unitPrice = promo?.unitPrice ?? m.price;
       return {
-        menuItemId: m.id, name: m.name, quantity: input.quantity, unitPrice: m.price, optionsExtra, vatRate: m.vatRate,
-        lineTotal: lineTotal(m.price, optionsExtra, input.quantity), instructions: input.instructions, course: input.course,
+        menuItemId: m.id, formulaId: null, stepName: null, name: m.name, quantity: input.quantity, unitPrice, optionsExtra, vatRate: m.vatRate,
+        lineTotal: lineTotal(unitPrice, optionsExtra, input.quantity), discount: (promo?.discountPerUnit ?? 0) * input.quantity,
+        promotionId: promo?.promotionId ?? null, promotionName: promo?.name ?? null, instructions: input.instructions, course: input.course,
         options: options.map((x) => ({ optionId: x.opt.id, name: x.opt.name, extra: x.opt.extra })),
       };
     });
   }
 
   private async insertLines(tx: Tx, tenantId: string, orderId: string, lines: Awaited<ReturnType<OrdersService["buildLines"]>>) {
-    for (const { options, ...l } of lines) {
-      await tx.orderItem.create({
+    for (const { options, children, ...l } of lines) {
+      const parent = await tx.orderItem.create({
         data: { tenantId, orderId, ...l, options: { create: options.map((o) => ({ tenantId, ...o })) } },
       });
+      for (const { options: _o, children: _c, ...c } of children ?? []) await tx.orderItem.create({ data: { tenantId, orderId, parentItemId: parent.id, ...c } });
     }
+  }
+
+  /** Lignes ayant une recette (plats) : la ligne « formule » n'a pas de stock, ses plats en ont. */
+  private forStock<T extends { menuItemId: string | null }>(items: T[]) {
+    return items.filter((i): i is T & { menuItemId: string } => !!i.menuItemId);
   }
 
   private findItem(o: OrderRow, itemId: string) {

@@ -1,3 +1,4 @@
+import { orderLines } from "@/lib/order-lines";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Printer } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
@@ -47,16 +48,21 @@ export function TicketPage() {
           {r.order.waiter && <p>Serveur : {r.order.waiter.firstName}</p>}
           <Rule />
           <ul className="flex flex-col gap-1">
-            {r.order.items.filter((i) => i.status !== "CANCELLED").map((i) => (
+            {orderLines(r.order.items.filter((i) => i.status !== "CANCELLED")).map((i) => i.parentItemId ? (
+              // Plat d'une formule : inclus dans le prix de la formule.
+              <li key={i.id} className="pl-3 text-[11px]">{i.stepName ? `${i.stepName} : ` : ""}{i.name}</li>
+            ) : (
               <li key={i.id}>
                 <div className="flex justify-between gap-2"><span>{i.quantity} × {i.name}</span><span className="shrink-0 tabular-nums">{n(i.lineTotal)}</span></div>
                 {i.quantity > 1 && <p className="pl-3 text-[11px]">à {n(i.unitPrice + i.optionsExtra)}</p>}
+                {i.discount > 0 && <p className="pl-3 text-[11px]">dont remise{i.promotionName ? ` « ${i.promotionName} »` : ""} : − {n(i.discount)}</p>}
                 {i.options.map((o) => <p key={o.optionId} className="pl-3 text-[11px]">+ {o.name}{o.extra ? ` (${n(o.extra)})` : ""}</p>)}
               </li>
             ))}
           </ul>
           <Rule />
           <Row label="Sous-total" value={n(r.order.subtotal)} />
+          {r.order.discountTotal > 0 && <Row label="  dont remises" value={`− ${n(r.order.discountTotal)}`} />}
           {r.order.serviceCharge > 0 && <Row label="Service" value={n(r.order.serviceCharge)} />}
           <div className="my-1 flex justify-between text-[15px] font-bold"><span>TOTAL TTC</span><span className="tabular-nums">{formatFcfa(r.order.total)}</span></div>
           {r.vatBreakdown.length > 0 && (

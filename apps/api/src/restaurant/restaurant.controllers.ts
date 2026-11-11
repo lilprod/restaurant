@@ -1,15 +1,15 @@
 import {
-  Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, UploadedFile, UseGuards, UseInterceptors,
+  Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query, UploadedFile, UseGuards, UseInterceptors,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import {
-  CategoryInput, CreateOrderInput, CreateStaffInput, ListOrdersQuery, MenuItemInput, OrderItemInput, OrderPaymentInput, TableInput,
+  CategoryInput, CreateOrderInput, FormulaInput, FormulaUpdateInput, PromotionInput, CreateStaffInput, ListOrdersQuery, MenuItemInput, OrderItemInput, OrderPaymentInput, TableInput,
   addItemsSchema, availabilitySchema, categoryInputSchema, categoryUpdateSchema, closeRegisterSchema, createOrderSchema,
   createStaffSchema, itemStatusSchema, listOrdersQuerySchema, menuItemInputSchema, menuItemUpdateSchema, openRegisterSchema,
   orderPaymentSchema, reasonSchema, reorderSchema, tableInputSchema, tableStatusSchema, tableUpdateSchema, updateOrderItemSchema,
-  updateStaffSchema,
+  updateStaffSchema, formulaInputSchema, formulaUpdateSchema, promotionActiveSchema, promotionInputSchema,
 } from "@restaurant/validation";
 import type { ItemStatus } from "@restaurant/utils";
 import { ZodPipe } from "../common/zod.pipe";
@@ -18,6 +18,7 @@ import { CurrentAccount } from "../security/space-auth.guard";
 import { TenantAuthGuard, TenantRoles } from "../tenant/tenant-auth.guard";
 import { FLOOR, KITCHEN, MANAGERS, STAFF } from "./common";
 import { DashboardService } from "./dashboard.service";
+import { MenuExtrasService } from "./menu-extras.service";
 import { MenuService } from "./menu.service";
 import { OrdersService } from "./orders.service";
 import { RegisterService } from "./register.service";
@@ -127,6 +128,46 @@ export class MenuController {
 
   @Delete("items/:id/image") @HttpCode(204) @TenantRoles(...MANAGERS)
   removeImage(@CurrentAccount() a: Account, @Param("id", UUID) id: string) { return this.menu.removeImage(t(a), id); }
+}
+
+@ApiTags("Restaurant · Formules et promotions")
+@ApiBearerAuth()
+@UseGuards(TenantAuthGuard)
+@TenantRoles(...STAFF)
+@Controller("tenant/menu")
+export class MenuExtrasController {
+  constructor(private readonly extras: MenuExtrasService) {}
+
+  @Get("formulas") formulas(@CurrentAccount() a: Account) { return this.extras.formulas(t(a)); }
+
+  @Post("formulas") @TenantRoles(...MANAGERS)
+  createFormula(@CurrentAccount() a: Account, @Body(new ZodPipe(formulaInputSchema)) body: FormulaInput) { return this.extras.createFormula(t(a), body); }
+
+  @Patch("formulas/:id") @TenantRoles(...MANAGERS)
+  updateFormula(@CurrentAccount() a: Account, @Param("id", UUID) id: string, @Body(new ZodPipe(formulaUpdateSchema)) body: FormulaUpdateInput) {
+    return this.extras.updateFormula(t(a), id, body);
+  }
+
+  @Delete("formulas/:id") @TenantRoles(...MANAGERS)
+  deleteFormula(@CurrentAccount() a: Account, @Param("id", UUID) id: string) { return this.extras.deleteFormula(t(a), id); }
+
+  @Get("promotions") promotions(@CurrentAccount() a: Account) { return this.extras.promotions(t(a)); }
+
+  @Post("promotions") @TenantRoles(...MANAGERS)
+  createPromotion(@CurrentAccount() a: Account, @Body(new ZodPipe(promotionInputSchema)) body: PromotionInput) { return this.extras.createPromotion(t(a), body); }
+
+  @Put("promotions/:id") @TenantRoles(...MANAGERS)
+  updatePromotion(@CurrentAccount() a: Account, @Param("id", UUID) id: string, @Body(new ZodPipe(promotionInputSchema)) body: PromotionInput) {
+    return this.extras.updatePromotion(t(a), id, body);
+  }
+
+  @Patch("promotions/:id") @TenantRoles(...MANAGERS)
+  setPromotionActive(@CurrentAccount() a: Account, @Param("id", UUID) id: string, @Body(new ZodPipe(promotionActiveSchema)) body: { isActive: boolean }) {
+    return this.extras.setPromotionActive(t(a), id, body.isActive);
+  }
+
+  @Delete("promotions/:id") @TenantRoles(...MANAGERS)
+  deletePromotion(@CurrentAccount() a: Account, @Param("id", UUID) id: string) { return this.extras.deletePromotion(t(a), id); }
 }
 
 @ApiTags("Public · Carte")

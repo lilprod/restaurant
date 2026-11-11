@@ -4,6 +4,10 @@ import { z } from "zod";
 
 const uuid = z.string().uuid();
 const money = z.number().int().min(0).max(100_000_000);
+const hm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Heure invalide (HH:MM)");
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide (AAAA-MM-JJ)");
+const optHm = z.union([hm, z.literal("").transform(() => null), z.null()]).optional();
+const optDay = z.union([day, z.literal("").transform(() => null), z.null()]).optional();
 const optText = (max: number) => z.string().trim().max(max).optional().or(z.literal("").transform(() => undefined));
 
 // ── Équipe du restaurant ──
@@ -60,24 +64,92 @@ export const menuItemInputSchema = z.object({
   vatRate: z.number().min(0).max(30).optional(),
   prepMinutes: z.number().int().min(0).max(240).default(10),
   isAvailable: z.boolean().default(true),
+  /** Plage horaire de service (fuseau du restaurant) ; vide = toute la journée. */
+  availableFrom: optHm,
+  availableTo: optHm,
   isDishOfDay: z.boolean().default(false),
   sortOrder: z.number().int().min(0).max(10_000).default(0),
   allergenCodes: z.array(z.string().min(2).max(20)).max(14).default([]),
   /** Les groupes d'options sont remplacés en bloc à chaque enregistrement. */
   optionGroups: z.array(optionGroupInputSchema).max(10).default([]),
 });
+const bothHours = (o: { availableFrom?: string | null; availableTo?: string | null }) => !o.availableFrom === !o.availableTo;
+const hoursMsg = { message: "Renseignez les deux heures (de / à) ou aucune", path: ["availableTo"] };
 export const menuItemUpdateSchema = menuItemInputSchema.partial();
 export const availabilitySchema = z.object({ isAvailable: z.boolean() });
 
+// ── Formules ──
+export const formulaStepInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    minChoices: z.number().int().min(0).max(10).default(1),
+    maxChoices: z.number().int().min(1).max(10).default(1),
+    menuItemIds: z.array(uuid).min(1, "Proposez au moins un plat").max(40),
+  })
+  .refine((st) => st.minChoices <= st.maxChoices, { message: "Le minimum dépasse le maximum", path: ["minChoices"] });
+export const formulaInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    description: optText(300),
+    price: money,
+    isActive: z.boolean().default(true),
+    availableFrom: optHm,
+    availableTo: optHm,
+    sortOrder: z.number().int().min(0).max(10_000).default(0),
+    /** Les étapes sont remplacées en bloc à chaque enregistrement. */
+    steps: z.array(formulaStepInputSchema).min(1, "Ajoutez au moins une étape").max(8),
+  })
+  .refine(bothHours, hoursMsg);
+export const formulaUpdateSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  description: optText(300),
+  price: money.optional(),
+  isActive: z.boolean().optional(),
+  availableFrom: optHm,
+  availableTo: optHm,
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+  steps: z.array(formulaStepInputSchema).min(1, "Ajoutez au moins une étape").max(8).optional(),
+});
+
+// ── Promotions ──
+export const promotionKindSchema = z.enum(["PERCENT", "AMOUNT"]);
+export const promotionInputSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    kind: promotionKindSchema,
+    /** % (1–100) ou FCFA retirés par unité. */
+    value: z.number().int().min(1).max(100_000_000),
+    menuItemId: uuid.optional().nullable(),
+    categoryId: uuid.optional().nullable(),
+    startsOn: optDay,
+    endsOn: optDay,
+    /** Jours ISO 1 (lundi) – 7 (dimanche) ; vide = tous les jours. */
+    days: z.array(z.number().int().min(1).max(7)).max(7).default([]),
+    fromTime: optHm,
+    toTime: optHm,
+    isActive: z.boolean().default(true),
+  })
+  .refine((p) => !!p.menuItemId !== !!p.categoryId, { message: "Choisissez un plat ou une catégorie", path: ["menuItemId"] })
+  .refine((p) => p.kind !== "PERCENT" || p.value <= 100, { message: "Une remise en pourcentage ne dépasse pas 100", path: ["value"] })
+  .refine((p) => !p.startsOn || !p.endsOn || p.startsOn <= p.endsOn, { message: "La fin précède le début", path: ["endsOn"] })
+  .refine((p) => !p.fromTime === !p.toTime, { message: "Renseignez les deux heures (de / à) ou aucune", path: ["toTime"] });
+export const promotionActiveSchema = z.object({ isActive: z.boolean() });
+
 // ── Commandes ──
 export const orderTypeSchema = z.enum(["DINE_IN", "TAKEAWAY"]);
-export const orderItemInputSchema = z.object({
-  menuItemId: uuid,
-  quantity: z.number().int().min(1).max(99),
-  optionIds: z.array(uuid).max(30).default([]),
-  instructions: optText(200),
-  course: z.number().int().min(1).max(5).default(1),
-});
+export const orderItemInputSchema = z
+  .object({
+    /** Un plat… */
+    menuItemId: uuid.optional(),
+    /** …ou une formule (avec un choix de plat par étape). */
+    formulaId: uuid.optional(),
+    choices: z.array(z.object({ stepId: uuid, menuItemId: uuid })).max(30).default([]),
+    quantity: z.number().int().min(1).max(99),
+    optionIds: z.array(uuid).max(30).default([]),
+    instructions: optText(200),
+    course: z.number().int().min(1).max(5).default(1),
+  })
+  .refine((i) => !!i.menuItemId !== !!i.formulaId, { message: "Indiquez un plat ou une formule", path: ["menuItemId"] });
 export const createOrderSchema = z
   .object({
     type: orderTypeSchema,
@@ -137,6 +209,9 @@ export type CreateStaffInput = z.infer<typeof createStaffSchema>;
 export type TableInput = z.infer<typeof tableInputSchema>;
 export type CategoryInput = z.infer<typeof categoryInputSchema>;
 export type MenuItemInput = z.infer<typeof menuItemInputSchema>;
+export type FormulaInput = z.infer<typeof formulaInputSchema>;
+export type FormulaUpdateInput = z.infer<typeof formulaUpdateSchema>;
+export type PromotionInput = z.infer<typeof promotionInputSchema>;
 export type OrderItemInput = z.infer<typeof orderItemInputSchema>;
 export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type OrderPaymentInput = z.infer<typeof orderPaymentSchema>;

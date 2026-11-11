@@ -1,8 +1,10 @@
-import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type { CategoryInput, MenuItemInput } from "@restaurant/validation";
+import { availabilityAt } from "@restaurant/utils";
 import { PrismaService, Tx } from "../prisma/prisma.service";
 import { RealtimeService } from "../realtime/realtime.service";
+import { MenuExtrasService } from "./menu-extras.service";
 import { LicenseGateService } from "../security/license-gate.service";
 import { TenantSettingsService } from "../settings/tenant-settings.service";
 import { ASSET_RULES, validateImage } from "../storage/image-validation";
@@ -17,7 +19,7 @@ type ItemRow = Prisma.MenuItemGetPayload<{ include: typeof itemInclude }>;
 
 export const menuItemView = (i: ItemRow) => ({
   id: i.id, categoryId: i.categoryId, name: i.name, description: i.description, price: i.price,
-  vatRate: Number(i.vatRate), imageUrl: i.imageUrl, prepMinutes: i.prepMinutes, isAvailable: i.isAvailable,
+  vatRate: Number(i.vatRate), imageUrl: i.imageUrl, prepMinutes: i.prepMinutes, isAvailable: i.isAvailable, availableFrom: i.availableFrom, availableTo: i.availableTo,
   isDishOfDay: i.isDishOfDay, sortOrder: i.sortOrder, archived: !!i.archivedAt,
   allergens: i.allergens.map((a) => ({ code: a.allergen.code, name: a.allergen.name })),
   optionGroups: i.optionGroups.map((g) => ({
@@ -35,6 +37,7 @@ export class MenuService {
     private readonly storage: StorageService,
     private readonly gate: LicenseGateService,
     private readonly realtime: RealtimeService,
+    private readonly extras: MenuExtrasService,
   ) {}
 
   /** Diffuse `menu.updated` (charge utile = `menuItemView`) une fois la transaction terminée. */
@@ -78,15 +81,23 @@ export class MenuService {
       where: { tenantId: tenant.id, isActive: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: { items: { where: { archivedAt: null, isAvailable: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: itemInclude } },
     }));
+    const extras = await this.extras.publicExtras(tenant.id);
     return {
       restaurant: { name: tenant.name, slug: tenant.slug, currency: tenant.currency },
       categories: cats.filter((c) => c.items.length).map((c) => ({
         id: c.id, name: c.name, description: c.description,
         items: c.items.map((i) => {
           const { sortOrder: _s, archived: _a, isAvailable: _v, vatRate: _r, prepMinutes: _p, ...pub } = menuItemView(i);
-          return pub;
+          // Hors de sa plage horaire : le plat reste affiché mais grisé ; en promotion : prix remisé et nom de l'offre.
+          const promo = extras.promotionFor({ id: i.id, categoryId: i.categoryId, price: i.price });
+          return {
+            ...pub,
+            availableNow: availabilityAt(i, extras.now, extras.tz).available,
+            promotion: promo ? { name: promo.name, unitPrice: promo.unitPrice } : null,
+          };
         }),
       })),
+      formulas: extras.formulas,
     };
   }
 
@@ -136,13 +147,14 @@ export class MenuService {
 
   // ── Plats ──
   async createItem(tenantId: string, input: MenuItemInput) {
+    this.assertHours(input);
     const vatRate = input.vatRate ?? (await this.defaultVat(tenantId));
     const view = await this.prisma.asTenant(tenantId, async (tx) => {
       await this.category(tx, tenantId, input.categoryId);
       const item = await tx.menuItem.create({
         data: {
           tenantId, categoryId: input.categoryId, name: input.name, description: input.description, price: input.price,
-          vatRate, prepMinutes: input.prepMinutes, isAvailable: input.isAvailable, isDishOfDay: input.isDishOfDay, sortOrder: input.sortOrder,
+          vatRate, prepMinutes: input.prepMinutes, isAvailable: input.isAvailable, availableFrom: input.availableFrom || null, availableTo: input.availableTo || null, isDishOfDay: input.isDishOfDay, sortOrder: input.sortOrder,
         },
       });
       await this.writeRelations(tx, tenantId, item.id, input.allergenCodes, input.optionGroups);
@@ -153,10 +165,15 @@ export class MenuService {
 
   async updateItem(tenantId: string, id: string, patch: Partial<MenuItemInput>) {
     const view = await this.prisma.asTenant(tenantId, async (tx) => {
-      await this.item(tx, tenantId, id);
+      const cur = await this.item(tx, tenantId, id);
       if (patch.categoryId) await this.category(tx, tenantId, patch.categoryId);
       const { allergenCodes, optionGroups, ...fields } = patch;
-      await tx.menuItem.update({ where: { id }, data: fields });
+      this.assertHours({
+        availableFrom: fields.availableFrom === undefined ? cur.availableFrom : fields.availableFrom,
+        availableTo: fields.availableTo === undefined ? cur.availableTo : fields.availableTo,
+      });
+      const hours = { ...(fields.availableFrom !== undefined ? { availableFrom: fields.availableFrom || null } : {}), ...(fields.availableTo !== undefined ? { availableTo: fields.availableTo || null } : {}) };
+      await tx.menuItem.update({ where: { id }, data: { ...fields, ...hours } });
       await this.writeRelations(tx, tenantId, id, allergenCodes, optionGroups);
       return menuItemView(await tx.menuItem.findUniqueOrThrow({ where: { id }, include: itemInclude }));
     });
@@ -213,6 +230,10 @@ export class MenuService {
     const i = await tx.menuItem.findFirst({ where: { id, tenantId, archivedAt: null } });
     if (!i) throw new NotFoundException("Plat introuvable");
     return i;
+  }
+
+  private assertHours(f: { availableFrom?: string | null; availableTo?: string | null }) {
+    if (!f.availableFrom !== !f.availableTo) throw new BadRequestException("Renseignez les deux heures (de / à) ou aucune");
   }
 
   private async defaultVat(tenantId: string): Promise<number> {

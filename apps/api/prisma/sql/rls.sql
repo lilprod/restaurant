@@ -97,6 +97,18 @@ DROP POLICY IF EXISTS tenant_isolation ON "FormulaItem";
 CREATE POLICY tenant_isolation ON "FormulaItem"
   USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
 
+ALTER TABLE "FormulaStep" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "FormulaStep" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "FormulaStep";
+CREATE POLICY tenant_isolation ON "FormulaStep"
+  USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
+
+ALTER TABLE "Promotion" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "Promotion" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "Promotion";
+CREATE POLICY tenant_isolation ON "Promotion"
+  USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
+
 ALTER TABLE "Order" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "Order" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON "Order";

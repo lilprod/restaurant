@@ -1,3 +1,4 @@
+import { orderLines } from "@/lib/order-lines";
 import type { Order, OrderItem } from "@restaurant/api-client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as React from "react";
@@ -130,7 +131,7 @@ export function OrderDetailPage() {
             <section key={c} aria-label={courseLabel(c)}>
               {courses.length > 1 && <h3 className="border-b border-border bg-subtle px-4 py-1.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground sm:px-5">{courseLabel(c)}</h3>}
               <ul className="divide-y divide-border">
-                {o.items.filter((i) => i.course === c).map((i) => <ItemRow key={i.id} order={o} item={i} />)}
+                {orderLines(o.items.filter((i) => i.course === c)).map((i) => <ItemRow key={i.id} order={o} item={i} />)}
               </ul>
             </section>
           ))}
@@ -168,21 +169,24 @@ function ItemRow({ order, item }: { order: Order; item: OrderItem }) {
   });
   const [editing, setEditing] = React.useState(false);
   const paid = item.paidQuantity > 0;
-  const canEdit = t.isFloor && item.status === "PENDING" && !paid && !order.closedAt && !order.cancelledAt;
-  const canCancel = t.isFloor && !cancelled && !order.cancelledAt && !paid && (item.status === "PENDING" || t.isManager);
+  const isChild = !!item.parentItemId;
+  const isFormula = !!item.formulaId;
+  const canEdit = t.isFloor && !isChild && item.status === "PENDING" && !paid && !order.closedAt && !order.cancelledAt;
+  const canCancel = t.isFloor && !isChild && !cancelled && !order.cancelledAt && !paid && (item.status === "PENDING" || t.isManager);
   const cancelHint = paid ? "Article déjà encaissé : remboursez d'abord le paiement" : !t.isManager && item.status !== "PENDING" ? "Déjà lancé en cuisine : un responsable peut l'annuler" : null;
 
   return (
-    <li className={cn("flex items-start gap-3 px-4 py-3 sm:px-5", cancelled && "bg-subtle")}>
-      <DishImage src={item.imageUrl} className="hidden size-11 shrink-0 rounded-md sm:flex" />
+    <li className={cn("flex items-start gap-3 px-4 py-3 sm:px-5", cancelled && "bg-subtle", isChild && "py-2 pl-10 sm:pl-12")}>
+      {!isChild && <DishImage src={item.imageUrl} className="hidden size-11 shrink-0 rounded-md sm:flex" />}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex items-start justify-between gap-3">
           <p className={cn("text-sm font-medium", cancelled && "text-muted-foreground line-through")}>
-            <span className="font-mono tabular-nums">{item.quantity}×</span> {item.name}
+            <span className="font-mono tabular-nums">{item.quantity}×</span> {isChild && item.stepName ? <span className="text-muted-foreground">{item.stepName} : </span> : null}{item.name}
           </p>
-          <span className={cn("shrink-0 font-mono text-sm tabular-nums", cancelled && "text-faint line-through")}>{formatFcfa(item.lineTotal)}</span>
+          {!isChild && <span className={cn("shrink-0 font-mono text-sm tabular-nums", cancelled && "text-faint line-through")}>{formatFcfa(item.lineTotal)}</span>}
         </div>
         <ItemDetails item={item} />
+        {item.discount > 0 && !cancelled && <p className="text-xs font-medium text-success">{item.promotionName ?? "Remise"} · dont remise − {formatFcfa(item.discount)}</p>}
         <div className="flex flex-wrap items-center gap-2 pt-0.5">
           <ItemStatusBadge status={item.status} />
           {paid && <span className="text-xs text-success">{item.paidQuantity === item.quantity ? "Encaissé" : `${item.paidQuantity}/${item.quantity} encaissé`}</span>}
@@ -191,10 +195,10 @@ function ItemRow({ order, item }: { order: Order; item: OrderItem }) {
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-1">
-        {t.isFloor && item.status === "READY" && (
+        {t.isFloor && !isFormula && item.status === "READY" && (
           <Button variant="primary" size="sm" loading={setStatus.isPending} onClick={() => setStatus.mutate("SERVED")}><HandPlatter /> Servi</Button>
         )}
-        {t.isFloor && item.status === "SERVED" && !order.closedAt && (
+        {t.isFloor && !isFormula && item.status === "SERVED" && !order.closedAt && (
           <Tooltip content="Annuler « servi » (erreur de manipulation)">
             <Button variant="ghost" size="icon-sm" aria-label={`Remettre « ${item.name} » à servir`} onClick={() => setStatus.mutate("READY")}><Undo2 /></Button>
           </Tooltip>

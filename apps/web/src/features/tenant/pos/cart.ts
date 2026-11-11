@@ -1,13 +1,21 @@
-import type { MenuItem, MenuOptionGroup } from "@restaurant/api-client";
+import type { Formula, MenuItem, MenuOptionGroup } from "@restaurant/api-client";
 import { computeTotals, lineTotal, type Totals } from "@restaurant/utils";
 import type { OrderItemInput } from "@restaurant/validation";
 
 /** Ligne du panier de prise de commande (avant envoi en cuisine). */
 export interface CartLine {
   key: string;
-  menuItemId: string;
+  /** Null pour une formule. */
+  menuItemId: string | null;
   name: string;
+  /** Prix unitaire après promotion éventuelle (l'API refait le calcul). */
   unitPrice: number;
+  /** Promotion appliquée : remise par unité et nom de l'offre (affichage). */
+  discountPerUnit?: number;
+  promotionName?: string;
+  /** Formule : un plat choisi par étape. */
+  formulaId?: string;
+  choices?: { stepId: string; stepName: string; menuItemId: string; name: string }[];
   vatRate: number;
   options: { id: string; name: string; extra: number }[];
   quantity: number;
@@ -16,7 +24,8 @@ export interface CartLine {
 }
 
 export type CartAction =
-  | { type: "add"; item: Pick<MenuItem, "id" | "name" | "price" | "vatRate" | "optionGroups">; optionIds?: string[]; quantity?: number; instructions?: string; course?: number }
+  | { type: "add"; item: Pick<MenuItem, "id" | "name" | "price" | "vatRate" | "optionGroups">; optionIds?: string[]; quantity?: number; instructions?: string; course?: number; promo?: { unitPrice: number; name: string } | null }
+  | { type: "addFormula"; formula: Pick<Formula, "id" | "name" | "price">; vatRate: number; choices: NonNullable<CartLine["choices"]>; quantity?: number; instructions?: string; course?: number }
   | { type: "quantity"; key: string; quantity: number }
   | { type: "update"; key: string; patch: Partial<Pick<CartLine, "instructions" | "course">> }
   | { type: "remove"; key: string }
@@ -25,8 +34,8 @@ export type CartAction =
 export const MAX_QUANTITY = 99;
 
 /** Signature d'une ligne : deux ajouts identiques (plat, options, consigne, envoi) se cumulent. */
-export function lineSignature(menuItemId: string, optionIds: string[], instructions = "", course = 1): string {
-  return [menuItemId, [...optionIds].sort().join("+"), instructions.trim().toLowerCase(), course].join("|");
+export function lineSignature(menuItemId: string | null, optionIds: string[], instructions = "", course = 1, formulaId?: string): string {
+  return [formulaId ? `f:${formulaId}` : menuItemId, [...optionIds].sort().join("+"), instructions.trim().toLowerCase(), course].join("|");
 }
 
 export function optionsExtra(line: Pick<CartLine, "options">): number {
@@ -50,9 +59,23 @@ export function cartReducer(lines: CartLine[], action: CartAction): CartLine[] {
         return lines.map((l) => (l.key === key ? { ...l, quantity: Math.min(MAX_QUANTITY, l.quantity + qty) } : l));
       }
       const options = action.item.optionGroups.flatMap((g) => g.options).filter((o) => optionIds.includes(o.id));
+      const unitPrice = action.promo?.unitPrice ?? action.item.price;
       return [...lines, {
-        key, menuItemId: action.item.id, name: action.item.name, unitPrice: action.item.price, vatRate: action.item.vatRate,
+        key, menuItemId: action.item.id, name: action.item.name, unitPrice, vatRate: action.item.vatRate,
+        ...(action.promo ? { discountPerUnit: action.item.price - unitPrice, promotionName: action.promo.name } : {}),
         options: options.map((o) => ({ id: o.id, name: o.name, extra: o.extra })), quantity: Math.min(MAX_QUANTITY, qty), instructions, course,
+      }];
+    }
+    case "addFormula": {
+      const instructions = (action.instructions ?? "").trim();
+      const course = action.course ?? 1;
+      const picks = action.choices.map((c) => `${c.stepId}:${c.menuItemId}`).sort().join("+");
+      const key = lineSignature(null, [picks], instructions, course, action.formula.id);
+      const qty = action.quantity ?? 1;
+      if (lines.some((l) => l.key === key)) return lines.map((l) => (l.key === key ? { ...l, quantity: Math.min(MAX_QUANTITY, l.quantity + qty) } : l));
+      return [...lines, {
+        key, menuItemId: null, formulaId: action.formula.id, choices: action.choices, name: action.formula.name, unitPrice: action.formula.price,
+        vatRate: action.vatRate, options: [], quantity: Math.min(MAX_QUANTITY, qty), instructions, course,
       }];
     }
     case "quantity":
@@ -63,7 +86,9 @@ export function cartReducer(lines: CartLine[], action: CartAction): CartLine[] {
       if (!target) return lines;
       const next = { ...target, ...action.patch };
       next.instructions = next.instructions.slice(0, 200);
-      const key = lineSignature(next.menuItemId, next.options.map((o) => o.id), next.instructions, next.course);
+      const key = next.formulaId
+        ? lineSignature(null, [(next.choices ?? []).map((c) => `${c.stepId}:${c.menuItemId}`).sort().join("+")], next.instructions, next.course, next.formulaId)
+        : lineSignature(next.menuItemId, next.options.map((o) => o.id), next.instructions, next.course);
       // La nouvelle consigne rend la ligne identique à une autre : on fusionne.
       const twin = lines.find((l) => l.key === key && l.key !== action.key);
       if (twin) {
@@ -92,12 +117,14 @@ export const cartCount = (lines: CartLine[]) => lines.reduce((n, l) => n + l.qua
 /** Corps de la requête (POST /tenant/orders ou /:id/items). */
 export function toOrderItems(lines: CartLine[]): OrderItemInput[] {
   return lines.map((l) => ({
-    menuItemId: l.menuItemId,
+    ...(l.formulaId
+      ? { formulaId: l.formulaId, choices: (l.choices ?? []).map((c) => ({ stepId: c.stepId, menuItemId: c.menuItemId })) }
+      : { menuItemId: l.menuItemId ?? undefined }),
     quantity: l.quantity,
     optionIds: l.options.map((o) => o.id),
     instructions: l.instructions.trim() || undefined,
     course: l.course,
-  }));
+  }) as OrderItemInput);
 }
 
 // ── Options d'un plat ──
@@ -144,4 +171,27 @@ export function groupRuleLabel(g: Pick<MenuOptionGroup, "minChoices" | "maxChoic
   if (g.minChoices === 0) return g.maxChoices === 1 ? "Facultatif" : `Facultatif · ${g.maxChoices} max`;
   if (g.minChoices === g.maxChoices) return g.minChoices === 1 ? "Obligatoire" : `${g.minChoices} choix obligatoires`;
   return `${g.minChoices} à ${g.maxChoices} choix`;
+}
+
+/** Remise totale du panier (affichée « dont remise »). */
+export const cartDiscount = (lines: CartLine[]) => lines.reduce((n, l) => n + (l.discountPerUnit ?? 0) * l.quantity, 0);
+
+/** Choix d'une formule : une sélection par étape, min/max appliqués (miroir de l'API). */
+export interface StepCheck { stepId: string; count: number; ok: boolean; message: string | null; full: boolean }
+export function checkFormula(steps: Formula["steps"], picks: Record<string, string[]>): StepCheck[] {
+  return steps.map((s) => {
+    const count = (picks[s.id] ?? []).length;
+    let message: string | null = null;
+    if (count < s.minChoices) message = s.minChoices === 1 ? "Choisissez un plat" : `Choisissez au moins ${s.minChoices} plats`;
+    return { stepId: s.id, count, ok: message === null, message, full: count >= s.maxChoices };
+  });
+}
+
+/** Bascule un plat dans une étape (choix unique : remplace ; sinon ajoute jusqu'au maximum). */
+export function togglePick(step: Formula["steps"][number], picks: Record<string, string[]>, menuItemId: string): Record<string, string[]> {
+  const cur = picks[step.id] ?? [];
+  if (cur.includes(menuItemId)) return { ...picks, [step.id]: cur.filter((x) => x !== menuItemId) };
+  if (step.maxChoices === 1) return { ...picks, [step.id]: [menuItemId] };
+  if (cur.length >= step.maxChoices) return picks;
+  return { ...picks, [step.id]: [...cur, menuItemId] };
 }

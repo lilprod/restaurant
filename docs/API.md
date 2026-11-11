@@ -154,13 +154,33 @@ Limite `maxUsers` du plan → `409 {code: "PLAN_LIMIT"}`.
 plats `POST|PATCH|DELETE items[/:id]` (options : `optionGroups[{name, minChoices, maxChoices, options[{name, extra}]}]` remplacés en bloc ;
 `allergenCodes[]` ; `vatRate` par défaut = paramètre « exploitation ») · `POST items/reorder` · `PATCH items/:id/availability` (cuisine : « épuisé ») ·
 `POST|DELETE items/:id/image` (PNG/JPEG/WebP, 3 Mo). Un plat déjà commandé est **archivé** (retiré de la carte, historique conservé).
-Carte publique : `GET /public/tenants/:slug/menu` (catégories actives, plats disponibles, sans données internes).
+Carte publique : `GET /public/tenants/:slug/menu` (catégories actives, plats non épuisés, sans données internes). Chaque plat porte
+`availableNow` (faux hors de sa plage horaire : à griser), `availableFrom/availableTo` et `promotion: {name, unitPrice} | null` (prix remisé en cours) ;
+`formulas[]` : formules actives avec `availableNow`, étapes et plats proposés non épuisés.
+
+### Disponibilité horaire, formules, promotions (P1B)
+- **Plage horaire d'un plat** : `availableFrom` / `availableTo` (« HH:MM », fuseau du restaurant, `""` = toute la journée ; les deux ou aucune, sinon 400).
+  Bornes `[de, à[` ; une plage qui passe minuit (22:00–02:00) est acceptée. Hors plage, la commande est refusée en **409**
+  (« « Soupe » n'est servi que de 11:30 à 15:00 »). Règles dans `@restaurant/utils` (`availabilityAt`, `menu-extras.ts`), horloge injectable (`Clock`) pour les tests.
+- **Formules** (`/tenant/menu/formulas`, lecture : personnel · écriture : responsables) : `GET` · `POST` · `PATCH /:id` · `DELETE /:id` (archivée si déjà commandée).
+  Corps : `{name, description?, price (TTC), isActive, availableFrom?, availableTo?, sortOrder, steps[{name, minChoices, maxChoices, menuItemIds[]}]}`
+  (étapes remplacées en bloc). Un plat à options obligatoires ne peut pas être proposé (409). TVA d'une formule = taux par défaut du restaurant.
+- **Promotions** (`/tenant/menu/promotions`, lecture : personnel · écriture : responsables) : `GET` · `POST` · `PUT /:id` · `PATCH /:id {isActive}` · `DELETE /:id`.
+  Corps : `{name, kind: PERCENT|AMOUNT, value, menuItemId | categoryId, startsOn?, endsOn?, days[1..7 ISO], fromTime?, toTime?, isActive}`.
+  Appliquée automatiquement à la commande si elle est en cours (fuseau du restaurant) ; **la plus avantageuse l'emporte, sans cumul** ; les suppléments d'options ne sont pas remisés.
+- **Commander une formule** : ligne `{formulaId, quantity, choices[{stepId, menuItemId}], instructions?, course?}` (au lieu de `menuItemId`). Elle crée une **ligne formule**
+  (`formulaId`, `menuItemId: null`, prix de la formule, TVA par défaut) et une **ligne enfant par plat choisi** (`parentItemId`, `stepName`, `unitPrice: 0`) :
+  seules les lignes enfants vont en cuisine (`GET /tenant/kitchen` ne renvoie pas la ligne formule), avancent (`status`, `advance`) et déduisent leur recette de stock (P3) ;
+  le statut de la ligne formule est déduit de ses plats. Quantité (`PATCH`) et annulation (`cancel`) s'appliquent à la formule entière (ses plats suivent) ; un plat de formule
+  ne se modifie, ne s'annule et ne s'encaisse jamais seul (409 / 400 « sélectionnez la formule »).
+- **Remise sur la commande** : `OrderItem.discount` (total de la ligne), `promotionName` ; `unitPrice` est le prix remisé **figé** ; `Order.discountTotal` (« dont remise » du ticket).
+- Choix invalides (étape manquante, trop de choix, plat étranger à l'étape) : 400 ; formule masquée/hors horaires : 409.
 
 ## Commandes — `/tenant/orders`
 | Méthode | Route | Rôle | Description |
 |---|---|---|---|
 | GET | `/` | personnel | Filtres `status`, `paymentStatus`, `type`, `tableId`, `open=true`, `date=AAAA-MM-JJ` (fuseau du restaurant), pagination |
-| POST | `/` | salle | `{type: DINE_IN\|TAKEAWAY, tableId?, customerName?, notes?, items[{menuItemId, quantity, optionIds[], instructions?, course?}]}` |
+| POST | `/` | salle | `{type: DINE_IN\|TAKEAWAY, tableId?, customerName?, notes?, items[{menuItemId \| formulaId+choices[], quantity, optionIds[], instructions?, course?}]}` |
 | GET | `/:id` · `/:id/receipt` | personnel · salle | Détail · ticket (identité du restaurant, TVA par taux, paiements) |
 | POST | `/:id/items` | salle | Ajouter des articles (commande ouverte) |
 | PATCH | `/:id/items/:itemId` | salle | Quantité / instructions (`""` efface les consignes) (article encore en attente et non encaissé) |
@@ -185,6 +205,7 @@ Socket.io, espace de noms **`/realtime`** (chemin `/socket.io`, hors préfixe `/
 - **`order.created`**, **`order.updated`** : commande complète.
 - **`menu.updated`** : plat (`menuItemView`) créé, modifié, rendu (in)disponible, photo changée ou archivé (`archived: true`) ;
   `{ id, deleted: true }` pour un plat supprimé.
+- **`menu.extras.updated`** `{ kind: "formula" | "promotion" }` : formule ou promotion créée, modifiée ou supprimée (les écrans rechargent `GET formulas|promotions`).
 - **`table.updated`** : table au format de `GET /tenant/tables` (création, modification, statut — y compris le passage `OCCUPIED`/`FREE` dû aux commandes —,
   désactivation) ; `{ id, deleted: true }` pour une table supprimée.
 - **`stock.updated`** `{ ingredients: StockLight[] }` et **`stock.low`** (`StockLight`, une fois par franchissement de seuil) : voir « Stock ».

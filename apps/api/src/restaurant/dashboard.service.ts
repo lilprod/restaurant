@@ -17,7 +17,7 @@ export class DashboardService {
         tx.order.findMany({ where: { tenantId, createdAt: { gte: start, lt: end }, cancelledAt: null }, select: { total: true, createdAt: true, type: true } }),
         tx.order.count({ where: { tenantId, closedAt: null, cancelledAt: null } }),
         tx.orderItem.groupBy({
-          by: ["menuItemId", "name"], where: { tenantId, status: { not: "CANCELLED" }, createdAt: { gte: start, lt: end } },
+          by: ["menuItemId", "name"], where: { tenantId, parentItemId: null, status: { not: "CANCELLED" }, createdAt: { gte: start, lt: end } },
           _sum: { quantity: true, lineTotal: true }, orderBy: { _sum: { quantity: "desc" } }, take: 5,
         }),
       ]);

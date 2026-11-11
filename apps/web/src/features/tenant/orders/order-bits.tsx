@@ -78,6 +78,7 @@ export function BillSummary({ order, className, serviceChargePercent, defaultVat
   return (
     <dl className={cn("flex flex-col gap-2 text-sm", className)}>
       <div className={row}><dt className="text-muted-foreground">Sous-total</dt><dd className="font-mono tabular-nums">{formatFcfa(order.subtotal)}</dd></div>
+      {order.discountTotal > 0 && <div className={cn(row, "text-[13px] text-faint")}><dt>dont remises</dt><dd className="font-mono tabular-nums">− {formatFcfa(order.discountTotal)}</dd></div>}
       {order.serviceCharge > 0 && (
         <div className={row}><dt className="text-muted-foreground">Service{serviceChargePercent ? ` (${serviceChargePercent} %)` : ""}</dt><dd className="font-mono tabular-nums">{formatFcfa(order.serviceCharge)}</dd></div>
       )}

@@ -158,7 +158,7 @@ export function TenantDashboardPage() {
           ) : (
             <ol className="flex flex-col divide-y divide-border border-t border-border">
               {d.topItems.map((it, i) => (
-                <li key={it.menuItemId} className="flex items-center gap-3 px-5 py-3 sm:px-6">
+                <li key={it.menuItemId ?? it.name} className="flex items-center gap-3 px-5 py-3 sm:px-6">
                   <span className="w-5 font-mono text-xs text-faint tabular-nums">{i + 1}</span>
                   <div className="flex min-w-0 flex-1 flex-col gap-1.5">
                     <div className="flex items-baseline justify-between gap-3">

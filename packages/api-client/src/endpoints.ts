@@ -1,6 +1,6 @@
 import type {
   BrandingInput, BusinessInput, CategoryInput, CompanyInput, CreateOrderInput, CreateStaffInput, CreateTenantInput, LicensingSettings,
-  LocalizationInput, MenuItemInput, NotificationsSettingsInput, OperationsInput, OrderItemInput, OrderPaymentInput, PaymentInstructionsInput, PlanInput,
+  FormulaInput, FormulaUpdateInput, LocalizationInput, MenuItemInput, PromotionInput, NotificationsSettingsInput, OperationsInput, OrderItemInput, OrderPaymentInput, PaymentInstructionsInput, PlanInput,
   PlatformSecurityInput, RecordPaymentInput, RegistrationInput, TableInput, TenantSecurityInput,
   CreateStockCountInput, IngredientInput, IngredientUpdate, PurchaseOrderInput, PurchaseOrderUpdate, ReceivePurchaseInput, RecipeInput,
   StockAdjustInput, StockCountLinesInput, SupplierInput, SupplierUpdate, WasteInput,
@@ -15,6 +15,7 @@ import type {
   TenantListItem, TenantPublicBranding, TenantSettingsAll, TenantStatus, TenantUserSecurity, TwoFactorSetup,
   DishCost, DishRecipe, Ingredient, IngredientsQuery, MovementsQuery, OptionRecipe, PurchaseOrder, PurchaseStatus, StockAlert,
   StockCount, StockCountSummary, StockMovement, Supplier, WasteList, WasteRecord,
+  Formula, Promotion,
 } from "./types";
 
 const enc = encodeURIComponent;
@@ -222,6 +223,15 @@ export function tenantApi(c: ApiClient) {
       deleteItem: (id: string) => c.delete<{ archived?: true; deleted?: true }>(`/tenant/menu/items/${enc(id)}`),
       uploadImage: (id: string, file: Blob) => c.upload<{ imageUrl: string }>(`/tenant/menu/items/${enc(id)}/image`, file),
       removeImage: (id: string) => c.delete<void>(`/tenant/menu/items/${enc(id)}/image`),
+      formulas: () => c.get<Formula[]>("/tenant/menu/formulas"),
+      createFormula: (body: FormulaInput) => c.post<Formula>("/tenant/menu/formulas", body),
+      updateFormula: (id: string, body: FormulaUpdateInput) => c.patch<Formula>(`/tenant/menu/formulas/${enc(id)}`, body),
+      deleteFormula: (id: string) => c.delete<{ archived?: true; deleted?: true }>(`/tenant/menu/formulas/${enc(id)}`),
+      promotions: () => c.get<Promotion[]>("/tenant/menu/promotions"),
+      createPromotion: (body: PromotionInput) => c.post<Promotion>("/tenant/menu/promotions", body),
+      updatePromotion: (id: string, body: PromotionInput) => c.put<Promotion>(`/tenant/menu/promotions/${enc(id)}`, body),
+      setPromotionActive: (id: string, isActive: boolean) => c.patch<Promotion>(`/tenant/menu/promotions/${enc(id)}`, { isActive }),
+      deletePromotion: (id: string) => c.delete<{ deleted: true }>(`/tenant/menu/promotions/${enc(id)}`),
     },
     orders: {
       list: (q: OrdersQuery = {}) => c.get<Paginated<Order>>("/tenant/orders", { query: { ...q } }),

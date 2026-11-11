@@ -305,13 +305,14 @@ model OpeningHours {
 // ───────── MENU ─────────
 model Category {
   tenantId    String
-  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id          String     @id @default(uuid())
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id          String      @id @default(uuid())
   name        String
   description String?
-  sortOrder   Int        @default(0)
-  isActive    Boolean    @default(true)
+  sortOrder   Int         @default(0)
+  isActive    Boolean     @default(true)
   items       MenuItem[]
+  promotions  Promotion[]
 
   @@index([tenantId])
 }
@@ -349,6 +350,7 @@ model MenuItem {
   recipe       RecipeLine[]
   orderItems   OrderItem[]
   formulaItems FormulaItem[]
+  promotions   Promotion[]
 
   @@index([tenantId])
 }
@@ -383,39 +385,93 @@ model OptionGroup {
 
 model Option {
   tenantId     String
-  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id           String            @id @default(uuid())
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String             @id @default(uuid())
   groupId      String
   name         String
-  extra        Int               @default(0)
-  group        OptionGroup       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  extra        Int                @default(0)
+  group        OptionGroup        @relation(fields: [groupId], references: [id], onDelete: Cascade)
   orderOptions OrderItemOption[]
   recipe       OptionRecipeLine[]
 
   @@index([tenantId])
 }
 
+// Menu à prix fixe : étapes (« Entrée », « Plat »…) avec choix parmi des plats ; TVA = taux par défaut du restaurant.
 model Formula {
-  tenantId String
-  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id       String        @id @default(uuid())
-  name     String
-  price    Int
-  isActive Boolean       @default(true)
-  items    FormulaItem[]
+  tenantId      String
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String        @id @default(uuid())
+  name          String
+  description   String?
+  price         Int
+  isActive      Boolean       @default(true)
+  availableFrom String? // « HH:MM », fuseau du restaurant
+  availableTo   String?
+  sortOrder     Int           @default(0)
+  archivedAt    DateTime? // retirée de la carte mais conservée (historique des commandes)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @default(now()) @updatedAt
+  steps         FormulaStep[]
+  orderItems    OrderItem[]
 
   @@index([tenantId])
 }
 
+model FormulaStep {
+  tenantId   String
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id         String        @id @default(uuid())
+  formulaId  String
+  name       String
+  minChoices Int           @default(1)
+  maxChoices Int           @default(1)
+  sortOrder  Int           @default(0)
+  formula    Formula       @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+  items      FormulaItem[]
+
+  @@index([tenantId])
+  @@index([formulaId])
+}
+
 model FormulaItem {
   tenantId   String
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  formulaId  String
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  stepId     String
   menuItemId String
-  formula    Formula  @relation(fields: [formulaId], references: [id], onDelete: Cascade)
-  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  step       FormulaStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  menuItem   MenuItem    @relation(fields: [menuItemId], references: [id])
 
-  @@id([formulaId, menuItemId])
+  @@id([stepId, menuItemId])
+  @@index([tenantId])
+}
+
+enum PromotionKind {
+  PERCENT
+  AMOUNT
+}
+
+// Remise automatique sur un plat ou sur toute une catégorie, pendant une période (dates, jours, heures).
+model Promotion {
+  tenantId   String
+  tenant     Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id         String        @id @default(uuid())
+  name       String
+  kind       PromotionKind
+  value      Int // % (1–100) ou FCFA par unité
+  menuItemId String?
+  categoryId String?
+  startsOn   String? // AAAA-MM-JJ inclus, fuseau du restaurant
+  endsOn     String?
+  days       Int[] // jours ISO 1 (lundi) – 7 (dimanche) ; vide = tous
+  fromTime   String? // « HH:MM »
+  toTime     String?
+  isActive   Boolean       @default(true)
+  archivedAt DateTime?
+  createdAt  DateTime      @default(now())
+  menuItem   MenuItem?     @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  category   Category?     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
   @@index([tenantId])
 }
 
@@ -464,28 +520,37 @@ model Order {
 }
 
 model OrderItem {
-  tenantId     String
-  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id           String     @id @default(uuid())
-  orderId      String
-  menuItemId   String
-  name         String     @default("") // nom figé à la commande
-  optionsExtra Int        @default(0) // suppléments par unité
-  lineTotal    Int        @default(0) // (prix + suppléments) × quantité, TTC
-  quantity     Int
-  unitPrice    Int
-  vatRate      Decimal    @db.Decimal(4, 2)
-  status       ItemStatus @default(PENDING)
-  instructions String?
-  course       Int        @default(1)
-  startedAt    DateTime?
-  readyAt      DateTime?
-  servedAt     DateTime?
-  cancelReason String?
-  createdAt    DateTime   @default(now())
+  tenantId      String
+  tenant        Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String     @id @default(uuid())
+  orderId       String
+  menuItemId    String? // null pour une ligne « formule »
+  formulaId     String? // ligne formule (facturée) ; ses plats sont des lignes enfants à 0 FCFA
+  parentItemId  String?
+  stepName      String? // ligne enfant : étape de la formule (« Entrée »)
+  discount      Int        @default(0) // remise promotionnelle totale de la ligne (déjà déduite de unitPrice)
+  promotionId   String?
+  promotionName String?
+  name          String     @default("") // nom figé à la commande
+  optionsExtra  Int        @default(0) // suppléments par unité
+  lineTotal     Int        @default(0) // (prix + suppléments) × quantité, TTC
+  quantity      Int
+  unitPrice     Int
+  vatRate       Decimal    @db.Decimal(4, 2)
+  status        ItemStatus @default(PENDING)
+  instructions  String?
+  course        Int        @default(1)
+  startedAt     DateTime?
+  readyAt       DateTime?
+  servedAt      DateTime?
+  cancelReason  String?
+  createdAt     DateTime   @default(now())
 
   order       Order               @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItem    MenuItem            @relation(fields: [menuItemId], references: [id])
+  menuItem    MenuItem?           @relation(fields: [menuItemId], references: [id])
+  formula     Formula?            @relation(fields: [formulaId], references: [id])
+  parent      OrderItem?          @relation("FormulaChildren", fields: [parentItemId], references: [id], onDelete: Cascade)
+  children    OrderItem[]         @relation("FormulaChildren")
   options     OrderItemOption[]
   allocations PaymentAllocation[]
 
@@ -1061,6 +1126,8 @@ model Tenant {
   options            Option[]
   formulas           Formula[]
   formulaItems       FormulaItem[]
+  formulaSteps       FormulaStep[]
+  promotions         Promotion[]
   orders             Order[]
   orderItems         OrderItem[]
   orderItemOptions   OrderItemOption[]
@@ -1235,23 +1302,23 @@ enum NotificationStatus {
 }
 
 model NotificationLog {
-  id          String              @id @default(uuid())
-  tenantId    String? // null = message de la plateforme
-  channel     NotificationChannel
-  to          String // adresse / numéro E.164 en clair (affiché masqué par l'API)
-  template    String // ex. "auth.password-reset"
-  category    String              @default("transactional") // transactional | reminder
-  subject     String?
-  status      NotificationStatus  @default(QUEUED)
-  error       String?
-  attempts    Int                 @default(0)
-  locale      String              @default("fr")
-  data        Json? // variables du modèle (absentes pour les modèles sensibles : renvoi impossible)
-  dedupeKey   String?             @unique // garantit « une seule fois » (ex. relance de licence par palier)
-  resendOfId  String?
-  createdAt   DateTime            @default(now())
-  sentAt      DateTime?
-  updatedAt   DateTime            @updatedAt
+  id         String              @id @default(uuid())
+  tenantId   String? // null = message de la plateforme
+  channel    NotificationChannel
+  to         String // adresse / numéro E.164 en clair (affiché masqué par l'API)
+  template   String // ex. "auth.password-reset"
+  category   String              @default("transactional") // transactional | reminder
+  subject    String?
+  status     NotificationStatus  @default(QUEUED)
+  error      String?
+  attempts   Int                 @default(0)
+  locale     String              @default("fr")
+  data       Json? // variables du modèle (absentes pour les modèles sensibles : renvoi impossible)
+  dedupeKey  String?             @unique // garantit « une seule fois » (ex. relance de licence par palier)
+  resendOfId String?
+  createdAt  DateTime            @default(now())
+  sentAt     DateTime?
+  updatedAt  DateTime            @updatedAt
 
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 

@@ -29,11 +29,11 @@ type FormValues = z.input<typeof menuItemInputSchema>;
 
 const toForm = (item: MenuItem | null, categoryId: string): FormValues => item ? {
   categoryId: item.categoryId, name: item.name, description: item.description ?? "", price: item.price, vatRate: item.vatRate,
-  prepMinutes: item.prepMinutes, isAvailable: item.isAvailable, isDishOfDay: item.isDishOfDay, sortOrder: item.sortOrder,
+  prepMinutes: item.prepMinutes, isAvailable: item.isAvailable, availableFrom: item.availableFrom ?? "", availableTo: item.availableTo ?? "", isDishOfDay: item.isDishOfDay, sortOrder: item.sortOrder,
   allergenCodes: item.allergens.map((a) => a.code),
   optionGroups: item.optionGroups.map((g) => ({ name: g.name, minChoices: g.minChoices, maxChoices: g.maxChoices, options: g.options.map((o) => ({ name: o.name, extra: o.extra })) })),
 } : {
-  categoryId, name: "", description: "", price: 0, vatRate: undefined, prepMinutes: 10, isAvailable: true, isDishOfDay: false, sortOrder: 0, allergenCodes: [], optionGroups: [],
+  categoryId, name: "", description: "", price: 0, vatRate: undefined, prepMinutes: 10, isAvailable: true, availableFrom: "", availableTo: "", isDishOfDay: false, sortOrder: 0, allergenCodes: [], optionGroups: [],
 };
 
 /**
@@ -154,6 +154,11 @@ export function ItemEditor({ value, categories, allergens, onClose }: {
               </div>
             )} />
           </Field>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Servi à partir de" hint="Heure du restaurant. Vide = toute la journée ; hors plage, le plat est grisé et refusé à la commande."><Input type="time" {...form.register("availableFrom")} /></Field>
+          <Field label="Jusqu'à" error={errors.availableTo?.message}><Input type="time" {...form.register("availableTo")} /></Field>
         </div>
 
         <div className="flex flex-col divide-y divide-border rounded-lg border border-border px-4">

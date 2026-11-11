@@ -18,6 +18,8 @@ import { ErrorState } from "@/components/ui/error-state";
 import { Field } from "@/components/ui/field";
 import { Input, Textarea } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { availabilityAt, hoursLabel } from "@restaurant/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cn";
@@ -26,9 +28,11 @@ import { formatFcfa } from "@/lib/format";
 import { tenantKeys } from "@/lib/tenant-keys";
 import { useUrlParam } from "@/lib/use-url-state";
 import { useSpacePath } from "@/providers/space";
-import { useTenant } from "../hooks";
+import { useNow, useTenant, useTimezone } from "../hooks";
 import { useMenu } from "../pos/pos-page";
 import { ItemEditor } from "./item-editor";
+import { FormulasPanel } from "./formulas-panel";
+import { PromotionsPanel } from "./promotions-panel";
 
 /** Menu : catégories (créer, renommer, ordonner, masquer) et plats. La cuisine n'y gère que la disponibilité. */
 export function MenuPage() {
@@ -38,6 +42,9 @@ export function MenuPage() {
   const menu = useMenu();
   const allergens = useQuery({ queryKey: tenantKeys.allergens(t.root), queryFn: t.api.menu.allergens, staleTime: Infinity, enabled: t.isManager });
   const [catParam, setCat] = useUrlParam("categorie", "");
+  const [viewParam, setView] = useUrlParam("vue", "carte");
+  const tz = useTimezone();
+  const now = useNow(30_000);
   const [editor, setEditor] = React.useState<{ item: MenuItem | null; categoryId: string } | null>(null);
   const [catDialog, setCatDialog] = React.useState<MenuCategory | "new" | null>(null);
   const canEdit = t.isManager;
@@ -65,6 +72,7 @@ export function MenuPage() {
     reorderItems.mutate(items.map((i) => i.id));
   };
 
+  const view = canEdit && (viewParam === "formules" || viewParam === "promotions") ? viewParam : "carte";
   const catOut = current?.items.filter((i) => !i.isAvailable).length ?? 0;
 
   return (
@@ -75,11 +83,20 @@ export function MenuPage() {
         actions={
           <>
             {canEdit && <Button asChild variant="secondary"><Link to={to("/carte")} target="_blank" rel="noreferrer"><ExternalLink /> Carte publique</Link></Button>}
-            {canEdit && current && <Button variant="primary" onClick={() => setEditor({ item: null, categoryId: current.id })}><Plus /> Ajouter un plat</Button>}
+            {canEdit && view === "carte" && current && <Button variant="primary" onClick={() => setEditor({ item: null, categoryId: current.id })}><Plus /> Ajouter un plat</Button>}
           </>
         }
       />
-      {menu.isError ? <ErrorState error={menu.error} onRetry={() => menu.refetch()} /> : menu.isLoading ? (
+      {canEdit && (
+        <Tabs value={view} onValueChange={setView}>
+          <TabsList>
+            <TabsTrigger value="carte">Carte</TabsTrigger>
+            <TabsTrigger value="formules">Formules</TabsTrigger>
+            <TabsTrigger value="promotions">Promotions</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
+      {view === "formules" ? <div className="flex flex-col gap-4"><FormulasPanel cats={cats} /></div> : view === "promotions" ? <div className="flex flex-col gap-4"><PromotionsPanel cats={cats} /></div> : menu.isError ? <ErrorState error={menu.error} onRetry={() => menu.refetch()} /> : menu.isLoading ? (
         <div className="grid gap-6 lg:grid-cols-[260px_1fr]"><Skeleton className="h-72 rounded-lg" /><Skeleton className="h-96 rounded-lg" /></div>
       ) : cats.length === 0 ? (
         <Card><EmptyState icon={<BookOpen />} title="Votre carte est vide" description="Commencez par créer une catégorie (Entrées, Plats, Boissons…), puis ajoutez vos plats."
@@ -110,6 +127,8 @@ export function MenuPage() {
                             <span className="truncate text-sm font-medium">{item.name}</span>
                             {item.isDishOfDay && <Badge tone="amber" className="h-5 text-[11px]"><Star className="size-3" /> Plat du jour</Badge>}
                             {!item.isAvailable && <Badge tone="red" dot className="h-5 text-[11px]">Épuisé</Badge>}
+                            {item.isAvailable && !availabilityAt(item, new Date(now), tz).available && <Badge tone="gray" className="h-5 text-[11px]"><Clock className="size-3" /> Hors horaires</Badge>}
+                            {hoursLabel(item.availableFrom, item.availableTo) && <span className="text-[11px] text-muted-foreground">servi {hoursLabel(item.availableFrom, item.availableTo)}</span>}
                           </span>
                           <span className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                             <span className="font-mono font-medium text-foreground tabular-nums">{formatFcfa(item.price)}</span>

@@ -7,7 +7,7 @@ import { applyMenuEvent, applyTableEvent } from "../catalog-cache";
 const root = ["tenant", "chez-kofi"] as const;
 const dish = (p: Partial<MenuItem> = {}): MenuItem => ({
   id: "i1", categoryId: "c1", name: "Poulet braisé", description: null, price: 3500, vatRate: 18, imageUrl: null, prepMinutes: 15,
-  isAvailable: true, isDishOfDay: false, sortOrder: 0, archived: false, allergens: [], optionGroups: [], ...p,
+  isAvailable: true, availableFrom: null, availableTo: null, isDishOfDay: false, sortOrder: 0, archived: false, allergens: [], optionGroups: [], ...p,
 });
 const cat = (id: string, items: MenuItem[]): MenuCategory => ({ id, name: id, description: null, sortOrder: 0, isActive: true, items });
 const table = (p: Partial<DiningTable> = {}): DiningTable => ({ id: "t1", tenantId: "t", label: "T1", capacity: 4, status: "FREE", isActive: true, openOrders: [], ...p });
