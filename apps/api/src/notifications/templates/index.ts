@@ -5,6 +5,10 @@ import {
   registrationApproved, registrationReceived, registrationRejected,
   type RegistrationApprovedData, type RegistrationReceivedData, type RegistrationRejectedData,
 } from "./registration";
+import {
+  reservationCancelled, reservationConfirmed, reservationPending, reservationReminder, reservationUpdated, waitlistAvailable,
+  type ReservationCancelledData, type ReservationData, type WaitlistAvailableData,
+} from "./reservations";
 import type { TemplateDef } from "./types";
 
 /**
@@ -20,6 +24,12 @@ export interface TemplateDataMap {
   "registration.approved": RegistrationApprovedData;
   "registration.rejected": RegistrationRejectedData;
   "generic.message": GenericData;
+  "reservation.confirmed": ReservationData;
+  "reservation.pending": ReservationData;
+  "reservation.updated": ReservationData & { confirmedNow?: boolean };
+  "reservation.cancelled": ReservationCancelledData;
+  "reservation.reminder": ReservationData;
+  "waitlist.available": WaitlistAvailableData;
 }
 export type TemplateName = keyof TemplateDataMap;
 
@@ -30,6 +40,12 @@ export const TEMPLATES: { [K in TemplateName]: TemplateDef<TemplateDataMap[K]> }
   "registration.approved": registrationApproved,
   "registration.rejected": registrationRejected,
   "generic.message": generic,
+  "reservation.confirmed": reservationConfirmed,
+  "reservation.pending": reservationPending,
+  "reservation.updated": reservationUpdated,
+  "reservation.cancelled": reservationCancelled,
+  "reservation.reminder": reservationReminder,
+  "waitlist.available": waitlistAvailable,
 };
 
 export { renderEmail } from "./layout";

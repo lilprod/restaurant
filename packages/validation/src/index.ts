@@ -119,4 +119,5 @@ export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 export * from "./settings";
 export * from "./restaurant";
 export * from "./stock";
+export * from "./reservations";
 export * from "./zod-fr";

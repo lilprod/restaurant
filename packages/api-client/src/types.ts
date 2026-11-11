@@ -4,7 +4,7 @@ import type {
 import type { PasswordPolicy, Theme } from "@restaurant/utils";
 import type {
   BusinessInput, CompanyInput, LicensingSettings, LocalizationInput, NotificationsSettingsInput, OperationsInput, PaymentInstructionsInput,
-  PlatformSecurityInput, TenantSecurityInput,
+  PlatformSecurityInput, ReservationsSettingsInput, TenantSecurityInput,
 } from "@restaurant/validation";
 import type { Restriction } from "./errors";
 
@@ -333,6 +333,7 @@ export type NotificationsQuery = {
 
 export interface TenantSettingsAll {
   notifications?: NotificationsSettingsInput;
+  reservations?: ReservationsSettingsInput;
   business?: BusinessInput;
   branding?: Omit<BrandingSettings, "preview">;
   operations?: OperationsInput;
@@ -564,6 +565,8 @@ export interface Order {
   status: OrderStatus;
   paymentStatus: OrderPaymentStatus;
   table: { id: string; label: string } | null;
+  /** P2A : réservation dont la commande a été ouverte. */
+  reservationId?: string | null;
   customerName: string | null;
   notes: string | null;
   waiter: { id: string; firstName: string; lastName: string } | null;
@@ -789,4 +792,119 @@ export interface PurchaseOrder {
   createdAt: ISODate;
   updatedAt: ISODate;
   lines: PurchaseOrderLine[];
+}
+
+// ── P2A : réservations ──
+
+export type ReservationStatus = "PENDING" | "CONFIRMED" | "SEATED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
+export type ReservationSource = "PHONE" | "WALK_IN" | "ONLINE";
+export type WaitlistStatus = "WAITING" | "NOTIFIED" | "CONVERTED" | "EXPIRED" | "REMOVED";
+
+/** Plage d'ouverture (heure locale) ; `weekday` 0 = dimanche … 6 = samedi ; `closesAt` ≤ `opensAt` = après minuit. */
+export interface OpeningRange { weekday: number; opensAt: string; closesAt: string; slotMinutes: number }
+export interface ClosureDay { id: string; date: string; reason: string | null; createdAt: ISODate }
+
+export interface ReservationTableRef { id: string; label: string; capacity: number }
+
+/** Réservation côté salle (même forme dans l'API et les événements `reservation.created|updated`). */
+export interface Reservation {
+  id: string;
+  code: string;
+  status: ReservationStatus;
+  source: ReservationSource;
+  guestName: string;
+  guestPhone: string | null;
+  guestEmail: string | null;
+  partySize: number;
+  startsAt: ISODate;
+  endsAt: ISODate;
+  durationMinutes: number;
+  tables: ReservationTableRef[];
+  specialRequests: string | null;
+  notes: string | null;
+  overrideReason: string | null;
+  /** Commande ouverte depuis la réservation (sinon la plus récente). */
+  orderId: string | null;
+  /** Retard au-delà du délai de grâce : proposer « absent ». */
+  noShowSuggested: boolean;
+  confirmedAt: ISODate | null;
+  seatedAt: ISODate | null;
+  completedAt: ISODate | null;
+  cancelledAt: ISODate | null;
+  cancelReason: string | null;
+  noShowAt: ISODate | null;
+  reminderSentAt: ISODate | null;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+}
+
+export interface WaitlistEntry {
+  id: string;
+  status: WaitlistStatus;
+  guestName: string;
+  guestPhone: string | null;
+  guestEmail: string | null;
+  partySize: number;
+  desiredAt: ISODate;
+  notes: string | null;
+  notifiedAt: ISODate | null;
+  reservationId: string | null;
+  createdAt: ISODate;
+  updatedAt: ISODate;
+}
+
+export interface CancelledReservation extends Reservation { waitlistMatches: WaitlistEntry[] }
+export interface ClosureCreated extends ClosureDay { affectedReservations: Reservation[] }
+
+export interface AvailabilitySlot {
+  startsAt: ISODate;
+  endsAt: ISODate;
+  available: boolean;
+  /** `past` : créneau passé ; `full` : aucune table. */
+  reason?: "past" | "full";
+  /** Tables proposées (une, ou deux combinées). */
+  tables: ReservationTableRef[];
+}
+export interface Availability {
+  date: string;
+  timezone: string;
+  partySize: number;
+  durationMinutes: number;
+  closed: boolean;
+  closureReason: string | null;
+  openingWindows: { start: ISODate; end: ISODate }[];
+  slots: AvailabilitySlot[];
+}
+export interface PublicAvailability {
+  date: string;
+  timezone: string;
+  partySize: number;
+  durationMinutes: number;
+  closed: boolean;
+  closureReason: string | null;
+  slots: { startsAt: ISODate; endsAt: ISODate }[];
+}
+export interface ReservationsQuery { date?: string; from?: string; to?: string; status?: ReservationStatus | ReservationStatus[]; search?: string }
+
+/** Réservation vue par le client (lien de gestion). */
+export interface PublicReservation {
+  code: string;
+  status: ReservationStatus;
+  guestName: string;
+  partySize: number;
+  startsAt: ISODate;
+  endsAt: ISODate;
+  specialRequests: string | null;
+  createdAt: ISODate;
+  restaurant: { name: string; slug: string; phone: string | null; timezone: string };
+  canModify: boolean;
+  canCancel: boolean;
+}
+export interface PublicReservationCreated {
+  code: string;
+  status: ReservationStatus;
+  /** Jeton du lien de gestion : montré une seule fois, jamais conservé en clair. */
+  manageToken: string;
+  manageUrl: string;
+  reservation: PublicReservation;
 }

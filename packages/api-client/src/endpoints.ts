@@ -4,6 +4,8 @@ import type {
   PlatformSecurityInput, RecordPaymentInput, RegistrationInput, TableInput, TenantSecurityInput,
   CreateStockCountInput, IngredientInput, IngredientUpdate, PurchaseOrderInput, PurchaseOrderUpdate, ReceivePurchaseInput, RecipeInput,
   StockAdjustInput, StockCountLinesInput, SupplierInput, SupplierUpdate, WasteInput,
+  CancelReservationInput, ClosureInput, ConvertWaitlistInput, CreateReservationInput, OpeningHoursInput, PublicReservationInput,
+  PublicUpdateReservationInput, ReservationsSettingsInput, UpdateReservationInput, WaitlistInput,
 } from "@restaurant/validation";
 import type { ApiClient } from "./client";
 import type {
@@ -16,6 +18,8 @@ import type {
   DishCost, DishRecipe, Ingredient, IngredientsQuery, MovementsQuery, OptionRecipe, PurchaseOrder, PurchaseStatus, StockAlert,
   StockCount, StockCountSummary, StockMovement, Supplier, WasteList, WasteRecord,
   Formula, Promotion,
+  Availability, CancelledReservation, ClosureCreated, ClosureDay, OpeningRange, PublicAvailability, PublicReservation,
+  PublicReservationCreated, Reservation, ReservationsQuery, WaitlistEntry, WaitlistStatus,
 } from "./types";
 
 const enc = encodeURIComponent;
@@ -60,6 +64,13 @@ export function publicApi(c: ApiClient) {
     tenantBranding: (slug: string) => c.get<TenantPublicBranding>(`/public/tenants/${enc(slug)}/branding`, { auth: false }),
     /** Carte publique d'un restaurant (catégories actives, plats disponibles). */
     tenantMenu: (slug: string) => c.get<PublicMenu>(`/public/tenants/${enc(slug)}/menu`, { auth: false }),
+    // ── P2A : réservation en ligne sans compte (limitée en débit) ──
+    availability: (slug: string, q: { date: string; partySize: number }) =>
+      c.get<PublicAvailability>(`/public/tenants/${enc(slug)}/availability`, { auth: false, query: { date: q.date, partySize: String(q.partySize) } }),
+    reserve: (slug: string, body: PublicReservationInput) => c.post<PublicReservationCreated>(`/public/tenants/${enc(slug)}/reservations`, body, { auth: false }),
+    reservation: (token: string) => c.get<PublicReservation>(`/public/reservations/${enc(token)}`, { auth: false }),
+    updateReservation: (token: string, body: PublicUpdateReservationInput) => c.patch<PublicReservation>(`/public/reservations/${enc(token)}`, body, { auth: false }),
+    cancelReservation: (token: string) => c.delete<PublicReservation>(`/public/reservations/${enc(token)}`, { auth: false }),
   };
 }
 
@@ -71,6 +82,7 @@ type SettingsSectionMap = {
   localization: Section<LocalizationInput>;
   security: Section<TenantSecurityInput>;
   notifications: Section<NotificationsSettingsInput>;
+  reservations: Section<ReservationsSettingsInput>;
 };
 type PlatformSectionMap = {
   branding: Section<BrandingSettings>;
@@ -301,6 +313,40 @@ export function tenantApi(c: ApiClient) {
       send: (id: string) => c.post<PurchaseOrder>(`/tenant/purchase-orders/${enc(id)}/send`),
       receive: (id: string, body: ReceivePurchaseInput) => c.post<PurchaseOrder>(`/tenant/purchase-orders/${enc(id)}/receive`, body),
       cancel: (id: string) => c.post<PurchaseOrder>(`/tenant/purchase-orders/${enc(id)}/cancel`),
+    },
+    // ── P2A : réservations, horaires, fermetures, liste d'attente ──
+    reservations: {
+      list: (q: ReservationsQuery = {}) =>
+        c.get<Reservation[]>("/tenant/reservations", { query: { ...q, status: Array.isArray(q.status) ? q.status.join(",") : q.status } }),
+      get: (id: string) => c.get<Reservation>(`/tenant/reservations/${enc(id)}`),
+      availability: (q: { date: string; partySize: number; durationMinutes?: number; excludeReservationId?: string }) =>
+        c.get<Availability>("/tenant/reservations/availability", {
+          query: { ...q, partySize: String(q.partySize), durationMinutes: q.durationMinutes === undefined ? undefined : String(q.durationMinutes) },
+        }),
+      create: (body: CreateReservationInput) => c.post<Reservation>("/tenant/reservations", body),
+      update: (id: string, body: UpdateReservationInput) => c.patch<Reservation>(`/tenant/reservations/${enc(id)}`, body),
+      confirm: (id: string) => c.post<Reservation>(`/tenant/reservations/${enc(id)}/confirm`),
+      seat: (id: string) => c.post<Reservation>(`/tenant/reservations/${enc(id)}/seat`),
+      complete: (id: string) => c.post<Reservation>(`/tenant/reservations/${enc(id)}/complete`),
+      cancel: (id: string, body: Partial<CancelReservationInput> = {}) => c.post<CancelledReservation>(`/tenant/reservations/${enc(id)}/cancel`, body),
+      noShow: (id: string) => c.post<Reservation>(`/tenant/reservations/${enc(id)}/no-show`),
+      waitlistMatches: (id: string) => c.get<WaitlistEntry[]>(`/tenant/reservations/${enc(id)}/waitlist-matches`),
+    },
+    openingHours: {
+      get: () => c.get<{ ranges: OpeningRange[] }>("/tenant/opening-hours"),
+      set: (body: OpeningHoursInput) => c.put<{ ranges: OpeningRange[] }>("/tenant/opening-hours", body),
+    },
+    closures: {
+      list: (q: { from?: string; to?: string } = {}) => c.get<ClosureDay[]>("/tenant/closures", { query: { ...q } }),
+      create: (body: ClosureInput) => c.post<ClosureCreated>("/tenant/closures", body),
+      remove: (id: string) => c.delete<void>(`/tenant/closures/${enc(id)}`),
+    },
+    waitlist: {
+      list: (q: { date?: string; status?: WaitlistStatus } = {}) => c.get<WaitlistEntry[]>("/tenant/waitlist", { query: { ...q } }),
+      create: (body: WaitlistInput) => c.post<WaitlistEntry>("/tenant/waitlist", body),
+      notify: (id: string) => c.post<WaitlistEntry & { notifications: ("queued" | "skipped")[] }>(`/tenant/waitlist/${enc(id)}/notify`),
+      convert: (id: string, body: ConvertWaitlistInput = {}) => c.post<{ entry: WaitlistEntry; reservation: Reservation }>(`/tenant/waitlist/${enc(id)}/convert`, body),
+      remove: (id: string) => c.post<WaitlistEntry>(`/tenant/waitlist/${enc(id)}/remove`),
     },
   };
 }

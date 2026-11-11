@@ -29,6 +29,6 @@ import { TablesService } from "./tables.service";
     RealtimeService, RealtimeGateway,
     StockService, // P3 : déduction de stock dans la transaction des commandes (module Stock : src/inventory)
   ],
-  exports: [RealtimeService, MenuService, StockService],
+  exports: [RealtimeService, MenuService, StockService, TablesService],
 })
 export class RestaurantModule {}

@@ -13,7 +13,8 @@ export class RealtimeService {
 
   /**
    * Événements émis : `order.created`, `order.updated` (charge utile = vue de la commande),
-   * `menu.updated` (= `menuItemView`, ou `{ id, deleted: true }`), `table.updated` (= élément de `GET /tenant/tables`, ou `{ id, deleted: true }`).
+   * `menu.updated` (= `menuItemView`, ou `{ id, deleted: true }`), `table.updated` (= élément de `GET /tenant/tables`, ou `{ id, deleted: true }`),
+   * `reservation.created|updated` (= `reservationView`), `waitlist.updated` (= `waitlistView`).
    */
   emit(tenantId: string, event: string, payload: unknown) {
     if (!this.ns) return;

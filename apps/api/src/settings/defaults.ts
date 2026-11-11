@@ -1,5 +1,8 @@
 import { DEFAULT_PASSWORD_POLICY, DEFAULT_THEME } from "@restaurant/utils";
-import type { LocalizationInput, NotificationsSettingsInput, OperationsInput, PaymentInstructionsInput, PlatformSecurityInput, TenantSecurityInput } from "@restaurant/validation";
+import type {
+  LocalizationInput, NotificationsSettingsInput, OperationsInput, PaymentInstructionsInput, PlatformSecurityInput, ReservationsSettingsInput,
+  TenantSecurityInput,
+} from "@restaurant/validation";
 
 export const DEFAULT_TENANT_SECURITY: TenantSecurityInput = {
   passwordPolicy: { ...DEFAULT_PASSWORD_POLICY },
@@ -47,5 +50,13 @@ export const defaultBranding = (displayName: string) => ({ displayName, theme: {
 
 export const DEFAULT_NOTIFICATIONS: NotificationsSettingsInput = {
   channels: { email: true, sms: false },
-  events: { licenseReminders: true },
+  events: { licenseReminders: true, reservations: true, reservationReminders: true, waitlist: true },
+};
+
+export const DEFAULT_RESERVATIONS: ReservationsSettingsInput = {
+  requireConfirmation: false,
+  bookingWindowDays: 60,
+  minNoticeMinutes: 60,
+  noShowGraceMinutes: 20,
+  bufferMinutes: 0,
 };

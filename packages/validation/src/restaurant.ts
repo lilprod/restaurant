@@ -154,6 +154,8 @@ export const createOrderSchema = z
   .object({
     type: orderTypeSchema,
     tableId: uuid.optional(),
+    /** P2A : commande ouverte depuis une réservation installée (la table doit être l'une des siennes). */
+    reservationId: uuid.optional(),
     customerName: optText(60),
     notes: optText(300),
     items: z.array(orderItemInputSchema).min(1).max(100),

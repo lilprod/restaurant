@@ -15,6 +15,7 @@ import { TenantModule } from "./tenant/tenant.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { RestaurantModule } from "./restaurant/restaurant.module";
 import { InventoryModule } from "./inventory/inventory.module";
+import { ReservationsModule } from "./reservations/reservations.module";
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { InventoryModule } from "./inventory/inventory.module";
     TenantModule,
     RestaurantModule,
     InventoryModule,
+    ReservationsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -30,6 +30,13 @@ enum WaitlistStatus {
   NOTIFIED
   CONVERTED
   EXPIRED
+  REMOVED
+}
+
+enum ReservationSource {
+  PHONE
+  WALK_IN
+  ONLINE
 }
 
 enum TableStatus {
@@ -234,56 +241,84 @@ model RestaurantTable {
 }
 
 model Reservation {
-  tenantId        String
-  tenant          Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id              String            @id @default(uuid())
-  customerId      String?
-  guestName       String
-  guestEmail      String?
-  guestPhone      String?
-  partySize       Int
-  startsAt        DateTime
-  endsAt          DateTime
-  status          ReservationStatus @default(PENDING)
-  specialRequests String?
-  reminderSentAt  DateTime?
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  tenantId          String
+  tenant            Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id                String            @id @default(uuid())
+  code              String // court et lisible (ex. R7K2Q), unique par restaurant
+  manageTokenHash   String?           @unique // SHA-256 du jeton du lien de gestion client (jamais conservé en clair)
+  source            ReservationSource @default(PHONE)
+  customerId        String?
+  guestName         String
+  guestEmail        String?
+  guestPhone        String?
+  partySize         Int
+  startsAt          DateTime
+  endsAt            DateTime
+  status            ReservationStatus @default(PENDING)
+  specialRequests   String?
+  notes             String? // notes internes (jamais montrées au client)
+  overrideReason    String? // motif d'un forçage (capacité, horaires) par un responsable
+  createdById       String?
+  confirmedAt       DateTime?
+  seatedAt          DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  cancelReason      String?
+  noShowAt          DateTime?
+  noShowSuggestedAt DateTime? // proposé par la tâche planifiée après le délai de grâce
+  reminderSentAt    DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   customer User?              @relation(fields: [customerId], references: [id])
   tables   ReservationTable[]
   orders   Order[]
+  waitlist WaitlistEntry[]
 
+  @@unique([tenantId, code])
   @@index([startsAt, status])
   @@index([tenantId])
+  @@index([tenantId, startsAt])
 }
 
+// Occupation d'une table par une réservation. La plage [startsAt, endsAt) est copiée de la réservation, tampon de
+// nettoyage (`reservations.bufferMinutes`) inclus dans endsAt. Contrainte d'exclusion en base (migration `reservations`) :
+// EXCLUDE USING gist ("tableId" WITH =, tstzrange("startsAt","endsAt") WITH &&) WHERE (active).
+// Annulation / no-show / fin → active = false (la table est libérée).
 model ReservationTable {
   tenantId      String
   tenant        Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   reservationId String
   tableId       String
+  startsAt      DateTime
+  endsAt        DateTime
+  active        Boolean         @default(true)
   reservation   Reservation     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
   table         RestaurantTable @relation(fields: [tableId], references: [id])
 
   @@id([reservationId, tableId])
   @@index([tenantId])
+  @@index([tableId, startsAt])
 }
 
 model WaitlistEntry {
-  tenantId   String
-  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id         String         @id @default(uuid())
-  customerId String?
-  guestName  String
-  guestPhone String?
-  guestEmail String?
-  partySize  Int
-  desiredAt  DateTime
-  status     WaitlistStatus @default(WAITING)
-  notifiedAt DateTime?
-  createdAt  DateTime       @default(now())
-  customer   User?          @relation(fields: [customerId], references: [id])
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String         @id @default(uuid())
+  customerId    String?
+  guestName     String
+  guestPhone    String?
+  guestEmail    String?
+  partySize     Int
+  desiredAt     DateTime
+  status        WaitlistStatus @default(WAITING)
+  notes         String?
+  notifiedAt    DateTime?
+  reservationId String? // réservation créée à la conversion
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  customer      User?          @relation(fields: [customerId], references: [id])
+  reservation   Reservation?   @relation(fields: [reservationId], references: [id], onDelete: SetNull)
 
   @@index([desiredAt, status])
   @@index([tenantId])
@@ -293,12 +328,25 @@ model OpeningHours {
   tenantId    String
   tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   id          String @id @default(uuid())
-  weekday     Int
+  weekday     Int // 0 = dimanche … 6 = samedi (jour local) ; plusieurs plages par jour (midi, soir)
   opensAt     String
   closesAt    String
   slotMinutes Int    @default(15)
 
   @@unique([tenantId, weekday, opensAt])
+  @@index([tenantId])
+}
+
+// Fermeture exceptionnelle (jour férié, travaux…) : aucune réservation possible ce jour-là (jour local AAAA-MM-JJ).
+model ClosureDay {
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  date      String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, date])
   @@index([tenantId])
 }
 
@@ -1119,6 +1167,7 @@ model Tenant {
   reservationTables  ReservationTable[]
   waitlistEntrys     WaitlistEntry[]
   openingHourss      OpeningHours[]
+  closureDays        ClosureDay[]
   categorys          Category[]
   menuItems          MenuItem[]
   menuItemAllergens  MenuItemAllergen[]

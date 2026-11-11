@@ -35,7 +35,7 @@ type Ops = { serviceChargePercent: number; defaultVatRate: number; takeawayEnabl
 export function orderView(o: OrderRow) {
   return {
     id: o.id, number: o.number, type: o.type, status: o.status, paymentStatus: o.paymentStatus,
-    table: o.table, customerName: o.customerName, notes: o.notes, waiter: o.waiter,
+    table: o.table, reservationId: o.reservationId, customerName: o.customerName, notes: o.notes, waiter: o.waiter,
     discountTotal: o.items.filter((i) => i.status !== "CANCELLED").reduce((n, i) => n + i.discount, 0),
     subtotal: o.subtotal, serviceCharge: o.serviceCharge, vat: o.vat, total: o.total, tip: o.tip,
     paidAmount: o.paidAmount, remaining: o.total - o.paidAmount,
@@ -130,12 +130,21 @@ export class OrdersService {
         const table = await tx.restaurantTable.findFirst({ where: { id: input.tableId, tenantId, isActive: true } });
         if (!table) throw new NotFoundException("Table introuvable");
       }
+      if (input.reservationId) {
+        // P2A : commande ouverte depuis une réservation installée, sur l'une de ses tables
+        const r = await tx.reservation.findFirst({ where: { id: input.reservationId, tenantId }, include: { tables: { select: { tableId: true } } } });
+        if (!r) throw new NotFoundException("Réservation introuvable");
+        if (r.status !== "SEATED") throw new ConflictException("Installez d'abord la réservation pour ouvrir sa commande");
+        if (input.type !== "DINE_IN" || !r.tables.some((t) => t.tableId === input.tableId)) {
+          throw new ConflictException("Choisissez l'une des tables de la réservation");
+        }
+      }
       const lines = await this.buildLines(tx, tenantId, input.items, ops);
       const counter = await tx.tenant.update({ where: { id: tenantId }, data: { nextOrderNumber: { increment: 1 } }, select: { nextOrderNumber: true } });
       const order = await tx.order.create({
         data: {
           tenantId, number: counter.nextOrderNumber - 1, type: input.type, tableId: input.type === "DINE_IN" ? input.tableId : null,
-          customerName: input.customerName, notes: input.notes, waiterId: acc.id,
+          customerName: input.customerName, notes: input.notes, waiterId: acc.id, reservationId: input.reservationId ?? null,
         },
       });
       await this.insertLines(tx, tenantId, order.id, lines);

@@ -55,6 +55,12 @@ DROP POLICY IF EXISTS tenant_isolation ON "OpeningHours";
 CREATE POLICY tenant_isolation ON "OpeningHours"
   USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
 
+ALTER TABLE "ClosureDay" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "ClosureDay" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "ClosureDay";
+CREATE POLICY tenant_isolation ON "ClosureDay"
+  USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
+
 ALTER TABLE "Category" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "Category" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON "Category";
@@ -284,6 +290,5 @@ DROP POLICY IF EXISTS tenant_isolation ON "NotificationLog";
 CREATE POLICY tenant_isolation ON "NotificationLog"
   USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
 
--- TODO (phase réservations) : empêcher qu'une même table soit réservée sur deux plages
--- qui se chevauchent, via une contrainte EXCLUDE USING gist (extension btree_gist) ;
--- cela suppose de dénormaliser la plage horaire (tstzrange) sur ReservationTable.
+-- Anti-double-réservation : contrainte EXCLUDE USING gist "ReservationTable_no_overlap" (extension btree_gist),
+-- créée par la migration `reservations` sur la plage dénormalisée [startsAt, endsAt) de ReservationTable.

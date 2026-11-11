@@ -85,7 +85,8 @@ comme à la connexion) : le bandeau de période de grâce n'attend pas une nouve
 ## Paramètres du restaurant — `/tenant/settings`
 Sections : `business` (identité légale, NIF, RCCM, adresse, contacts, réseaux sociaux, ticket de caisse), `branding` (nom affiché, slogan, thème),
 `operations` (TVA, service, pourboires, réservations, livraison…), `localization` (langue, fuseau, format de date), `security` (politique ci-dessous),
-`notifications` (canaux email/SMS actifs, nom d'expéditeur, signature, préférences par événement `events.<clé>` ; Admin en lecture et écriture).
+`notifications` (canaux email/SMS actifs, nom d'expéditeur, signature, préférences par événement `events.<clé>` ; Admin en lecture et écriture),
+`reservations` (confirmation manuelle, fenêtre, délai, absence, tampon : voir P2A ; lecture personnel).
 
 `GET /tenant/settings` (tout) · `GET|PATCH /tenant/settings/:section` · `POST|DELETE /tenant/settings/assets/:kind` (`logo`, `logoDark`, `favicon` ; champ `file`).
 `PATCH` fusionne avec l'existant puis valide l'ensemble ; une chaîne vide efface un champ optionnel.
@@ -181,6 +182,8 @@ Carte publique : `GET /public/tenants/:slug/menu` (catégories actives, plats no
 |---|---|---|---|
 | GET | `/` | personnel | Filtres `status`, `paymentStatus`, `type`, `tableId`, `open=true`, `date=AAAA-MM-JJ` (fuseau du restaurant), pagination |
 | POST | `/` | salle | `{type: DINE_IN\|TAKEAWAY, tableId?, customerName?, notes?, items[{menuItemId \| formulaId+choices[], quantity, optionIds[], instructions?, course?}]}` |
+
+| POST | `/` | salle | `{type: DINE_IN\|TAKEAWAY, tableId?, reservationId?, customerName?, notes?, items[{menuItemId, quantity, optionIds[], instructions?, course?}]}` (`reservationId` : voir P2A) |
 | GET | `/:id` · `/:id/receipt` | personnel · salle | Détail · ticket (identité du restaurant, TVA par taux, paiements) |
 | POST | `/:id/items` | salle | Ajouter des articles (commande ouverte) |
 | PATCH | `/:id/items/:itemId` | salle | Quantité / instructions (`""` efface les consignes) (article encore en attente et non encaissé) |
@@ -209,6 +212,7 @@ Socket.io, espace de noms **`/realtime`** (chemin `/socket.io`, hors préfixe `/
 - **`table.updated`** : table au format de `GET /tenant/tables` (création, modification, statut — y compris le passage `OCCUPIED`/`FREE` dû aux commandes —,
   désactivation) ; `{ id, deleted: true }` pour une table supprimée.
 - **`stock.updated`** `{ ingredients: StockLight[] }` et **`stock.low`** (`StockLight`, une fois par franchissement de seuil) : voir « Stock ».
+- **`reservation.created`**, **`reservation.updated`**, **`waitlist.updated`** : voir « P2A — Réservations ».
 Les contrôles sont ceux de l'API (jeton, session, compte actif, licence).
 
 ## Caisse — `/tenant/register`
@@ -308,3 +312,127 @@ lignes vides ignorées) · `POST :id/cancel`. Écriture : responsables.
 - **`stock.updated`** `{ ingredients: [{ id, name, unit, quantity, lowStockThreshold, state }] }` après chaque transaction de stock (sans coûts).
 - **`stock.low`** `{ id, name, unit, quantity, lowStockThreshold, state }` : une fois par franchissement de seuil.
 - **`menu.updated`** pour chaque plat rendu indisponible par `autoDisable`.
+
+# P2A — Réservations (`/tenant/reservations`, `/tenant/opening-hours`, `/tenant/closures`, `/tenant/waitlist`, `/public/...`)
+
+Pas de restriction de plan. Rôles : **lecture personnel** (`ADMIN, MANAGER, WAITER, KITCHEN`), **écriture salle** (`ADMIN, MANAGER, WAITER`),
+**horaires, fermetures et forçage : responsables** (`ADMIN, MANAGER`). Tout est calculé dans le **fuseau du restaurant** (`Tenant.timezone`) ;
+les instants circulent en ISO 8601 UTC. Logique pure partagée (web possible) : `@restaurant/utils` → `computeAvailability`, `slotStarts`,
+`openingWindows`, `pickTables`, `localTimeToInstant`, `canTransitionReservation`, `reminderInstant`. Schémas : `@restaurant/validation` (`reservations.ts`).
+
+## Réglages
+- `operations` (existant) : `onlineReservations` (réservation en ligne), `reservationDurationMinutes` (90), `reservationSlotMinutes` (15, pas par défaut), `maxPartySize` (20).
+- Nouvelle section **`reservations`** (`GET|PATCH /tenant/settings/reservations` ; lecture personnel, écriture Admin) :
+  `requireConfirmation` (false : en ligne = confirmée d'office ; true = `PENDING` jusqu'à `confirm`), `bookingWindowDays` (60), `minNoticeMinutes` (60),
+  `noShowGraceMinutes` (20), `bufferMinutes` (0, tampon de remise en place entre deux réservations d'une table).
+
+## Horaires et fermetures
+| Méthode | Route | Rôle | Description |
+|---|---|---|---|
+| GET | `/tenant/opening-hours` | personnel | `{ ranges: [{ weekday, opensAt, closesAt, slotMinutes }] }` (tri jour, heure) |
+| PUT | `/tenant/opening-hours` | responsables | `{ ranges: [{ weekday 0=dim…6=sam, opensAt "HH:MM", closesAt "HH:MM", slotMinutes? 10\|15\|20\|30\|60 }] }` remplace **toute** la semaine ; plusieurs plages par jour (midi, soir) ; `closesAt ≤ opensAt` = fermeture après minuit, `"24:00"` accepté ; chevauchement d'un même jour → 400 (`errors[].path` = `ranges.<i>.opensAt`) ; audité |
+| GET | `/tenant/closures?from=&to=` | personnel | Fermetures exceptionnelles `[{ id, date, reason, createdAt }]` à partir d'aujourd'hui par défaut |
+| POST | `/tenant/closures` | responsables | `{ date: "AAAA-MM-JJ", reason? }` → fermeture + `affectedReservations` (réservations `PENDING`/`CONFIRMED` de ce jour, à prévenir) ; doublon → 409 ; audité |
+| DELETE | `/tenant/closures/:id` | responsables | 204 ; audité |
+
+Sans horaires, aucun créneau n'est proposé (le seed de démo crée 11:30–15:00 et 18:30–23:00 tous les jours).
+
+## Disponibilités — `GET /tenant/reservations/availability?date=&partySize=&durationMinutes?=&excludeReservationId?=` (personnel)
+```json
+{ "date": "2026-11-14", "timezone": "Africa/Lome", "partySize": 3, "durationMinutes": 90, "closed": false, "closureReason": null,
+  "openingWindows": [{ "start": "…", "end": "…" }],
+  "slots": [{ "startsAt": "2026-11-14T19:00:00.000Z", "endsAt": "2026-11-14T20:30:00.000Z", "available": true,
+              "tables": [{ "id": "…", "label": "T4", "capacity": 4 }] },
+            { "startsAt": "…", "endsAt": "…", "available": false, "reason": "full", "tables": [] }] }
+```
+- Créneaux en heure locale tous les `slotMinutes` depuis l'ouverture ; la réservation **entière** doit tenir avant la fermeture ; changement d'heure géré
+  (heure inexistante sautée). `reason` : `past` (créneau passé) ou `full` (aucune table). `closed` : fermeture exceptionnelle ou aucun horaire ce jour.
+- Tables proposées : **la plus petite table suffisante** (capacité ≥ convives ≥ `minCapacity`), sinon la **combinaison de 2 tables** de capacité totale minimale.
+- Occupation d'une table = `[début, fin + bufferMinutes)` ; bornes « [) » (une fin à 20:30 laisse la table libre à 20:30).
+- `excludeReservationId` : ignorer une réservation (recherche de créneau pour la déplacer).
+
+## Réservations — `/tenant/reservations`
+| Méthode | Route | Rôle | Description |
+|---|---|---|---|
+| GET | `/?date=&from=&to=&status=&search=` | personnel | Journée de service `date` (défaut : aujourd'hui) ou intervalle `from`/`to` (ISO ; « arrivées de l'heure ») ; `status=CONFIRMED,SEATED` ; `search` = nom, téléphone ou code ; tri par heure |
+| POST | `/` | salle | `{ guestName, guestPhone?, guestEmail?, partySize, startsAt?, durationMinutes?, source?: PHONE\|WALK_IN, tableIds?, specialRequests?, notes?, force?, overrideReason? }` → 201 `Reservation` (`CONFIRMED`) |
+| GET | `/:id` | personnel | Fiche |
+| PATCH | `/:id` | salle | Mêmes champs (sauf `source`) ; `""`/`null` efface téléphone, email, demandes, notes ; heure/durée/taille/tables → nouvelle attribution (tables actuelles gardées si elles conviennent) ; client prévenu si heure ou taille change ; installée : heure d'arrivée figée |
+| POST | `/:id/confirm` | salle | `PENDING → CONFIRMED` (message « confirmée » au client) |
+| POST | `/:id/seat` | salle | `PENDING/CONFIRMED → SEATED` : table(s) `OCCUPIED` (`table.updated`) ; au plus 60 min avant l'heure (la réservation est alors avancée, si la table est libre) ; 409 si une commande ouverte ou une autre réservation installée occupe la table |
+| POST | `/:id/complete` | salle | `SEATED → COMPLETED` : créneau libéré ; table `FREE` sauf commande encore ouverte |
+| POST | `/:id/cancel` | salle | `{ reason?, notifyGuest? = true }` (`PENDING/CONFIRMED`) → `Reservation` + **`waitlistMatches`** (entrées compatibles) ; audité |
+| POST | `/:id/no-show` | salle | `PENDING/CONFIRMED → NO_SHOW`, seulement après l'heure prévue ; créneau libéré ; audité |
+| GET | `/:id/waitlist-matches` | salle | Entrées compatibles de la liste d'attente (voir plus bas) |
+
+Forme `Reservation` (réponses et temps réel) :
+`{ id, code, status, source, guestName, guestPhone, guestEmail, partySize, startsAt, endsAt, durationMinutes, tables: [{id,label,capacity}],
+specialRequests, notes, overrideReason, orderId, noShowSuggested, confirmedAt, seatedAt, completedAt, cancelledAt, cancelReason, noShowAt,
+reminderSentAt, createdAt, updatedAt }`. `code` : 5 caractères lisibles (sans 0/O/1/I/L), unique par restaurant. `notes` : internes, jamais montrées au client.
+
+Statuts : `PENDING → CONFIRMED → SEATED → COMPLETED` ; `PENDING|CONFIRMED → CANCELLED|NO_SHOW` ; transition interdite → 409 « Action impossible : la réservation est … ».
+
+Règles et erreurs :
+- `WALK_IN` (client sans réservation) : `startsAt` = maintenant par défaut, pas de contrôle d'horaires, pas de message au client.
+- `PHONE` : dans les horaires (la réservation entière), pas dans le passé, pas un jour fermé → sinon **409** ; `partySize > maxPartySize` → **400** (`errors[0].path = "partySize"`).
+- `tableIds` (choix manuel) : table prise → **409** « La table T2 est déjà réservée de 19:00 à 20:30 » ; capacité insuffisante → **409**.
+- Attribution automatique impossible → **409** « Plus de table disponible sur ce créneau ».
+- **`force: true`** (responsables seulement, sinon **403** ; `overrideReason` obligatoire, sinon 400) : passe outre capacité, horaires, passé, taille max.
+  **Jamais** la double réservation. Audité (`reservation.force`), motif visible (`overrideReason`).
+- **Double réservation impossible** : écritures sérialisées par restaurant (verrou consultatif) **et** contrainte en base
+  `EXCLUDE USING gist ("tableId" WITH =, tsrange("startsAt","endsAt",'[)') WITH &&) WHERE (active)` sur `ReservationTable` (plage copiée, tampon inclus ;
+  `active = false` à l'annulation, l'absence et la fin). Deux demandes simultanées : une seule réussit, l'autre reçoit un **409** propre.
+- Commande depuis une réservation : `POST /tenant/orders` accepte **`reservationId`** (réservation `SEATED`, `type: DINE_IN`, `tableId` parmi ses tables, sinon 409) ;
+  la commande expose `reservationId`, la réservation `orderId`.
+
+## Liste d'attente — `/tenant/waitlist` (salle)
+| Méthode | Route | Description |
+|---|---|---|
+| GET | `/?date=&status=` | Défaut : entrées actives (`WAITING`, `NOTIFIED`) ; `date` = jour local de l'heure souhaitée |
+| POST | `/` | `{ guestName, guestPhone?, guestEmail?, partySize, desiredAt, notes? }` → 201 `WaitlistEntry` |
+| POST | `/:id/notify` | Message « une table s'est libérée » (email et/ou SMS) → `NOTIFIED` ; 409 sans coordonnées ou entrée close ; réponse + `notifications: ["queued"\|"skipped"]` |
+| POST | `/:id/convert` | `{ startsAt? (défaut desiredAt), durationMinutes?, tableIds?, force?, overrideReason? }` → 201 `{ entry (CONVERTED, reservationId), reservation }` ; mêmes règles que `POST /tenant/reservations` ; une seule fois (409 ensuite) |
+| POST | `/:id/remove` | → `REMOVED` |
+
+`WaitlistEntry` : `{ id, status: WAITING|NOTIFIED|CONVERTED|EXPIRED|REMOVED, guestName, guestPhone, guestEmail, partySize, desiredAt, notes, notifiedAt, reservationId, createdAt, updatedAt }`.
+**Entrées compatibles** (après annulation) : actives, heure souhaitée à ± une durée de repas du créneau libéré, groupe ≤ capacité des tables libérées, les plus anciennes d'abord.
+Les entrées dont l'heure souhaitée est passée de plus de 3 h passent `EXPIRED` (tâche planifiée).
+
+## Réservation en ligne sans compte — `/public` (limitation de débit par IP)
+| Méthode | Route | Limite | Description |
+|---|---|---|---|
+| GET | `/public/tenants/:slug/availability?date=&partySize=` | 60/min | `{ date, timezone, partySize, durationMinutes, closed, closureReason, slots: [{ startsAt, endsAt }] }` : créneaux **disponibles** seulement (délai `minNoticeMinutes`, fenêtre `bookingWindowDays`), sans tables |
+| POST | `/public/tenants/:slug/reservations` | 10/h | `{ guestName, guestPhone (obligatoire), guestEmail?, partySize, startsAt, specialRequests? }` → 201 `{ code, status, manageToken, manageUrl, reservation: PublicReservation }` |
+| GET | `/public/reservations/:token` | 30/min | `PublicReservation` |
+| PATCH | `/public/reservations/:token` | 10/min | `{ partySize?, startsAt?, specialRequests? }` (au moins un champ) → `PublicReservation` ; client prévenu |
+| DELETE | `/public/reservations/:token` | 10/min | Annule (motif « Annulée par le client ») → `PublicReservation` ; client prévenu |
+
+- `PublicReservation` : `{ code, status, guestName, partySize, startsAt, endsAt, specialRequests, createdAt, restaurant: { name, slug, phone, timezone }, canModify, canCancel }`
+  (ni tables, ni notes, ni coordonnées). `canCancel` : `PENDING/CONFIRMED` et pas encore commencée ; `canModify` : idem et au-delà du délai `minNoticeMinutes`.
+- `manageUrl` = `${APP_URL}/r/:slug/reservation/:token` (page web de gestion). Le jeton n'est conservé que **haché** (SHA-256) : il n'est donné qu'à la création
+  (réponse + email de confirmation). Jeton inconnu ou mal formé → 404.
+- `startsAt` doit être **un créneau de la grille** (sinon 409), au-delà du délai minimal (409), dans la fenêtre (409) ; jour fermé → 409 ; plus de table → 409.
+- Restaurant inconnu, suspendu ou licence expirée → **404**. `operations.onlineReservations = false` → **403 `{ code: "RESERVATIONS_DISABLED" }`**.
+- Statut à la création : `CONFIRMED`, ou `PENDING` si `reservations.requireConfirmation` (la salle confirme avec `POST /:id/confirm`). `source = ONLINE`.
+- Dépassement de débit → 429.
+
+## Notifications (X1)
+Modèles (`src/notifications/templates/reservations.ts`), catégorie `reminder` : envoyés par email si `guestEmail`, par SMS si `guestPhone` **et** canal SMS actif ;
+désactivables par événement dans `notifications.events` :
+| Modèle | Événement | Déclencheur |
+|---|---|---|
+| `reservation.confirmed` | `reservations` | Création confirmée (salle, en ligne) — contient le lien de gestion : variables non conservées, pas de renvoi |
+| `reservation.pending` | `reservations` | Demande en ligne en attente (`requireConfirmation`) — idem |
+| `reservation.updated` | `reservations` | Confirmation par la salle (`confirmedNow`) ; changement d'heure, de durée ou de taille (salle ou client) |
+| `reservation.cancelled` | `reservations` | Annulation (salle avec `notifyGuest`, ou client) |
+| `reservation.reminder` | `reservationReminders` | **La veille à 18 h locale**, réservations `CONFIRMED`, une seule fois (`reminderSentAt` + `dedupeKey` `reservation:<id>:reminder:<startsAt>:email\|sms`) ; pas de rappel si la réservation a été prise après cette heure ; remis à zéro si l'heure change |
+| `waitlist.available` | `waitlist` | `POST /tenant/waitlist/:id/notify` |
+
+## Tâches planifiées — `ReservationsTasks` (toutes les 5 minutes, coupées par `DISABLE_CRON`)
+Rappels de la veille · proposition d'absence : réservation `PENDING/CONFIRMED` non installée `noShowGraceMinutes` après l'heure → `noShowSuggested = true`
+(+ `reservation.updated`) ; la salle confirme avec `POST /:id/no-show` · expiration de la liste d'attente.
+
+## Temps réel
+- **`reservation.created`**, **`reservation.updated`** : `Reservation` complète (création salle ou en ligne ; modification, changement de statut, proposition d'absence).
+- **`waitlist.updated`** : `WaitlistEntry` (création, message, conversion, retrait).
+- **`table.updated`** à l'installation, à la fin et au changement de table d'une réservation installée.

@@ -71,6 +71,16 @@ async function main() {
       }
     }
 
+    // Horaires d'ouverture (réservations) : midi et soir, tous les jours
+    if (!(await tx.openingHours.count({ where: { tenantId } }))) {
+      await tx.openingHours.createMany({
+        data: [0, 1, 2, 3, 4, 5, 6].flatMap((weekday) => [
+          { tenantId, weekday, opensAt: "11:30", closesAt: "15:00", slotMinutes: 15 },
+          { tenantId, weekday, opensAt: "18:30", closesAt: "23:00", slotMinutes: 15 },
+        ]),
+      });
+    }
+
     // Carte
     const allergens = await tx.allergen.findMany();
     for (const [ci, c] of MENU.entries()) {
