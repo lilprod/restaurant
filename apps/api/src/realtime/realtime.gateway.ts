@@ -1,4 +1,5 @@
 import { Logger } from "@nestjs/common";
+import { Interval } from "@nestjs/schedule";
 import { JwtService } from "@nestjs/jwt";
 import { OnGatewayConnection, OnGatewayInit, WebSocketGateway, WebSocketServer } from "@nestjs/websockets";
 import type { Namespace, Socket } from "socket.io";
@@ -41,7 +42,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       const acc = await this.repo.findById("tenant", claims.sub, claims.tid);
       if (!acc?.isActive || acc.role === "CUSTOMER") throw new Error("Accès refusé");
       await this.gate.assertAccess(claims.tid);
-      client.data = { tenantId: claims.tid, userId: acc.id, role: acc.role };
+      client.data = { tenantId: claims.tid, userId: acc.id, role: acc.role, sid: claims.sid };
       await client.join(`tenant:${claims.tid}`);
       await client.join(`tenant:${claims.tid}:user:${acc.id}`); // événements privés (messagerie, planning personnel)
       client.emit("ready", { tenantId: claims.tid, role: acc.role });
@@ -51,5 +52,31 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       client.disconnect(true);
       this.log.debug(`connexion refusée : ${message}`);
     }
+  }
+
+  /**
+   * Une connexion ouverte ne survit pas à la fin de sa session : session fermée (déconnexion, révocation, mot de passe changé),
+   * compte désactivé ou licence bloquée → le socket est fermé (au plus une minute après). Le client se reconnecte avec un jeton frais s'il le peut.
+   */
+  @Interval(60_000)
+  async revalidate(): Promise<number> {
+    if (!this.ns) return 0;
+    let closed = 0;
+    for (const client of this.ns.sockets.values()) {
+      const d = client.data as { tenantId?: string; userId?: string; sid?: string } | undefined;
+      if (!d?.sid || !d.userId || !d.tenantId) continue;
+      let ok = false;
+      try {
+        const acc = await this.repo.findById("tenant", d.userId, d.tenantId);
+        ok = !!acc?.isActive && (await this.sessions.isActive(d.sid, d.userId));
+        if (ok) await this.gate.assertAccess(d.tenantId);
+      } catch { ok = false; }
+      if (!ok) {
+        client.emit("auth_error", { message: "Session terminée" });
+        client.disconnect(true);
+        closed += 1;
+      }
+    }
+    return closed;
   }
 }

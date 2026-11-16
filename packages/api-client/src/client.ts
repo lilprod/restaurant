@@ -10,8 +10,9 @@ export interface TokenStorage {
 }
 
 /**
- * Stockage dans localStorage. Compromis assumé : un script injecté (XSS) pourrait lire le jeton.
- * Un cookie HttpOnly posé par l'API serait plus sûr (évolution prévue côté serveur).
+ * Stockage dans localStorage. Avec `cookieSession` (web), il ne contient plus que le marqueur non secret
+ * `COOKIE_SESSION` : le vrai jeton vit dans un cookie HttpOnly illisible en JavaScript. Sans `cookieSession`
+ * (ancien fonctionnement), un script injecté (XSS) pourrait lire le jeton.
  */
 export function localStorageTokenStorage(key: string): TokenStorage {
   return {
@@ -26,6 +27,9 @@ export function localStorageTokenStorage(key: string): TokenStorage {
     },
   };
 }
+
+/** Valeur stockée à la place du jeton quand il vit dans le cookie HttpOnly (indique seulement « une session existe »). */
+export const COOKIE_SESSION = "cookie-session";
 
 export function memoryTokenStorage(initial: string | null = null): TokenStorage {
   let value = initial;
@@ -45,6 +49,12 @@ export interface ApiClientOptions {
   space: Space;
   storage: TokenStorage;
   fetch?: typeof fetch;
+  /**
+   * Jeton de rafraîchissement en cookie HttpOnly (navigateur) : les routes `/<espace>/auth/*` sont appelées avec
+   * `credentials: "include"` et l'en-tête `X-Session-Transport: cookie` (+ `X-Tenant-Slug` côté restaurant).
+   * Un ancien jeton trouvé dans `storage` est échangé une fois contre le cookie (migration douce). Mobile : ne pas l'activer.
+   */
+  cookieSession?: { tenantSlug?: string };
 }
 
 export interface RequestOptions {
@@ -57,7 +67,7 @@ export interface RequestOptions {
 
 export interface SessionTokens {
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   license?: LicenseSummary;
 }
 
@@ -73,6 +83,7 @@ export class ApiClient {
   private readonly baseUrl: string;
   private readonly storage: TokenStorage;
   private readonly fetchImpl: typeof fetch;
+  private readonly cookieSession: ApiClientOptions["cookieSession"];
   private accessToken: string | null = null;
   private refreshing: Promise<boolean> | null = null;
   private readonly listeners = new Set<(e: ClientEvent) => void>();
@@ -82,6 +93,12 @@ export class ApiClient {
     this.baseUrl = opts.baseUrl.replace(/\/$/, "");
     this.storage = opts.storage;
     this.fetchImpl = opts.fetch ?? ((...args: Parameters<typeof fetch>) => globalThis.fetch(...args));
+    this.cookieSession = opts.cookieSession;
+  }
+
+  /** Corps d'un rafraîchissement / d'une déconnexion : vide si le jeton est dans le cookie. */
+  private tokenBody(token: string) {
+    return token === COOKIE_SESSION ? {} : { refreshToken: token };
   }
 
   // ── session ──
@@ -98,7 +115,7 @@ export class ApiClient {
   /** Après une connexion réussie. */
   setSession(tokens: SessionTokens) {
     this.accessToken = tokens.accessToken;
-    this.storage.set(tokens.refreshToken);
+    this.storage.set(tokens.refreshToken ?? (this.cookieSession ? COOKIE_SESSION : null));
     this.emit({ type: "tokens", accessToken: tokens.accessToken });
   }
 
@@ -122,7 +139,7 @@ export class ApiClient {
     const refreshToken = this.storage.get();
     this.clearSession();
     if (refreshToken) {
-      await this.raw("POST", `/${this.space}/auth/logout`, { body: { refreshToken }, auth: false }).catch(() => undefined);
+      await this.raw("POST", `/${this.space}/auth/logout`, { body: this.tokenBody(refreshToken), auth: false }).catch(() => undefined);
     }
   }
 
@@ -141,18 +158,19 @@ export class ApiClient {
     const used = this.storage.get();
     if (!used) return false;
     try {
-      const res = await this.raw<SessionTokens>("POST", `/${this.space}/auth/refresh`, { body: { refreshToken: used }, auth: false });
+      const res = await this.raw<SessionTokens>("POST", `/${this.space}/auth/refresh`, { body: this.tokenBody(used), auth: false });
       this.setSession(res);
       if (res.license) this.emit({ type: "license", license: res.license });
       return true;
     } catch (e) {
       const err = e instanceof ApiError ? e : ApiError.network(e);
       if (err.status === 0) throw err;   // réseau coupé : on garde la session, l'appelant affichera l'erreur
-      // Un autre onglet a peut-être déjà fait tourner le jeton : on retente avec la nouvelle valeur.
+      // Un autre onglet a peut-être déjà fait tourner le jeton : on retente avec la nouvelle valeur
+      // (cookie : le navigateur a déjà reçu le nouveau, on retente donc une fois).
       const current = this.storage.get();
-      if (current && current !== used) {
+      if (current && (current !== used || current === COOKIE_SESSION)) {
         try {
-          const res = await this.raw<SessionTokens>("POST", `/${this.space}/auth/refresh`, { body: { refreshToken: current }, auth: false });
+          const res = await this.raw<SessionTokens>("POST", `/${this.space}/auth/refresh`, { body: this.tokenBody(current), auth: false });
           this.setSession(res);
           if (res.license) this.emit({ type: "license", license: res.license });
           return true;
@@ -221,6 +239,11 @@ export class ApiClient {
     const isForm = typeof FormData !== "undefined" && opts.body instanceof FormData;
     if (opts.body !== undefined && !isForm) headers["Content-Type"] = "application/json";
     if (opts.auth !== false && this.accessToken) headers.Authorization = `Bearer ${this.accessToken}`;
+    const sessionRoute = !!this.cookieSession && path.startsWith(`/${this.space}/auth/`);
+    if (sessionRoute) {
+      headers["X-Session-Transport"] = "cookie";
+      if (this.cookieSession?.tenantSlug) headers["X-Tenant-Slug"] = this.cookieSession.tenantSlug;
+    }
 
     let res: Response;
     try {
@@ -229,6 +252,7 @@ export class ApiClient {
         headers,
         body: opts.body === undefined ? undefined : isForm ? (opts.body as FormData) : JSON.stringify(opts.body),
         signal: opts.signal,
+        ...(sessionRoute ? { credentials: "include" as const } : {}),
       });
     } catch (e) {
       if ((e as { name?: string })?.name === "AbortError") throw e;

@@ -69,6 +69,16 @@ Réponse de connexion : `{accessToken, refreshToken, user, restriction, license}
 Le rafraîchissement renvoie `{accessToken, refreshToken, expiresIn, license}` (côté restaurant : `license = {status, inGrace, currentPeriodEnd}`,
 comme à la connexion) : le bandeau de période de grâce n'attend pas une nouvelle connexion.
 
+**Jeton de rafraîchissement en cookie HttpOnly (web, X7).** Avec l'en-tête `X-Session-Transport: cookie` (et `X-Tenant-Slug: <slug>`
+côté restaurant pour `2fa/verify`, `refresh`, `logout`), `login`, `2fa/verify` et `refresh` posent le jeton dans un cookie
+`rt_platform` / `rt_tenant_<slug>` (`HttpOnly; SameSite=Strict; Path=/api/v1/<espace>/auth`, `Secure` en production ou `COOKIE_SECURE=on`,
+échéance = celle de la session) et **ne le renvoient plus dans le JSON** ; `refresh` et `logout` lisent alors le cookie (corps `{}`), `logout` l'efface.
+Sans l'en-tête (mobile, anciens clients), rien ne change : jeton dans le corps, `{refreshToken}` obligatoire (400 sinon).
+CSRF : le cookie n'est lu qu'en présence de l'en-tête personnalisé (impossible depuis un formulaire d'un autre site ; un `fetch`
+d'une autre origine déclenche une requête préalable CORS refusée hors `CORS_ORIGIN`). Migration douce : un `refreshToken` présent dans le corps
+est accepté avec l'en-tête et échangé contre le cookie. Le client web (`cookieSession` de `@restaurant/api-client`) ne garde en
+`localStorage` que le marqueur non secret `cookie-session`. Le web et l'API doivent être sur le même site (ex. `app.` et `api.` d'un même domaine).
+
 **Limitation de débit** (`429`) sur `login` et `2fa/verify` : **10 par minute et par couple IP + email** (ou défi 2FA) **et 60 par minute par IP**
 (une équipe derrière le même réseau n'est donc pas bloquée par un seul compte fautif). Autres routes : 120/min par IP.
 
@@ -128,6 +138,36 @@ La réinitialisation renvoie un **mot de passe temporaire** (une seule fois) que
 Toujours actifs : mots de passe courants refusés, ni email ni nom dans le mot de passe, hachage argon2, secrets 2FA chiffrés (AES-256-GCM),
 codes de secours hachés, verrouillage aussi sur les codes 2FA faux, révocation de session immédiate, journal des connexions,
 audit des changements, en-têtes HTTP de sécurité (Helmet), limitation de débit sur la connexion.
+
+## Journal d'audit consultable (X7)
+| Méthode | Route | Rôles | Description |
+|---|---|---|---|
+| GET | `/tenant/audit-logs` | ADMIN | Journal du restaurant : `{items: [{id, action, entity, entityId, metadata, ip, createdAt, user: {id, name, email} \| null}], total, page, pageSize}` |
+| GET | `/platform/audit-logs` | SUPER_ADMIN | Journal de la plateforme (mêmes champs, sans `ip`) |
+| GET | `/platform/tenants/:id/audit-logs` | SUPER_ADMIN | Journal d'un restaurant (assistance) ; 404 si inconnu |
+
+Filtres (`auditLogQuerySchema`) : `action` (préfixe, ex. `reservation.`), `entity`, `entityId`, `userId`, `from`, `to` (une date `AAAA-MM-JJ` inclut la journée),
+`page`, `pageSize` (≤ 100, défaut 50) ; du plus récent au plus ancien ; `from > to` → 400. Lecture seule.
+
+## Conservation des données (RGPD, X7)
+Purge planifiée `RetentionService.purge()` chaque nuit à 03:17 UTC (coupée par `DISABLE_CRON`), idempotente :
+| Donnée | Durée | Remarque |
+|---|---|---|
+| Journal de connexion (`LoginEvent` : email tenté, IP, navigateur) | 12 mois | |
+| Journal des notifications (`NotificationLog` : destinataire, variables) | 6 mois | |
+| Sessions fermées ou échues (`RefreshToken`) | 30 jours après la fin | |
+| Liens de réinitialisation, codes de vérification d'email | 7 jours après usage ou échéance | |
+| Journaux d'audit, commandes, paiements, paie | non purgés | obligations comptables et légales ; anonymisation à la suppression d'un compte client (P2C) |
+
+Constantes : `RETENTION_DAYS` (`apps/api/src/security/retention.service.ts`).
+
+## Secrets et configuration de sécurité (X7)
+- Un secret par usage, tous différents (vérifié au démarrage) : `JWT_ACCESS_SECRET` (jetons d'accès et défis 2FA, ≥ 32 caractères en production),
+  `DATA_ENCRYPTION_KEY` (secrets 2FA), `TRACKING_TOKEN_SECRET` (HMAC des liens de suivi imprimés sur les tickets). Les deux derniers sont
+  obligatoires en production ; hors production, le suivi retombe sur le secret JWT. Changer `TRACKING_TOKEN_SECRET` invalide les liens déjà imprimés.
+- `TRUST_PROXY` (défaut 1) : nombre de proxys devant l'API ; 0 si l'API est exposée directement (sinon `X-Forwarded-For` choisirait l'IP de la limitation de débit).
+- `SWAGGER` : `/api/docs` désactivé par défaut en production. Journaux : adresses email et numéros masqués, contenu des messages jamais journalisé en production.
+- Audit des dépendances en CI : `node scripts/ci/audit.mjs` (hautes et critiques bloquantes sauf exemption datée dans `scripts/ci/audit-allowlist.json`).
 
 ## Images (logo, favicon, avatar)
 PNG / JPEG / WebP (favicon : PNG / ICO / WebP). Le format est vérifié sur le **contenu** du fichier, pas sur l'extension. SVG refusé (script embarqué).
@@ -207,6 +247,7 @@ Carte publique : `GET /public/tenants/:slug/menu` (catégories actives, plats no
 `GET /tenant/kitchen` : commandes ouvertes avec des articles en attente, en préparation ou prêts (les plus anciennes d'abord).
 Socket.io, espace de noms **`/realtime`** (chemin `/socket.io`, hors préfixe `/api/v1`) :
 `io(API_URL + "/realtime", { auth: { token: accessToken } })` → `ready` ou `auth_error` puis déconnexion.
+Chaque minute, les connexions ouvertes sont revalidées (session active, compte actif, licence) : sinon `auth_error {message: "Session terminée"}` puis déconnexion (X7).
 Événements diffusés au restaurant (charge utile = même forme que l'API, émis après la transaction) :
 - **`order.created`**, **`order.updated`** : commande complète.
 - **`menu.updated`** : plat (`menuItemView`) créé, modifié, rendu (in)disponible, photo changée ou archivé (`archived: true`) ;

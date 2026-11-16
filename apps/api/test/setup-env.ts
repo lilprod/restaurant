@@ -1,6 +1,13 @@
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? "postgresql://app:app@localhost:5433/restaurant_test";
+// Compte propriétaire (superuser) pour préparer la base (rls.sql, rôles) quand la suite tourne sous le rôle restreint app_rls.
+if (!process.env.TEST_ADMIN_DATABASE_URL) {
+  const u = new URL(process.env.DATABASE_URL);
+  if (u.username === "app_rls") { u.username = "app"; u.password = "app"; }
+  process.env.TEST_ADMIN_DATABASE_URL = u.toString();
+}
 process.env.JWT_ACCESS_SECRET = "test-secret-test-secret";
+process.env.TRACKING_TOKEN_SECRET = "test-tracking-secret-0123456789abcdef";
 process.env.DISABLE_CRON = "1";
 process.env.NOTIFICATIONS_RETRY_BASE_MS = "0";
 process.env.DISABLE_THROTTLE = "1";

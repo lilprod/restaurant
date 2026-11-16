@@ -16,13 +16,19 @@ function makeSpace(client: ApiClient) {
   return { client, auth: authApi(client), account: accountApi(client) };
 }
 
-const platformClient = new ApiClient({ baseUrl: API_BASE, space: "platform", storage: localStorageTokenStorage(STORAGE_KEYS.platformRefresh) });
+// Jeton de rafraîchissement en cookie HttpOnly (illisible en JavaScript) ; le stockage local ne garde qu'un marqueur.
+// Un ancien jeton encore présent sous ces clés est échangé contre le cookie au premier rafraîchissement.
+const platformClient = new ApiClient({
+  baseUrl: API_BASE, space: "platform", storage: localStorageTokenStorage(STORAGE_KEYS.platformRefresh), cookieSession: {},
+});
 export const platformSpace = { ...makeSpace(platformClient), api: platformApi(platformClient) };
 export type PlatformSpace = typeof platformSpace;
 
 const tenantSpaces = new Map<string, ReturnType<typeof makeTenantSpace>>();
 function makeTenantSpace(slug: string) {
-  const client = new ApiClient({ baseUrl: API_BASE, space: "tenant", storage: localStorageTokenStorage(STORAGE_KEYS.tenantRefresh(slug)) });
+  const client = new ApiClient({
+    baseUrl: API_BASE, space: "tenant", storage: localStorageTokenStorage(STORAGE_KEYS.tenantRefresh(slug)), cookieSession: { tenantSlug: slug },
+  });
   return { ...makeSpace(client), api: tenantApi(client), customer: customerApi(client), slug };
 }
 /** Un client par restaurant (une session par sous-domaine). */

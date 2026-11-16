@@ -9,13 +9,14 @@ import { AuthService } from "./auth.service";
 import { LicenseGateService } from "./license-gate.service";
 import { LoginEventsService } from "./login-events.service";
 import { PasswordService } from "./password.service";
+import { RetentionService } from "./retention.service";
 import { SecurityPolicyService } from "./security-policy.service";
 import { SessionService } from "./session.service";
 import { TotpService } from "./totp.service";
 
 const providers = [
   CryptoService, AccountsRepo, SecurityPolicyService, LoginEventsService, SessionService, PasswordService,
-  TotpService, LicenseGateService, AuthService, AccountService, AccountAdminService,
+  TotpService, LicenseGateService, AuthService, AccountService, AccountAdminService, RetentionService,
 ];
 
 /** Authentification, sessions, 2FA, verrouillage : commun à la plateforme et aux restaurants. */

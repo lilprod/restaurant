@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { AddressInfo } from "node:net";
 import { io, Socket } from "socket.io-client";
 import request from "supertest";
+import { RealtimeGateway } from "../src/realtime/realtime.gateway";
 import { asPlatform, createApp, login, resetDb, seedPlatform } from "./helpers";
 
 const PW = "Cigale-Bleue74";
@@ -179,6 +180,21 @@ describe("Phase 1 : menu, commandes, cuisine, encaissement (e2e)", () => {
       expect((await connect()).ok).toBe(false);
       expect((await connect("faux")).message).toBe("Jeton invalide ou expiré");
       expect((await connect(root)).ok).toBe(false);                     // jeton plateforme
+    });
+
+    it("ferme une connexion temps réel dont la session a été révoquée", async () => {
+      const second = (await api().post(`${V}/tenant/auth/login`).send({ tenantSlug: "maquis", email: "admin@maquis.tg", password: PW })).body.accessToken as string;
+      const c = await connect(second);
+      expect(c.ok).toBe(true);
+      const sessions = await api().get(`${V}/tenant/account/sessions`).set({ Authorization: `Bearer ${second}` });
+      const sid = sessions.body.find((x: { current: boolean }) => x.current).id as string;
+      const gateway = app.get(RealtimeGateway);
+      expect(await gateway.revalidate()).toBe(0);                      // tout est valide : rien n'est fermé
+      const closed = new Promise<string>((resolve) => c.socket.on("auth_error", (e: { message: string }) => resolve(e.message)));
+      expect((await api().delete(`${V}/tenant/account/sessions/${sid}`).set(as("admin"))).status).toBe(204);
+      expect(await gateway.revalidate()).toBe(1);
+      expect(await closed).toBe("Session terminée");
+      expect(kitchenSocket.connected).toBe(true);                       // les autres connexions restent ouvertes
     });
 
     it("valide les options et la table, fige les prix et calcule la TVA incluse", async () => {

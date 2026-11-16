@@ -8,10 +8,12 @@ import { describeZodSchemas } from "./common/openapi-zod";
 import type { Env } from "./config/env";
 
 /** Configuration HTTP commune à main.ts et aux tests e2e. */
-export function setupApp(app: INestApplication, env: Pick<Env, "CORS_ORIGIN" | "UPLOAD_DIR">) {
+export function setupApp(app: INestApplication, env: Pick<Env, "CORS_ORIGIN" | "UPLOAD_DIR"> & Partial<Pick<Env, "TRUST_PROXY">>) {
   installFrenchErrors();                                // messages de validation en français
   const express = app as NestExpressApplication;
-  express.set("trust proxy", 1);                       // IP réelle derrière un reverse proxy (sessions, journal)
+  // IP réelle derrière N reverse proxys (limitation de débit, sessions, journal). 0 si l'API est exposée directement :
+  // sinon un client pourrait choisir son IP via X-Forwarded-For et contourner la limitation de débit.
+  express.set("trust proxy", env.TRUST_PROXY ?? 1);
   app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));   // images servies à un autre domaine (web)
   app.setGlobalPrefix("api/v1", { exclude: ["uploads/(.*)"] });
   app.enableCors({ origin: env.CORS_ORIGIN.split(","), credentials: true });

@@ -5,7 +5,7 @@ import type { SmsDriver, SmsMessage } from "./types";
 
 type Fetch = typeof fetch;
 
-/** Pilote par défaut : journalise (numéro masqué) et garde les derniers SMS en mémoire. */
+/** Pilote par défaut : journalise (numéro masqué, texte seulement hors production) et garde les derniers SMS en mémoire. */
 export class LogSmsDriver implements SmsDriver {
   readonly name = "log";
   private readonly log = new Logger("Sms");
@@ -14,7 +14,8 @@ export class LogSmsDriver implements SmsDriver {
   async send(msg: SmsMessage): Promise<void> {
     this.outbox.push(msg);
     if (this.outbox.length > 100) this.outbox.shift();
-    this.log.log(`→ ${maskPhone(msg.to)} · ${msg.text}`);
+    // Le texte peut contenir un code ou un lien personnel : jamais journalisé en production.
+    this.log.log(`→ ${maskPhone(msg.to)}${process.env.NODE_ENV === "production" ? "" : ` · ${msg.text}`}`);
   }
 }
 

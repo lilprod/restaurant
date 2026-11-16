@@ -5,6 +5,7 @@ import { authenticator } from "otplib";
 import { rmSync } from "node:fs";
 import request from "supertest";
 import { MailService } from "../src/mail/mail.service";
+import { RetentionService } from "../src/security/retention.service";
 import { asPlatform, createApp, login, resetDb, seedPlatform } from "./helpers";
 
 const DAY = 86_400_000;
@@ -372,6 +373,72 @@ describe("Sécurité & paramètres (e2e)", () => {
       expect((await api().post(`${V}/tenant/auth/logout`).send({ refreshToken: s.refreshToken })).status).toBe(204);
       expect((await api().get(`${V}/tenant/account/me`).set(bearer(s.accessToken))).status).toBe(401);
     });
+
+    describe("jeton de rafraîchissement en cookie HttpOnly (web)", () => {
+      const WEB = { "X-Session-Transport": "cookie", "X-Tenant-Slug": "kofi" };
+      const cookieOf = (res: request.Response, name: string) =>
+        ([] as string[]).concat(res.headers["set-cookie"] ?? []).find((c) => c.startsWith(`${name}=`));
+      const valueOf = (c: string | undefined) => c?.split(";")[0] ?? "";
+
+      it("la connexion pose un cookie HttpOnly, SameSite=Strict, limité aux routes d'authentification, sans jeton dans le JSON", async () => {
+        const res = await api().post(`${V}/tenant/auth/login`).set(WEB).send({ tenantSlug: "kofi", email: "admin@kofi.tg", password: PW2 });
+        expect(res.status).toBe(200);
+        expect(res.body.accessToken).toEqual(expect.any(String));
+        expect(res.body).not.toHaveProperty("refreshToken");
+        expect(res.body).not.toHaveProperty("refreshExpiresAt");
+        const c = cookieOf(res, "rt_tenant_kofi")!;
+        expect(c).toMatch(/HttpOnly/);
+        expect(c).toMatch(/SameSite=Strict/);
+        expect(c).toMatch(/Path=\/api\/v1\/tenant\/auth/);
+        expect(c).toMatch(/Expires=/);
+      });
+
+      it("rafraîchit par le cookie (rotation), refuse l'ancien, et la déconnexion l'efface", async () => {
+        const login1 = await api().post(`${V}/tenant/auth/login`).set(WEB).send({ tenantSlug: "kofi", email: "admin@kofi.tg", password: PW2 });
+        const c1 = valueOf(cookieOf(login1, "rt_tenant_kofi"));
+        const r = await api().post(`${V}/tenant/auth/refresh`).set(WEB).set("Cookie", c1).send({});
+        expect(r.status).toBe(200);
+        expect(r.body).not.toHaveProperty("refreshToken");
+        expect(r.body.license).toMatchObject({ status: expect.any(String) });
+        const c2 = valueOf(cookieOf(r, "rt_tenant_kofi"));
+        expect(c2).not.toBe(c1);
+        const replay = await api().post(`${V}/tenant/auth/refresh`).set(WEB).set("Cookie", c1).send({});
+        expect(replay.status).toBe(401);
+        expect(cookieOf(replay, "rt_tenant_kofi")).toBeUndefined();   // pas effacé : un autre onglet peut l'avoir fait tourner
+        const out = await api().post(`${V}/tenant/auth/logout`).set(WEB).set("Cookie", c2).send({});
+        expect(out.status).toBe(204);
+        expect(cookieOf(out, "rt_tenant_kofi")).toMatch(/Expires=Thu, 01 Jan 1970/);
+        expect((await api().get(`${V}/tenant/account/me`).set(bearer(r.body.accessToken))).status).toBe(401);
+      });
+
+      it("CSRF : sans l'en-tête X-Session-Transport, le cookie est ignoré", async () => {
+        const login1 = await api().post(`${V}/tenant/auth/login`).set(WEB).send({ tenantSlug: "kofi", email: "admin@kofi.tg", password: PW2 });
+        const c1 = valueOf(cookieOf(login1, "rt_tenant_kofi"));
+        expect((await api().post(`${V}/tenant/auth/refresh`).set("Cookie", c1).send({})).status).toBe(400);
+        expect((await api().post(`${V}/tenant/auth/logout`).set("Cookie", c1).send({})).status).toBe(400);
+        expect((await api().post(`${V}/tenant/auth/refresh`).set(WEB).set("Cookie", c1).send({})).status).toBe(200);   // toujours valide
+      });
+
+      it("migration douce : un ancien jeton (stockage local) est échangé contre un cookie", async () => {
+        const legacy = (await tenantLogin("kofi", "admin@kofi.tg", PW2)).body.refreshToken as string;
+        const r = await api().post(`${V}/tenant/auth/refresh`).set(WEB).send({ refreshToken: legacy });
+        expect(r.status).toBe(200);
+        expect(r.body).not.toHaveProperty("refreshToken");
+        expect(cookieOf(r, "rt_tenant_kofi")).toMatch(/HttpOnly/);
+      });
+
+      it("un cookie par restaurant et un pour la plateforme ; un restaurant inconnu dans l'en-tête est refusé", async () => {
+        const p = await api().post(`${V}/platform/auth/login`).set({ "X-Session-Transport": "cookie" }).send({ email: "root@test.local", password: "Secret123!" });
+        const pc = cookieOf(p, "rt_platform")!;
+        expect(pc).toMatch(/Path=\/api\/v1\/platform\/auth/);
+        expect((await api().post(`${V}/platform/auth/refresh`).set({ "X-Session-Transport": "cookie" }).set("Cookie", valueOf(pc)).send({})).status).toBe(200);
+        // le cookie d'un restaurant n'est pas lu sous le nom d'un autre
+        const t = await api().post(`${V}/tenant/auth/login`).set(WEB).send({ tenantSlug: "kofi", email: "admin@kofi.tg", password: PW2 });
+        const tc = valueOf(cookieOf(t, "rt_tenant_kofi"));
+        expect((await api().post(`${V}/tenant/auth/refresh`).set({ ...WEB, "X-Tenant-Slug": "autre" }).set("Cookie", tc).send({})).status).toBe(401);
+        expect((await api().post(`${V}/tenant/auth/refresh`).set({ ...WEB, "X-Tenant-Slug": "../x" }).set("Cookie", tc).send({})).status).toBe(400);
+      });
+    });
   });
 
   // ───────────────────────────── mot de passe oublié ─────────────────────────────
@@ -613,6 +680,38 @@ describe("Sécurité & paramètres (e2e)", () => {
     });
   });
 
+  // ───────────────────────────── conservation (RGPD) ─────────────────────────────
+  describe("purge planifiée des données à durée limitée", () => {
+    it("supprime ce qui dépasse sa durée de conservation et garde le reste", async () => {
+      const old = new Date(Date.now() - 400 * DAY);
+      const recent = new Date(Date.now() - 2 * DAY);
+      const user = await asPlatform(prisma, (tx) => tx.user.findFirstOrThrow({ where: { email: "admin@kofi.tg" } }));
+      const ids = await asPlatform(prisma, async (tx) => {
+        const ev = (createdAt: Date) => tx.loginEvent.create({ data: { space: "tenant", tenantId, userId: user.id, email: user.email, result: "SUCCESS", createdAt } });
+        const nl = (createdAt: Date) => tx.notificationLog.create({ data: { tenantId, channel: "EMAIL", to: user.email, template: "test", createdAt } });
+        const rt = (tokenHash: string, revokedAt: Date | null, expiresAt: Date) => tx.refreshToken.create({ data: { userId: user.id, tenantId, tokenHash, revokedAt, expiresAt } });
+        return {
+          oldEvent: (await ev(old)).id, newEvent: (await ev(recent)).id,
+          oldLog: (await nl(old)).id, newLog: (await nl(recent)).id,
+          revoked: (await rt("purge-test-1", old, new Date(Date.now() + DAY))).id,
+          expired: (await rt("purge-test-2", null, old)).id,
+          live: (await rt("purge-test-3", null, new Date(Date.now() + DAY))).id,
+          oldReset: (await tx.passwordReset.create({ data: { userId: user.id, tokenHash: "purge-reset-1", expiresAt: old } })).id,
+        };
+      });
+      const r = await app.get(RetentionService).purge();
+      expect(r.loginEvents).toBeGreaterThanOrEqual(1);
+      const left = await asPlatform(prisma, async (tx) => ({
+        events: (await tx.loginEvent.findMany({ where: { id: { in: [ids.oldEvent, ids.newEvent] } } })).map((x) => x.id),
+        logs: (await tx.notificationLog.findMany({ where: { id: { in: [ids.oldLog, ids.newLog] } } })).map((x) => x.id),
+        sessions: (await tx.refreshToken.findMany({ where: { id: { in: [ids.revoked, ids.expired, ids.live] } } })).map((x) => x.id),
+        resets: await tx.passwordReset.count({ where: { id: ids.oldReset } }),
+      }));
+      expect(left).toEqual({ events: [ids.newEvent], logs: [ids.newLog], sessions: [ids.live], resets: 0 });
+      expect(Object.values(await app.get(RetentionService).purge()).every((n) => n === 0)).toBe(true);   // idempotent
+    });
+  });
+
   // ───────────────────────────── isolation ─────────────────────────────
   describe("isolation entre restaurants", () => {
     it("un administrateur ne voit ni ne modifie les comptes et réglages d'un autre restaurant", async () => {
@@ -632,6 +731,42 @@ describe("Sécurité & paramètres (e2e)", () => {
       expect((await tenantLogin("autre", "admin@kofi.tg", PW2)).status).toBe(401);           // pas d'identifiants croisés
       const events = await api().get(`${V}/tenant/security/login-events`).set(bearer(t2));
       expect(events.body.every((e: { tenantId: string }) => e.tenantId === otherId)).toBe(true);
+    });
+  });
+
+  // ───────────────────────────── journal d'audit consultable ─────────────────────────────
+  describe("journal d'audit", () => {
+    it("l'administrateur consulte et filtre le journal de son restaurant, rien d'un autre ; les autres rôles sont refusés", async () => {
+      const admin = await tok("kofi", "admin@kofi.tg", PW2);
+      const all = await api().get(`${V}/tenant/audit-logs`).set(bearer(admin));
+      expect(all.status).toBe(200);
+      expect(all.body.total).toBeGreaterThan(0);
+      expect(all.body.items[0]).toMatchObject({ action: expect.any(String), entity: expect.any(String), createdAt: expect.any(String) });
+      const byAction = await api().get(`${V}/tenant/audit-logs?action=settings.&pageSize=5`).set(bearer(admin));
+      expect(byAction.body.items.length).toBeGreaterThan(0);
+      expect(byAction.body.items.every((i: { action: string }) => i.action.startsWith("settings."))).toBe(true);
+      const today = new Date().toISOString().slice(0, 10);
+      expect((await api().get(`${V}/tenant/audit-logs?to=${today}`).set(bearer(admin))).body.total).toBe(all.body.total);
+      expect((await api().get(`${V}/tenant/audit-logs?to=2000-01-01`).set(bearer(admin))).body.total).toBe(0);
+      expect((await api().get(`${V}/tenant/audit-logs?from=2026-02-01&to=2026-01-01`).set(bearer(admin))).status).toBe(400);
+      await addUser(tenantId, "MANAGER", "manager.audit@kofi.tg");
+      const manager = await tok("kofi", "manager.audit@kofi.tg", PW);
+      expect((await api().get(`${V}/tenant/audit-logs`).set(bearer(manager))).status).toBe(403);
+      // un autre restaurant ne voit que le sien
+      const t2 = await tok("autre", "admin@autre.tg", PW);
+      const other = await api().get(`${V}/tenant/audit-logs`).set(bearer(t2));
+      const kofiIds = new Set(all.body.items.map((i: { id: string }) => i.id));
+      expect(other.body.items.some((i: { id: string }) => kofiIds.has(i.id))).toBe(false);
+    });
+
+    it("le SuperAdmin consulte le journal de la plateforme et celui d'un restaurant ; le Support est refusé", async () => {
+      const p = await api().get(`${V}/platform/audit-logs?action=tenant.`).set(bearer(root));
+      expect(p.status).toBe(200);
+      expect(p.body.items.some((i: { action: string; user: { email: string } | null }) => i.action === "tenant.create" && i.user?.email === "root@test.local")).toBe(true);
+      const t = await api().get(`${V}/platform/tenants/${tenantId}/audit-logs`).set(bearer(root));
+      expect([t.status, t.body.total > 0]).toEqual([200, true]);
+      expect((await api().get(`${V}/platform/tenants/00000000-0000-4000-8000-000000000000/audit-logs`).set(bearer(root))).status).toBe(404);
+      expect((await api().get(`${V}/platform/audit-logs`).set(bearer(supportTok))).status).toBe(403);
     });
   });
 

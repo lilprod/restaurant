@@ -53,7 +53,8 @@ export interface LicenseSummary {
 
 export interface LoginSuccess {
   accessToken: string;
-  refreshToken: string;
+  /** Absent quand le jeton est posé en cookie HttpOnly (client web, `cookieSession`). */
+  refreshToken?: string;
   expiresIn: number;
   user: AccountSummary;
   restriction: Restriction | null;
@@ -1127,3 +1128,18 @@ export interface PublicReviews {
 export interface CustomerExport {
   exportedAt: ISODate; profile: CustomerProfile; reservations: Record<string, unknown>[]; orders: Record<string, unknown>[]; reviews: Record<string, unknown>[];
 }
+
+// ── Journal d'audit (X7) ──
+export interface AuditLogEntry {
+  id: string;
+  action: string;
+  entity: string;
+  entityId: string | null;
+  metadata: unknown;
+  /** Restaurant uniquement. */
+  ip?: string | null;
+  createdAt: ISODate;
+  user: { id: string; name: string; email: string } | null;
+}
+export type AuditLogList = Paginated<AuditLogEntry>;
+export interface AuditLogQueryParams { action?: string; entity?: string; entityId?: string; userId?: string; from?: string; to?: string; page?: number; pageSize?: number }

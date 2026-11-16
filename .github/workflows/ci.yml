@@ -22,9 +22,15 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 20, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      - name: Audit des dépendances (hautes et critiques bloquantes, exemptions justifiées)
+        run: node scripts/ci/audit.mjs
       - run: pnpm --filter api prisma:generate
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm test
       - name: Tests e2e API (PostgreSQL + RLS)
         run: pnpm --filter api test:e2e
+      - name: Tests e2e API sous RLS (rôle non superuser app_rls)
+        run: bash scripts/dev/test-rls.sh
+        env:
+          PGPORT: "5432"

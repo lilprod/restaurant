@@ -20,9 +20,13 @@ const STAGE: Record<string, TrackingStage> = { PENDING: "received", IN_PROGRESS:
 export class TrackingService {
   constructor(private readonly prisma: PrismaService, @Inject(APP_ENV) private readonly env: Env) {}
 
-  /** Jeton aléatoire pour le client (HMAC du secret serveur et de la commande) : stable, donc réimprimable, mais indevinable. */
+  /**
+   * Jeton pour le client (HMAC d'un secret dédié et de la commande) : stable, donc réimprimable, mais indevinable.
+   * Secret `TRACKING_TOKEN_SECRET` (obligatoire en production) ; à défaut (développement, tests), le secret JWT.
+   */
   tokenFor(orderId: string): string {
-    return createHmac("sha256", this.env.JWT_ACCESS_SECRET).update(`order-tracking:${orderId}`).digest("base64url");
+    const key = this.env.TRACKING_TOKEN_SECRET ?? this.env.JWT_ACCESS_SECRET;
+    return createHmac("sha256", key).update(`order-tracking:${orderId}`).digest("base64url");
   }
 
   /** Lien à imprimer sur le ticket (enregistre l'empreinte du jeton au premier appel). */

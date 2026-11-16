@@ -12,6 +12,7 @@ import type {
 } from "@restaurant/validation";
 import type { ApiClient } from "./client";
 import type {
+  AuditLogList, AuditLogQueryParams,
   AccountSummary, Allergen, AssetKind, NotificationList, NotificationsQuery, BrandingSettings, DiningTable, FloorPlan, TableLayoutEntry, LoginEvent, MenuCategory, MenuItem, Order, OrderItemStatus,
   OrderPaymentResult, OrderReceipt, OrdersQuery, PublicMenu, RegisterCloseResult, RegisterCurrent, RegisterSession, StaffMember,
   StaffRole, TableStatus, TenantDashboard, LoginResponse, LoginResult, LoginSuccess, Paginated, PaymentList,
@@ -185,6 +186,10 @@ export function platformApi(c: ApiClient) {
       reject: (id: string, reason: string) => c.post<{ id: string; status: "REJECTED" }>(`/platform/registrations/${enc(id)}/reject`, { reason }),
     },
 
+    auditLogs: {
+      list: (q: AuditLogQueryParams = {}) => c.get<AuditLogList>("/platform/audit-logs", { query: { ...q } }),
+      tenant: (tenantId: string, q: AuditLogQueryParams = {}) => c.get<AuditLogList>(`/platform/tenants/${enc(tenantId)}/audit-logs`, { query: { ...q } }),
+    },
     notifications: {
       list: (q: NotificationsQuery = {}) => c.get<NotificationList>("/platform/notifications", { query: q }),
       resend: (id: string) => c.post<{ id: string }>(`/platform/notifications/${enc(id)}/resend`),
@@ -225,6 +230,7 @@ export function platformApi(c: ApiClient) {
 /** Espace d'un restaurant. */
 export function tenantApi(c: ApiClient) {
   return {
+    auditLogs: (q: AuditLogQueryParams = {}) => c.get<AuditLogList>("/tenant/audit-logs", { query: { ...q } }),
     notifications: {
       list: (q: NotificationsQuery = {}) => c.get<NotificationList>("/tenant/notifications", { query: q }),
       resend: (id: string) => c.post<{ id: string }>(`/tenant/notifications/${enc(id)}/resend`),

@@ -74,7 +74,8 @@ Sans paquet PostgreSQL installé : `docker compose up -d` (voir `docker-compose.
 |---|---|
 | Tout vérifier | `pnpm lint && pnpm build && pnpm test` (racine) |
 | Tests e2e de l'API (PostgreSQL requis) | `pnpm --filter api test:e2e` |
-| e2e sous RLS (rôle non superuser) | `cd apps/api && TEST_DATABASE_URL=postgresql://app_rls:rls@localhost:5433/restaurant_test npx jest --config test/jest-e2e.json --runInBand test/platform test/security test/restaurant` |
+| e2e sous RLS (rôle non superuser) | `bash scripts/dev/test-rls.sh` (toute la suite ; arguments = fichiers jest) |
+| Audit des dépendances | `node scripts/ci/audit.mjs` (hautes/critiques bloquantes, exemptions datées dans `scripts/ci/audit-allowlist.json`) |
 | Nouvelle migration | `cd apps/api && DATABASE_URL=postgresql://app:app@localhost:5433/restaurant npx prisma migrate dev --name <nom>` puis `DATABASE_URL=x npx prisma generate` |
 | Rebâtir les paquets partagés | `pnpm --filter @restaurant/utils --filter @restaurant/validation --filter @restaurant/shared-types build` (l'API consomme leur `dist/`) |
 | Tests web | `pnpm --filter web test` (Vitest) · types `pnpm --filter web lint` |
@@ -88,7 +89,7 @@ Sans paquet PostgreSQL installé : `docker compose up -d` (voir `docker-compose.
 - La connexion est limitée à 10 tentatives/minute par IP : espacez les connexions dans les scripts de captures, ou réutilisez une session (le script du skill le fait).
 - La rotation des jetons de rafraîchissement déconnecte une session réutilisée dans un second navigateur : une seule session par script.
 - Les sorties HTTP vers Internet passent par un proxy et certains hôtes (images, CDN) sont bloqués : pas de dépendance réseau à l'exécution.
-- Après une migration, la base de test reçoit les migrations via `pretest:e2e` ; si vous testez sous RLS, redonnez les droits (`GRANT ALL ON ALL TABLES IN SCHEMA public TO app_rls`) et relancez `prisma/sql/rls.sql`.
+- Après une migration, la base de test reçoit les migrations via `pretest:e2e` ; sous RLS, `scripts/dev/test-rls.sh` redonne les droits et relance `prisma/sql/rls.sql`.
 
 ## 6. Langue et ton
 

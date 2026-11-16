@@ -1,19 +1,24 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Patch, Post, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Patch, Post, Req, Res, UnauthorizedException, UploadedFile, UseGuards, UseInterceptors } from "@nestjs/common";
 import { CanActivate, Type } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { Throttle } from "@nestjs/throttler";
 import {
   changePasswordSchema, forgotPasswordSchema, loginSchema, passwordConfirmSchema, profileUpdateSchema,
-  refreshSchema, resetPasswordSchema, tenantLoginSchema, twoFactorEnableSchema, twoFactorVerifySchema,
+  refreshSchema, resetPasswordSchema, sessionTokenSchema, tenantLoginSchema, twoFactorEnableSchema, twoFactorVerifySchema,
 } from "@restaurant/validation";
+import type { Request, Response } from "express";
+import { APP_ENV, Env } from "../config/env";
 import { LoginThrottle } from "../common/throttling";
 import { Meta, RequestMeta } from "../common/request-meta";
 import { ZodPipe } from "../common/zod.pipe";
 import { Account, Space } from "./accounts.repo";
 import { AccountService } from "./account.service";
 import { AuthService } from "./auth.service";
+import { clearSessionCookie, cookieName, readCookie, setSessionCookie, slugHeader, wantsCookie } from "./session-cookie";
 import { AllowRestricted, CurrentAccount, CurrentSessionId } from "./space-auth.guard";
+
+type Issued = { refreshToken?: unknown; refreshExpiresAt?: Date } & Record<string, unknown>;
 
 const eq = (a: string) => (a === "tenant" ? tenantLoginSchema : loginSchema);
 
@@ -22,26 +27,60 @@ export function createAuthController(space: Space, prefix: string, tag: string):
   @ApiTags(tag)
   @Controller(prefix)
   class SpaceAuthController {
-    constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+    constructor(@Inject(AuthService) private readonly auth: AuthService, @Inject(APP_ENV) private readonly env: Env) {}
+
+    /** Réponse de session : jeton dans le cookie HttpOnly (web) ou dans le corps (mobile) ; jamais l'échéance interne. */
+    private deliver(req: Request, res: Response, out: Issued, slug?: string): Record<string, unknown> {
+      const { refreshExpiresAt, ...body } = out;
+      const token = typeof body.refreshToken === "string" ? body.refreshToken : undefined;
+      if (!wantsCookie(req) || !token) return body;
+      setSessionCookie(res, this.env, space, cookieName(space, slug ?? slugHeader(req)), token, refreshExpiresAt ?? new Date(Date.now() + 30 * 86_400_000));
+      delete body.refreshToken;
+      return body;
+    }
+
+    /** Jeton présenté : celui du corps (mobile, ou migration d'un ancien jeton web) sinon le cookie (web). */
+    private presented(req: Request, body: { refreshToken?: string }): string | undefined {
+      if (body.refreshToken) return body.refreshToken;
+      if (!wantsCookie(req)) {
+        new ZodPipe(refreshSchema).transform(body);       // 400 habituel : jeton absent du corps
+        return undefined;
+      }
+      return readCookie(req, cookieName(space, slugHeader(req)));
+    }
 
     @Post("login") @HttpCode(200) @LoginThrottle()
-    login(@Body(new ZodPipe(eq(space))) body: { email: string; password: string; tenantSlug?: string }, @Meta() meta: RequestMeta) {
-      return this.auth.login(space, body, meta);
+    async login(
+      @Body(new ZodPipe(eq(space))) body: { email: string; password: string; tenantSlug?: string }, @Meta() meta: RequestMeta,
+      @Req() req: Request, @Res({ passthrough: true }) res: Response,
+    ) {
+      return this.deliver(req, res, (await this.auth.login(space, body, meta)) as Issued, body.tenantSlug);
     }
 
     @Post("2fa/verify") @HttpCode(200) @LoginThrottle()
-    verify2fa(@Body(new ZodPipe(twoFactorVerifySchema)) body: { challengeToken: string; code: string }, @Meta() meta: RequestMeta) {
-      return this.auth.verifyTwoFactor(body.challengeToken, body.code, meta);
+    async verify2fa(
+      @Body(new ZodPipe(twoFactorVerifySchema)) body: { challengeToken: string; code: string }, @Meta() meta: RequestMeta,
+      @Req() req: Request, @Res({ passthrough: true }) res: Response,
+    ) {
+      return this.deliver(req, res, (await this.auth.verifyTwoFactor(body.challengeToken, body.code, meta)) as Issued);
     }
 
     @Post("refresh") @HttpCode(200) @Throttle({ default: { limit: 30, ttl: 60_000 } })
-    refresh(@Body(new ZodPipe(refreshSchema)) body: { refreshToken: string }, @Meta() meta: RequestMeta) {
-      return this.auth.refresh(space, body.refreshToken, meta);
+    async refresh(
+      @Body(new ZodPipe(sessionTokenSchema)) body: { refreshToken?: string }, @Meta() meta: RequestMeta,
+      @Req() req: Request, @Res({ passthrough: true }) res: Response,
+    ) {
+      // En cas d'échec, le cookie n'est pas effacé : un autre onglet vient peut-être de le faire tourner (le client retente une fois).
+      const token = this.presented(req, body);
+      if (!token) throw new UnauthorizedException("Session expirée");
+      return this.deliver(req, res, await this.auth.refresh(space, token, meta));
     }
 
     @Post("logout") @HttpCode(204)
-    async logout(@Body(new ZodPipe(refreshSchema)) body: { refreshToken: string }) {
-      await this.auth.logout(body.refreshToken);
+    async logout(@Body(new ZodPipe(sessionTokenSchema)) body: { refreshToken?: string }, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+      const token = this.presented(req, body);
+      if (wantsCookie(req)) clearSessionCookie(res, this.env, space, cookieName(space, slugHeader(req)));
+      if (token) await this.auth.logout(token);
     }
 
     @Post("forgot-password") @HttpCode(202) @Throttle({ default: { limit: 5, ttl: 3_600_000 } })

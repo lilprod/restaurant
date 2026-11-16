@@ -11,6 +11,14 @@ const envSchema = z.object({
   DISABLE_CRON: z.string().optional(),
   /** Clé de chiffrement des secrets 2FA (32 caractères min). Obligatoire en production. */
   DATA_ENCRYPTION_KEY: z.string().min(32).optional(),
+  /** Secret HMAC des liens de suivi de commande imprimés sur les tickets (32 caractères min, distinct des autres secrets). Obligatoire en production. */
+  TRACKING_TOKEN_SECRET: z.string().min(32, "TRACKING_TOKEN_SECRET : 32 caractères minimum").optional(),
+  /** Nombre de proxys de confiance devant l'API (`trust proxy` d'Express) : 0 si l'API est exposée directement. */
+  TRUST_PROXY: z.coerce.number().int().min(0).max(5).default(1),
+  /** Documentation Swagger (/api/docs) : active par défaut hors production. */
+  SWAGGER: z.enum(["on", "off"]).optional(),
+  /** Cookie du jeton de rafraîchissement marqué `Secure` (défaut : oui en production). */
+  COOKIE_SECURE: z.enum(["on", "off"]).optional(),
   /** Dossier des fichiers envoyés (logos, favicons). */
   UPLOAD_DIR: z.string().default("uploads"),
   /** URL publique de l'API (pour construire les liens vers les fichiers). */
@@ -57,9 +65,14 @@ const envSchema = z.object({
     }
   }
   if (env.NOTIFICATIONS_QUEUE === "bullmq") need(!!env.REDIS_URL, "REDIS_URL", "obligatoire avec NOTIFICATIONS_QUEUE=bullmq");
-  if (env.NODE_ENV === "production" && !env.DATA_ENCRYPTION_KEY) {
-    ctx.addIssue({ code: "custom", path: ["DATA_ENCRYPTION_KEY"], message: "obligatoire en production" });
+  if (env.NODE_ENV === "production") {
+    need(!!env.DATA_ENCRYPTION_KEY, "DATA_ENCRYPTION_KEY", "obligatoire en production");
+    need(!!env.TRACKING_TOKEN_SECRET, "TRACKING_TOKEN_SECRET", "obligatoire en production");
+    need(env.JWT_ACCESS_SECRET.length >= 32, "JWT_ACCESS_SECRET", "32 caractères minimum en production");
   }
+  // Un secret par usage : la fuite ou la rotation de l'un n'affecte pas les autres.
+  const secrets = [env.JWT_ACCESS_SECRET, env.DATA_ENCRYPTION_KEY, env.TRACKING_TOKEN_SECRET].filter(Boolean);
+  need(new Set(secrets).size === secrets.length, "TRACKING_TOKEN_SECRET", "JWT_ACCESS_SECRET, DATA_ENCRYPTION_KEY et TRACKING_TOKEN_SECRET doivent être différents");
 });
 
 export type Env = z.infer<typeof envSchema> & { PUBLIC_API_URL: string };

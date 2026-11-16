@@ -131,7 +131,7 @@ export class AuthService {
     if (!acc || !acc.isActive) throw fail();
     const license = acc.tenantId ? await this.gate.assertAccess(acc.tenantId) : undefined;
     return {
-      accessToken: await this.sessions.signAccess(acc, row.id), refreshToken: next, expiresIn: 900,
+      accessToken: await this.sessions.signAccess(acc, row.id), refreshToken: next, refreshExpiresAt: row.expiresAt, expiresIn: 900,
       license: license && { status: license.status, inGrace: license.inGrace, currentPeriodEnd: license.currentPeriodEnd },
     };
   }
@@ -218,6 +218,7 @@ export class AuthService {
     return {
       accessToken: session.accessToken,
       refreshToken: session.refreshToken,
+      refreshExpiresAt: session.refreshExpiresAt,
       expiresIn: session.expiresIn,
       user: accountSummary(current),
       restriction: restrictionFor(current, policy),   // "pwd-change" | "2fa-setup" | null

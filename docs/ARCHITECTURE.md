@@ -45,9 +45,15 @@ modules activés). Les guards NestJS vérifient plan + statut de licence avant c
 - **Comptes** : `PlatformUser` (éditeur) et `User` (restaurant) partagent la même logique (`apps/api/src/security/`) :
   connexion, verrouillage, 2FA TOTP + codes de secours, sessions révocables, mot de passe oublié, restrictions de session.
 - **Sessions** : jeton d'accès de 15 min lié à une session (`RefreshToken`) ; fermer la session invalide aussitôt le jeton d'accès.
+  Web : jeton d'accès en mémoire, jeton de rafraîchissement en cookie `HttpOnly; SameSite=Strict` limité aux routes `/auth` (en-tête
+  `X-Session-Transport: cookie`, qui sert aussi de protection CSRF) ; mobile : jeton dans le corps, stockage sécurisé natif.
   L'état « mot de passe à changer » / « 2FA obligatoire » est relu en base à chaque requête, donc levé dès que l'utilisateur régularise.
 - **Licence** : `LicenseGateService` bloque connexion, rafraîchissement et chaque requête d'un restaurant dont la licence est expirée ou qui est suspendu (la période de grâce reste accessible).
 - **Réglages** : `SettingsEngine` (sections JSON validées par Zod, défauts + fusion profonde). Restaurant → table `Setting` (sous RLS) ; plateforme → `PlatformSetting`.
   Les URL des logos ne sont jamais saisies : elles viennent des routes d'envoi.
 - **Thème** : couleurs de texte lisibles (contraste WCAG) et variables CSS calculées dans `packages/utils`, partagées par l'API, le web et le mobile.
 - **Fichiers** : `StorageService` (disque, interchangeable) ; validation par signature binaire.
+- **Données personnelles** : durées de conservation et purge nocturne (`RetentionService`, registre dans `docs/API.md`) ; journaux d'audit consultables
+  (`/tenant/audit-logs`, `/platform/audit-logs`).
+- **Vérifications automatiques** : couverture RLS de chaque table à `tenantId` (`test/rls.e2e-spec.ts`), parcours anti-IDOR de toutes les routes
+  (`test/idor.e2e-spec.ts`), suite e2e complète sous rôle non superuser (`scripts/dev/test-rls.sh`), audit des dépendances (`scripts/ci/audit.mjs`), en CI.

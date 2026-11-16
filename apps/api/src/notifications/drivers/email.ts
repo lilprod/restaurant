@@ -1,9 +1,10 @@
 import { Logger } from "@nestjs/common";
+import { maskEmail } from "@restaurant/utils";
 import { createTransport, type Transporter } from "nodemailer";
 import type { Env } from "../../config/env";
 import type { EmailDriver, EmailMessage } from "./types";
 
-/** Pilote par défaut : journalise et garde les derniers messages en mémoire (tests, développement). */
+/** Pilote par défaut : journalise (adresse masquée, contenu seulement hors production) et garde les derniers messages en mémoire (tests, développement). */
 export class LogEmailDriver implements EmailDriver {
   readonly name = "log";
   private readonly log = new Logger("Mail");
@@ -12,7 +13,7 @@ export class LogEmailDriver implements EmailDriver {
   async send(msg: EmailMessage): Promise<void> {
     this.outbox.push(msg);
     if (this.outbox.length > 100) this.outbox.shift();
-    this.log.log(`→ ${msg.to} · ${msg.subject}`);
+    this.log.log(`→ ${maskEmail(msg.to)} · ${msg.subject}`);   // pas d'adresse en clair dans les journaux
     if (process.env.NODE_ENV !== "production") this.log.debug(msg.text);
   }
 }

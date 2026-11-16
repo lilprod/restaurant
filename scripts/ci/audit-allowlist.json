@@ -1,0 +1,10 @@
+{
+  "GHSA-7mvr-c777-76hp": {
+    "reason": "playwright (outil de captures et tests web, jamais en production) ; la mise à jour impose de retélécharger les navigateurs",
+    "until": "2027-02-01"
+  },
+  "GHSA-mrhx-c7xc-m3w5": {
+    "reason": "zod 3 (corrigé seulement en zod 4, migration majeure) ; corps JSON limités à 100 Ko par Express, ce qui borne les collections validées",
+    "until": "2027-02-01"
+  }
+}

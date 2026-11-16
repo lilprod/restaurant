@@ -36,7 +36,7 @@ export class SessionService {
         expiresAt: new Date(Date.now() + sessionDays * 86_400_000),
       },
     });
-    return { sessionId: row.id, refreshToken, accessToken: await this.signAccess(acc, row.id), expiresIn: 900 };
+    return { sessionId: row.id, refreshToken, refreshExpiresAt: row.expiresAt, accessToken: await this.signAccess(acc, row.id), expiresIn: 900 };
   }
 
   signAccess(acc: Account, sid: string) {

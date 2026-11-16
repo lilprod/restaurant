@@ -21,6 +21,8 @@ export const loginSchema = z.object({
   password: z.string().min(1),
 });
 export const refreshSchema = z.object({ refreshToken: z.string().min(10) });
+/** Rafraîchissement / déconnexion : jeton dans le corps (mobile) ou dans le cookie HttpOnly (web, en-tête `X-Session-Transport: cookie`). */
+export const sessionTokenSchema = z.object({ refreshToken: z.string().min(10).optional() });
 
 // ── Plans ──
 export const planInputSchema = z.object({
@@ -124,3 +126,4 @@ export * from "./floor";
 export * from "./zod-fr";
 export * from "./staff";
 export * from "./customers";
+export * from "./audit";

@@ -1,4 +1,4 @@
-import { ApiClient, ApiError, memoryTokenStorage, type ClientEvent } from "@restaurant/api-client";
+import { ApiClient, ApiError, authApi, COOKIE_SESSION, memoryTokenStorage, type ClientEvent } from "@restaurant/api-client";
 import { describe, expect, it, vi } from "vitest";
 
 type Handler = (url: string, init: RequestInit) => Response | Promise<Response>;
@@ -161,5 +161,57 @@ describe("ApiClient — envoi de fichier", () => {
     expect(init.body).toBeInstanceOf(FormData);
     expect((init.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer a");
+  });
+});
+
+describe("ApiClient — jeton de rafraîchissement en cookie HttpOnly", () => {
+  /** Faux serveur « cookie » : le jeton vit côté navigateur, jamais dans le JSON. */
+  function cookieServer() {
+    let cookie: string | null = null;
+    let n = 0;
+    const seen: { path: string; headers: Record<string, string>; credentials?: RequestCredentials; body: unknown }[] = [];
+    const f = vi.fn(async (url: RequestInfo | URL, init: RequestInit = {}) => {
+      const path = String(url).replace("/api/v1", "");
+      const headers = init.headers as Record<string, string>;
+      const body = init.body ? JSON.parse(String(init.body)) : undefined;
+      seen.push({ path, headers, credentials: init.credentials, body });
+      if (path.endsWith("/auth/login") || path.endsWith("/auth/refresh")) {
+        const legacy = (body as { refreshToken?: string } | undefined)?.refreshToken;
+        if (path.endsWith("/auth/refresh") && !cookie && legacy !== "legacy-token") return json(401, { statusCode: 401, message: "Session expirée" });
+        n += 1;
+        cookie = `c${n}`;
+        return json(200, { accessToken: `access-${n}`, expiresIn: 900 });
+      }
+      if (path.endsWith("/auth/logout")) { cookie = null; return json(204, undefined); }
+      return json(200, { ok: true });
+    }) as unknown as typeof fetch;
+    return { fetch: f, seen };
+  }
+
+  it("ne stocke qu'un marqueur, envoie l'en-tête et les cookies seulement aux routes d'authentification", async () => {
+    const server = cookieServer();
+    const storage = memoryTokenStorage();
+    const client = new ApiClient({ baseUrl: "/api/v1", space: "tenant", storage, fetch: server.fetch, cookieSession: { tenantSlug: "demo" } });
+    const res = await authApi(client).login({ tenantSlug: "demo", email: "a@b.tg", password: "x" });
+    client.setSession(res as { accessToken: string });
+    expect(storage.get()).toBe(COOKIE_SESSION);
+    await client.get("/tenant/settings");
+    const [login, settings] = server.seen;
+    expect(login.headers).toMatchObject({ "X-Session-Transport": "cookie", "X-Tenant-Slug": "demo" });
+    expect(login.credentials).toBe("include");
+    expect(settings.headers["X-Session-Transport"]).toBeUndefined();
+    expect(settings.credentials).toBeUndefined();
+  });
+
+  it("migration douce : l'ancien jeton du stockage local est envoyé une fois puis remplacé par le marqueur", async () => {
+    const server = cookieServer();
+    const storage = memoryTokenStorage("legacy-token");
+    const client = new ApiClient({ baseUrl: "/api/v1", space: "platform", storage, fetch: server.fetch, cookieSession: {} });
+    await client.get("/platform/tenants");
+    expect(server.seen[0]).toMatchObject({ path: "/platform/auth/refresh", body: { refreshToken: "legacy-token" } });
+    expect(storage.get()).toBe(COOKIE_SESSION);
+    await client.logout();
+    expect(server.seen.at(-1)).toMatchObject({ path: "/platform/auth/logout", body: {}, credentials: "include" });
+    expect(storage.get()).toBeNull();
   });
 });

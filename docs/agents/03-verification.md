@@ -11,13 +11,14 @@ pnpm test            # unitaires API (Jest) + web (Vitest)
 pnpm --filter api test:e2e                       # e2e API sur PostgreSQL (migrations appliquées à la base de test)
 ```
 
-Si le sous-projet touche l'API ou le schéma, rejouez aussi l'e2e **sous RLS** (rôle non superuser) :
+Si le sous-projet touche l'API ou le schéma, rejouez aussi **toute** la suite e2e **sous RLS** (rôle non superuser `app_rls`) :
 ```bash
-psql postgresql://app:app@localhost:5433/restaurant_test -qc "GRANT ALL ON ALL TABLES IN SCHEMA public TO app_rls"
-psql postgresql://app:app@localhost:5433/restaurant_test -qf apps/api/prisma/sql/rls.sql
-cd apps/api && TEST_DATABASE_URL=postgresql://app_rls:rls@localhost:5433/restaurant_test \
-  npx jest --config test/jest-e2e.json --runInBand test/platform test/security test/restaurant test/<votre-domaine>
+bash scripts/dev/test-rls.sh                 # migrations, rôle + droits, rls.sql, puis toute la suite sous app_rls
+bash scripts/dev/test-rls.sh test/staff      # pendant le travail : seulement vos fichiers
 ```
+`test/rls.e2e-spec.ts` échoue si une table portant `tenantId` n'a pas sa politique dans `rls.sql` (exemptions justifiées dans le test),
+et `test/idor.e2e-spec.ts` parcourt toutes les routes déclarées (sans jeton → 401 ; identifiants d'un autre restaurant → jamais 2xx ;
+compte client → 403 sur les routes du personnel). Une nouvelle route ou table y est couverte automatiquement.
 Lancez la suite e2e **deux fois** : elle doit être stable (pas de dépendance à l'ordre, à l'heure ou à l'aléatoire).
 
 ## 2. Contrôles fonctionnels
@@ -50,7 +51,7 @@ Lancez la suite e2e **deux fois** : elle doit être stable (pas de dépendance �
 - Temps réel / tâches planifiées / notifications : événements et déclencheurs
 
 ### 2. Vérifications (commandes exécutées et résultats chiffrés)
-- pnpm lint : … · pnpm build : … · pnpm test : API x/x, web y/y · e2e : n/n (deux exécutions) · e2e sous RLS : n/n
+- pnpm lint : … · pnpm build : … · pnpm test : API x/x, web y/y · e2e : n/n (deux exécutions) · e2e sous RLS (`scripts/dev/test-rls.sh`) : n/n
 - Parcours testés dans le navigateur : …
 - Captures : chemins absolus des plus représentatives
 
