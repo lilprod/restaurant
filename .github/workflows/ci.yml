@@ -74,9 +74,8 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter web... lint
-      - run: pnpm --filter web... test
-      - run: pnpm --filter web build
+      # turbo respecte « ^build » : les paquets partagés (types dans dist) sont compilés avant le lint et les tests du web
+      - run: pnpm turbo run lint test build --filter=web...
 
   # Déploiement : analyse statique des scripts et Dockerfiles, mise en service de la base, sauvegarde / restauration réelles.
   ops:
