@@ -1,5 +1,6 @@
 import { orderLines } from "@/lib/order-lines";
 import { useQuery } from "@tanstack/react-query";
+import QRCode from "qrcode";
 import { ArrowLeft, Printer } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,9 @@ export function TicketPage() {
   const to = useSpacePath();
   const q = useQuery({ queryKey: tenantKeys.receipt(t.root, id ?? ""), queryFn: () => t.api.orders.receipt(id!), enabled: !!id });
   const r = q.data;
+  // P2C : lien de suivi (stable : réimprimer ne change pas le lien) affiché en QR sur le ticket.
+  const link = useQuery({ queryKey: [...tenantKeys.receipt(t.root, id ?? ""), "tracking"], queryFn: () => t.api.orders.trackingLink(id!), enabled: !!id && !!r, staleTime: Infinity });
+  const qr = useQuery({ queryKey: ["qr", link.data?.url], queryFn: () => QRCode.toString(link.data!.url, { type: "svg", margin: 0, errorCorrectionLevel: "M" }), enabled: !!link.data, staleTime: Infinity });
 
   return (
     <div className="flex flex-col items-center gap-6">
@@ -83,6 +87,15 @@ export function TicketPage() {
                 </div>
               ))}
               {r.order.remaining > 0 && <Row label="Reste à payer" value={n(r.order.remaining)} bold />}
+            </>
+          )}
+          {qr.data && (
+            <>
+              <Rule />
+              <div className="flex flex-col items-center gap-1.5 text-center" data-testid="ticket-qr">
+                <img alt="QR code du suivi de commande" src={`data:image/svg+xml;utf8,${encodeURIComponent(qr.data)}`} className="size-28 bg-white p-1" />
+                <p className="text-[11px]">Suivez votre commande et donnez votre avis : scannez ce code.</p>
+              </div>
             </>
           )}
           <Rule />

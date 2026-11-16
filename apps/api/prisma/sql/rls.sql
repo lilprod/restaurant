@@ -271,6 +271,12 @@ DROP POLICY IF EXISTS tenant_isolation ON "Feedback";
 CREATE POLICY tenant_isolation ON "Feedback"
   USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
 
+ALTER TABLE "EmailVerification" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "EmailVerification" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "EmailVerification";
+CREATE POLICY tenant_isolation ON "EmailVerification"
+  USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
+
 ALTER TABLE "AuditLog" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "AuditLog" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON "AuditLog";

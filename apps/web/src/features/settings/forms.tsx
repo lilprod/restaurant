@@ -265,6 +265,11 @@ export function OperationsForm({ adapter }: { adapter: SettingsAdapter }) {
           <S form={form} name="deliveryEnabled" label="Livraison" description="Zones et frais de livraison arrivent avec le module commandes." />
         </div>
       </SettingsSection>
+      <SettingsSection title="Avis des clients">
+        <div className="divide-y divide-border">
+          <S form={form} name="publicReviews" label="Afficher les avis sur la carte publique" description="La moyenne et les avis publiés (hors avis masqués) sont visibles de tous. Vous gardez la modération depuis l'écran Avis." />
+        </div>
+      </SettingsSection>
     </SectionShell>
   );
 }

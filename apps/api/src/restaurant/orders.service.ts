@@ -8,6 +8,7 @@ import type { CreateOrderInput, ListOrdersQuery, OrderItemInput, OrderPaymentInp
 import { StockEffects, StockService } from "../inventory/stock.service";
 import { Clock } from "../common/clock";
 import { PrismaService, Tx } from "../prisma/prisma.service";
+import { NotificationsService } from "../notifications/notifications.service";
 import { RealtimeService } from "../realtime/realtime.service";
 import type { Account } from "../security/accounts.repo";
 import { TenantSettingsService } from "../settings/tenant-settings.service";
@@ -71,6 +72,7 @@ export class OrdersService {
     private readonly realtime: RealtimeService,
     private readonly stock: StockService,
     private readonly clock: Clock,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private async ops(tenantId: string): Promise<Ops> {
@@ -147,7 +149,7 @@ export class OrdersService {
       const order = await tx.order.create({
         data: {
           tenantId, number: counter.nextOrderNumber - 1, type: input.type, tableId: input.type === "DINE_IN" ? input.tableId : null,
-          customerName: input.customerName, notes: input.notes, waiterId: acc.id, reservationId: input.reservationId ?? null,
+          customerName: input.customerName, customerPhone: input.type === "TAKEAWAY" ? input.customerPhone : undefined, notes: input.notes, waiterId: acc.id, reservationId: input.reservationId ?? null,
         },
       });
       await this.insertLines(tx, tenantId, order.id, lines);
@@ -403,18 +405,42 @@ export class OrdersService {
     const ops = await this.ops(tenantId);
     let tableChanged = false;
     let stock: void | StockEffects = undefined;
+    let ready: { id: string; number: number; customerName: string | null; customerPhone: string | null; customerId: string | null } | null = null;
     const view = await this.prisma.asTenant(tenantId, async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} AND "tenantId" = ${tenantId} FOR UPDATE`;
       const o = await this.load(tx, tenantId, orderId);
+      const before = o.status;
       stock = await fn(tx, o, tenantId);
       await this.recompute(tx, o.id, ops);
       tableChanged = await this.tables.syncStatus(tx, o.tableId);
-      return orderView(await this.load(tx, tenantId, o.id));
+      const fresh = await this.load(tx, tenantId, o.id);
+      // P2C : une commande à emporter qui devient prête prévient le client par SMS (une seule fois).
+      if (fresh.type === "TAKEAWAY" && fresh.status === "READY" && before !== "READY") {
+        ready = { id: fresh.id, number: fresh.number, customerName: fresh.customerName, customerPhone: fresh.customerPhone, customerId: fresh.customerId };
+      }
+      return orderView(fresh);
     });
     this.realtime.emit(tenantId, "order.updated", view);
+    if (ready) await this.notifyReady(tenantId, ready);
     if (tableChanged && view.table) await this.tables.broadcast(tenantId, view.table.id);
     await this.stock.publish(tenantId, stock);
     return view;
+  }
+
+  /** SMS « commande prête » : réglage du restaurant (canal SMS, événement `orderReady`) et préférence du client respectés. */
+  private async notifyReady(tenantId: string, o: { id: string; number: number; customerName: string | null; customerPhone: string | null; customerId: string | null }) {
+    try {
+      let phone = o.customerPhone;
+      let name = o.customerName;
+      if (o.customerId) {
+        const u = await this.prisma.asTenant(tenantId, (tx) => tx.user.findFirst({ where: { id: o.customerId!, tenantId }, select: { phone: true, firstName: true, notificationPrefs: true } }));
+        if ((u?.notificationPrefs as { orderReadySms?: boolean } | null)?.orderReadySms === false) return;
+        phone ??= u?.phone ?? null;
+        name ??= u?.firstName ?? null;
+      }
+      if (!phone) return;
+      await this.notifications.send({ channel: "SMS", to: phone, template: "order.ready", data: { number: o.number, name: name ?? undefined }, tenantId, dedupeKey: `order-ready:${o.id}` });
+    } catch { /* un SMS qui échoue ne doit jamais faire échouer l'action en cuisine */ }
   }
 
   /** Totaux, statut et état de paiement ; clôture quand tout est servi et réglé (réouverture après remboursement). */

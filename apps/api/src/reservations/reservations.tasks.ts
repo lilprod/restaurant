@@ -65,6 +65,14 @@ export class ReservationsTasks {
         await this.prisma.asTenant(r.tenantId, (tx) => tx.reservation.update({ where: { id: r.id }, data: { reminderSentAt: now } }));
         continue;
       }
+      // Espace client : le client peut avoir désactivé les rappels.
+      if (r.customerId) {
+        const u = await this.prisma.asTenant(r.tenantId, (tx) => tx.user.findFirst({ where: { id: r.customerId!, tenantId: r.tenantId }, select: { notificationPrefs: true } }));
+        if ((u?.notificationPrefs as { reservationReminders?: boolean } | null)?.reservationReminders === false) {
+          await this.prisma.asTenant(r.tenantId, (tx) => tx.reservation.update({ where: { id: r.id }, data: { reminderSentAt: now } }));
+          continue;
+        }
+      }
       const results = await this.reservations.notify(r.tenant, r, "reservation.reminder", {}, `reservation:${r.id}:reminder:${r.startsAt.toISOString()}`);
       // marqué même sans coordonnées ou canal désactivé : on ne réessaie pas toutes les 5 minutes
       await this.prisma.asTenant(r.tenantId, (tx) => tx.reservation.update({ where: { id: r.id }, data: { reminderSentAt: now } }));

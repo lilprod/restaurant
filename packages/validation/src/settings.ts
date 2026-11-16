@@ -91,6 +91,8 @@ export const operationsSchema = z.object({
   maxPartySize: z.number().int().min(1).max(100),
   takeawayEnabled: z.boolean(),
   deliveryEnabled: z.boolean(),
+  /** P2C : moyenne et avis des clients affichés sur la carte publique. */
+  publicReviews: z.boolean().optional(),
 });
 
 export const localizationSchema = z.object({

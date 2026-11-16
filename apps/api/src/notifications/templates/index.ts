@@ -1,4 +1,5 @@
 import { passwordReset, type PasswordResetData } from "./auth";
+import { customerVerifyEmail, orderReady, type OrderReadyData, type VerifyEmailData } from "./customer";
 import { generic, type GenericData } from "./generic";
 import { licenseReminder, type LicenseReminderData } from "./license";
 import {
@@ -32,6 +33,8 @@ export interface TemplateDataMap {
   "reservation.reminder": ReservationData;
   "waitlist.available": WaitlistAvailableData;
   "staff.planning-published": PlanningPublishedData;
+  "customer.verify-email": VerifyEmailData;
+  "order.ready": OrderReadyData;
 }
 export type TemplateName = keyof TemplateDataMap;
 
@@ -49,6 +52,8 @@ export const TEMPLATES: { [K in TemplateName]: TemplateDef<TemplateDataMap[K]> }
   "reservation.reminder": reservationReminder,
   "waitlist.available": waitlistAvailable,
   "staff.planning-published": planningPublished,
+  "customer.verify-email": customerVerifyEmail,
+  "order.ready": orderReady,
 };
 
 export { renderEmail } from "./layout";

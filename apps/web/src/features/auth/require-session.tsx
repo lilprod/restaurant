@@ -27,6 +27,8 @@ export function RequireSession({ children }: { children: React.ReactNode }) {
   if (session.blocked) return <LicenseBlockedScreen error={session.blocked} />;
   if (session.status === "loading") return <FullScreenLoader />;
   if (session.status === "anonymous") return <Navigate to={to("/login")} replace state={{ from: location.pathname + location.search }} />;
+  // Un client n'a pas accès à l'espace du personnel : son espace est /compte.
+  if (session.space === "tenant" && session.user?.role === "CUSTOMER") return <Navigate to={to("/compte")} replace />;
   if (session.restriction === "pwd-change") return <ForcePasswordChange />;
   if (session.restriction === "2fa-setup") return <ForceTwoFactorSetup />;
   return <>{children}</>;

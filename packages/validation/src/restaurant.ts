@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizePhone } from "@restaurant/utils";
 
 /** Schémas de la phase 1 : équipe, tables, menu, commandes, encaissement, caisse. */
 
@@ -157,6 +158,8 @@ export const createOrderSchema = z
     /** P2A : commande ouverte depuis une réservation installée (la table doit être l'une des siennes). */
     reservationId: uuid.optional(),
     customerName: optText(60),
+    /** À emporter : téléphone pour le SMS « commande prête ». */
+    customerPhone: z.string().trim().max(25).refine((v) => v === "" || !!normalizePhone(v), "Numéro de téléphone invalide").optional().transform((v) => (v ? v : undefined)),
     notes: optText(300),
     items: z.array(orderItemInputSchema).min(1).max(100),
   })

@@ -1,5 +1,5 @@
 import {
-  accountApi, ApiClient, authApi, localStorageTokenStorage, memoryTokenStorage, platformApi, publicApi, tenantApi,
+  accountApi, ApiClient, authApi, customerApi, localStorageTokenStorage, memoryTokenStorage, platformApi, publicApi, tenantApi,
 } from "@restaurant/api-client";
 
 /** Préfixe de l'API : proxy Vite en développement, ou URL absolue via VITE_API_URL. */
@@ -23,7 +23,7 @@ export type PlatformSpace = typeof platformSpace;
 const tenantSpaces = new Map<string, ReturnType<typeof makeTenantSpace>>();
 function makeTenantSpace(slug: string) {
   const client = new ApiClient({ baseUrl: API_BASE, space: "tenant", storage: localStorageTokenStorage(STORAGE_KEYS.tenantRefresh(slug)) });
-  return { ...makeSpace(client), api: tenantApi(client), slug };
+  return { ...makeSpace(client), api: tenantApi(client), customer: customerApi(client), slug };
 }
 /** Un client par restaurant (une session par sous-domaine). */
 export function getTenantSpace(slug: string) {

@@ -2,7 +2,7 @@ import type { PublicMenuItem } from "@restaurant/api-client";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, Clock, Star, TriangleAlert } from "lucide-react";
 import * as React from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { publicSpace } from "@/app/spaces";
 import { BrandMark } from "@/components/brand-mark";
 import { DishImage } from "@/components/dish-image";
@@ -16,7 +16,9 @@ import { cn } from "@/lib/cn";
 import { formatFcfa } from "@/lib/format";
 import { resolveFromWindow } from "@/lib/tenant-slug";
 import { useBranding } from "@/providers/branding";
+import { useSpacePath } from "@/providers/space";
 import { groupRuleLabel } from "../tenant/pos/cart";
+import { Stars } from "../customer/stars";
 
 /** Carte publique (sans connexion) : aux couleurs du restaurant, pensée pour le téléphone et les réseaux lents. */
 export function PublicMenuPage() {
@@ -58,6 +60,13 @@ export function PublicMenuPage() {
             <div>
               <h1 className="font-brand text-[28px] font-semibold leading-tight tracking-tight sm:text-[34px]">{branding?.displayName ?? q.data?.restaurant.name}</h1>
               {branding?.tagline && <p className="mt-1 text-[15px] text-muted-foreground">{branding.tagline}</p>}
+              {q.data?.reviews && q.data.reviews.count > 0 && q.data.reviews.average !== null && (
+                <a href="#avis" className="mt-2 inline-flex items-center gap-2 rounded text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="menu-rating">
+                  <Stars value={q.data.reviews.average} size={16} />
+                  <span className="font-mono font-medium tabular-nums">{q.data.reviews.average.toLocaleString("fr-FR")}</span>
+                  <span className="text-muted-foreground">({q.data.reviews.count} avis)</span>
+                </a>
+              )}
             </div>
           </div>
           <ThemeToggleButton />
@@ -158,6 +167,7 @@ export function PublicMenuPage() {
           </section>
         ))}
         </>}
+        {!!q.data?.reviews?.count && <PublicReviewsSection slug={slug} />}
         <footer className="border-t border-border pt-6 text-center text-[13px] text-muted-foreground">
           Prix TTC en FCFA. Une allergie ? Signalez-la à notre équipe avant de commander.
         </footer>
@@ -190,5 +200,27 @@ export function PublicMenuPage() {
         )}
       </Dialog>
     </div>
+  );
+}
+
+/** Avis publiés (si le restaurant a activé l'affichage) : derniers avis et réponses du restaurant. */
+function PublicReviewsSection({ slug }: { slug: string }) {
+  const to = useSpacePath();
+  const q = useQuery({ queryKey: ["public", "reviews", slug], queryFn: () => publicSpace.reviews(slug, { pageSize: 5 }), staleTime: 60_000 });
+  if (!q.data?.enabled || q.data.items.length === 0) return null;
+  return (
+    <section id="avis" className="scroll-mt-20 pb-8 pt-4" aria-label="Avis des clients">
+      <h2 className="font-brand text-xl font-semibold tracking-tight">Avis des clients</h2>
+      <ul className="mt-4 flex flex-col gap-3">
+        {q.data.items.map((r) => (
+          <li key={r.id} className="flex flex-col gap-2 rounded-lg border border-border bg-card p-4">
+            <div className="flex items-center justify-between gap-3"><Stars value={r.rating} size={15} /><span className="text-[13px] text-muted-foreground">{r.author}</span></div>
+            {r.comment && <p className="text-sm">{r.comment}</p>}
+            {r.reply && <p className="rounded-md border-l-2 border-brand bg-subtle px-3 py-2 text-[13px]"><span className="font-medium">Réponse du restaurant : </span>{r.reply}</p>}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-4 text-sm text-muted-foreground"><Link to={to("/compte")} className="underline-offset-4 hover:underline">Mon compte</Link> · <Link to={to("/reserver")} className="underline-offset-4 hover:underline">Réserver une table</Link></p>
+    </section>
   );
 }

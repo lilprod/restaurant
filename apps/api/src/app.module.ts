@@ -17,6 +17,7 @@ import { RestaurantModule } from "./restaurant/restaurant.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { ReservationsModule } from "./reservations/reservations.module";
 import { StaffModule } from "./staff/staff.module";
+import { CustomersModule } from "./customers/customers.module";
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { StaffModule } from "./staff/staff.module";
     InventoryModule,
     ReservationsModule,
     StaffModule,
+    CustomersModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

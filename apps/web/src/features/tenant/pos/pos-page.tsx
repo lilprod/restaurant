@@ -76,6 +76,7 @@ export function PosPage() {
   const [type, setType] = React.useState<"DINE_IN" | "TAKEAWAY">(params.get("type") === "TAKEAWAY" ? "TAKEAWAY" : "DINE_IN");
   const [tableId, setTableId] = React.useState<string | null>(params.get("table"));
   const [customer, setCustomer] = React.useState("");
+  const [customerPhone, setCustomerPhone] = React.useState("");
   const [notes, setNotes] = React.useState("");
   const [category, setCategory] = React.useState<string>("");
   const [search, setSearch] = React.useState("");
@@ -127,7 +128,7 @@ export function PosPage() {
         return { order: await t.api.orders.addItems(orderId!, body.items), added: cartCount(lines) };
       }
       const parsed = createOrderSchema.safeParse({
-        type, tableId: type === "DINE_IN" ? table?.id : undefined, reservationId: type === "DINE_IN" && table ? params.get("reservation") ?? undefined : undefined, customerName: type === "TAKEAWAY" ? customer : undefined, notes, items,
+        type, tableId: type === "DINE_IN" ? table?.id : undefined, reservationId: type === "DINE_IN" && table ? params.get("reservation") ?? undefined : undefined, customerName: type === "TAKEAWAY" ? customer : undefined, customerPhone: type === "TAKEAWAY" ? customerPhone : undefined, notes, items,
       });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Commande incomplète");
       return { order: await t.api.orders.create(parsed.data), added: cartCount(lines) };
@@ -177,7 +178,10 @@ export function PosPage() {
                 <LayoutGrid /> {table ? <>Table <span className="font-mono">{table.label}</span></> : <><span className="sm:hidden">Table</span><span className="hidden sm:inline">Choisir la table</span></>}
               </Button>
             ) : (
+              <>
               <Input aria-label="Nom du client" placeholder="Nom du client" value={customer} onChange={(e) => setCustomer(e.target.value)} maxLength={60} className="min-w-0 basis-full sm:basis-auto sm:w-48" />
+              <Input aria-label="Téléphone du client (SMS « commande prête »)" placeholder="Téléphone (SMS prête)" type="tel" inputMode="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={25} className="min-w-0 basis-full sm:basis-auto sm:w-48" />
+              </>
             )}
           </div>
         )}

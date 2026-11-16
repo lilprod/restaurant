@@ -188,7 +188,7 @@ function KdsHeader({ counts, now, filter, setFilter, sound, toggleSound, openSol
             <DropdownMenuItem onSelect={() => navigate(to("/commandes"))}><ClipboardList /> Commandes</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => navigate(to("/menu"))}><UtensilsCrossed /> {t.isManager ? "Menu" : "Disponibilités"}</DropdownMenuItem>
             {t.isManager && <DropdownMenuItem onSelect={() => navigate(to("/"))}><ChefHat /> Tableau de bord</DropdownMenuItem>}
-            <DropdownMenuItem onSelect={() => navigate(to("/compte"))}><UserRound /> Mon compte</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => navigate(to("/mon-compte"))}><UserRound /> Mon compte</DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => void session.logout()}><LogOut /> Se déconnecter</DropdownMenuItem>
           </DropdownMenuContent>

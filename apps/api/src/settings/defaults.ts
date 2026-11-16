@@ -33,6 +33,7 @@ export const DEFAULT_OPERATIONS: OperationsInput = {
   maxPartySize: 20,
   takeawayEnabled: true,
   deliveryEnabled: false,
+  publicReviews: false,
 };
 
 export const DEFAULT_LOCALIZATION: LocalizationInput = {
@@ -50,7 +51,7 @@ export const defaultBranding = (displayName: string) => ({ displayName, theme: {
 
 export const DEFAULT_NOTIFICATIONS: NotificationsSettingsInput = {
   channels: { email: true, sms: false },
-  events: { licenseReminders: true, reservations: true, reservationReminders: true, waitlist: true },
+  events: { licenseReminders: true, reservations: true, reservationReminders: true, waitlist: true, orderReady: true },
 };
 
 export const DEFAULT_RESERVATIONS: ReservationsSettingsInput = {

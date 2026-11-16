@@ -8,6 +8,7 @@ import type {
   PublicUpdateReservationInput, ReservationsSettingsInput, UpdateReservationInput, WaitlistInput,
   AbsenceDecisionInput, AbsenceInput, AttendanceCorrectionInput, AttendanceCreateInput, CopyWeekInput, KioskCodeInput, KioskPunchInput, PublishWeekInput,
   ShiftInput, ShiftUpdate, StaffProfileInput, StaffSettingsInput,
+  CustomerProfileInput, CustomerSignupInput, ListReviewsQuery, NotificationPrefs, ReviewInput,
 } from "@restaurant/validation";
 import type { ApiClient } from "./client";
 import type {
@@ -24,6 +25,7 @@ import type {
   PublicReservationCreated, Reservation, ReservationsQuery, WaitlistEntry, WaitlistStatus,
   Attendance, ChatChannel, ChatMessage, KioskPerson, LeaveBalance, MyAttendance, Payroll, Performance, PlanningAbsence, Planning, Shift, StaffFile,
   AbsenceStatus, PunchAction,
+  CustomerExport, CustomerOrder, CustomerProfile, CustomerReservation, OrderTracking, PublicReviews, Review, ReviewStats,
 } from "./types";
 
 const enc = encodeURIComponent;
@@ -78,6 +80,35 @@ export function publicApi(c: ApiClient) {
     reservation: (token: string) => c.get<PublicReservation>(`/public/reservations/${enc(token)}`, { auth: false }),
     updateReservation: (token: string, body: PublicUpdateReservationInput) => c.patch<PublicReservation>(`/public/reservations/${enc(token)}`, body, { auth: false }),
     cancelReservation: (token: string) => c.delete<PublicReservation>(`/public/reservations/${enc(token)}`, { auth: false }),
+    // ── P2C : espace client (sans compte) ──
+    signup: (slug: string, body: CustomerSignupInput) => c.post<{ id: string; email: string; emailVerificationSent: boolean }>(`/public/tenants/${enc(slug)}/customers`, body, { auth: false }),
+    /** Statut d'une commande par le lien du ticket (à interroger régulièrement). */
+    tracking: (token: string) => c.get<OrderTracking>(`/public/tracking/${enc(token)}`, { auth: false }),
+    trackingReview: (token: string, body: ReviewInput) => c.post<OrderTracking>(`/public/tracking/${enc(token)}/review`, body, { auth: false }),
+    reviews: (slug: string, q: { page?: number; pageSize?: number } = {}) =>
+      c.get<PublicReviews>(`/public/tenants/${enc(slug)}/reviews`, { auth: false, query: { ...(q.page ? { page: String(q.page) } : {}), ...(q.pageSize ? { pageSize: String(q.pageSize) } : {}) } }),
+  };
+}
+
+/** Espace du client connecté (jeton du restaurant, rôle CUSTOMER). */
+export function customerApi(c: ApiClient) {
+  const p = "/tenant/customer";
+  return {
+    profile: () => c.get<CustomerProfile>(`${p}/profile`),
+    updateProfile: (body: CustomerProfileInput) => c.patch<CustomerProfile>(`${p}/profile`, body),
+    setPreferences: (body: NotificationPrefs) => c.put<CustomerProfile>(`${p}/notification-prefs`, body),
+    sendVerification: () => c.post<{ alreadyVerified: boolean; sent?: boolean }>(`${p}/verify-email/send`),
+    verifyEmail: (code: string) => c.post<{ verified: true; reservationsLinked: number }>(`${p}/verify-email`, { code }),
+    export: () => c.get<CustomerExport>(`${p}/export`),
+    deleteAccount: (password: string) => c.post<{ deleted: true }>(`${p}/delete`, { password }),
+    reservations: () => c.get<CustomerReservation[]>(`${p}/reservations`),
+    reservationAvailability: (id: string, q: { date: string; partySize: number }) =>
+      c.get<PublicAvailability>(`${p}/reservations/${enc(id)}/availability`, { query: { date: q.date, partySize: String(q.partySize) } }),
+    updateReservation: (id: string, body: PublicUpdateReservationInput) => c.patch<CustomerReservation>(`${p}/reservations/${enc(id)}`, body),
+    cancelReservation: (id: string) => c.post<CustomerReservation>(`${p}/reservations/${enc(id)}/cancel`),
+    orders: () => c.get<CustomerOrder[]>(`${p}/orders`),
+    claimOrder: (token: string) => c.post<{ orderId: string; number: number }>(`${p}/orders/claim`, { token }),
+    reviewOrder: (orderId: string, body: ReviewInput) => c.post<CustomerOrder>(`${p}/orders/${enc(orderId)}/review`, body),
   };
 }
 
@@ -278,6 +309,17 @@ export function tenantApi(c: ApiClient) {
       cancel: (id: string, reason: string) => c.post<Order>(`/tenant/orders/${enc(id)}/cancel`, { reason }),
       pay: (id: string, body: OrderPaymentInput) => c.post<OrderPaymentResult>(`/tenant/orders/${enc(id)}/payments`, body),
       refund: (id: string, paymentId: string, reason: string) => c.post<Order>(`/tenant/orders/${enc(id)}/payments/${enc(paymentId)}/refund`, { reason }),
+      /** P2C : lien de suivi à imprimer sur le ticket (stable). */
+      trackingLink: (id: string) => c.get<{ token: string; url: string }>(`/tenant/orders/${enc(id)}/tracking-link`),
+    },
+    /** P2C : avis des clients (responsables). */
+    reviews: {
+      list: (q: Partial<ListReviewsQuery> = {}) => c.get<Paginated<Review>>("/tenant/reviews", { query: Object.fromEntries(Object.entries(q).filter(([, v]) => v !== undefined && v !== "all" && v !== false).map(([k, v]) => [k, String(v)])) }),
+      stats: () => c.get<ReviewStats>("/tenant/reviews/stats"),
+      hide: (id: string) => c.post<Review>(`/tenant/reviews/${enc(id)}/hide`),
+      unhide: (id: string) => c.post<Review>(`/tenant/reviews/${enc(id)}/unhide`),
+      reply: (id: string, text: string) => c.put<Review>(`/tenant/reviews/${enc(id)}/reply`, { text }),
+      deleteReply: (id: string) => c.delete<Review>(`/tenant/reviews/${enc(id)}/reply`),
     },
     /** Écran cuisine : commandes ouvertes avec des articles à préparer ou prêts (les plus anciennes d'abord). */
     kitchen: () => c.get<Order[]>("/tenant/kitchen"),
@@ -416,6 +458,7 @@ export function tenantApi(c: ApiClient) {
 export type AuthApi = ReturnType<typeof authApi>;
 export type AccountApi = ReturnType<typeof accountApi>;
 export type PublicApi = ReturnType<typeof publicApi>;
+export type CustomerApi = ReturnType<typeof customerApi>;
 export type PlatformApi = ReturnType<typeof platformApi>;
 export type TenantApi = ReturnType<typeof tenantApi>;
 export type { AccountSummary };

@@ -154,6 +154,9 @@ model User {
   isActive           Boolean   @default(true)
   locale             String    @default("fr")
   consentAt          DateTime?
+  emailVerifiedAt    DateTime? // espace client : email confirmé par code (rattachement des réservations)
+  notificationPrefs  Json? // espace client : { reservationReminders, orderReadySms }
+  anonymizedAt       DateTime? // espace client : compte supprimé (données personnelles effacées)
   mustChangePassword Boolean   @default(false)
   passwordChangedAt  DateTime?
   failedLoginCount   Int       @default(0)
@@ -167,16 +170,17 @@ model User {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  staffProfile   StaffProfile?
-  refreshTokens  RefreshToken[]
-  reservations   Reservation[]
-  orders         Order[]         @relation("OrderCustomer")
-  servedOrders   Order[]         @relation("OrderWaiter")
-  feedbacks      Feedback[]
-  waitlist       WaitlistEntry[]
-  sentMessages   Message[]
-  auditLogs      AuditLog[]
-  passwordResets PasswordReset[]
+  staffProfile       StaffProfile?
+  refreshTokens      RefreshToken[]
+  reservations       Reservation[]
+  orders             Order[]             @relation("OrderCustomer")
+  servedOrders       Order[]             @relation("OrderWaiter")
+  feedbacks          Feedback[]
+  waitlist           WaitlistEntry[]
+  sentMessages       Message[]
+  auditLogs          AuditLog[]
+  passwordResets     PasswordReset[]
+  emailVerifications EmailVerification[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -217,15 +221,15 @@ model PasswordReset {
 
 // ───────── SALLE & RÉSERVATIONS ─────────
 model FloorPlan {
-  tenantId String
-  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id       String            @id @default(uuid())
-  name     String
-  width    Int
-  height   Int
+  tenantId  String
+  tenant    Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id        String            @id @default(uuid())
+  name      String
+  width     Int
+  height    Int
   // Ordre des onglets : ordre de création.
-  createdAt DateTime         @default(now())
-  tables   RestaurantTable[]
+  createdAt DateTime          @default(now())
+  tables    RestaurantTable[]
 
   @@index([tenantId])
 }
@@ -543,30 +547,32 @@ model Promotion {
 
 // ───────── COMMANDES ─────────
 model Order {
-  tenantId      String
-  tenant        Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id            String             @id @default(uuid())
-  number        Int
-  type          OrderType
-  status        OrderStatus        @default(PENDING)
-  tableId       String?
-  reservationId String?
-  customerId    String?
-  waiterId      String?
-  notes         String?
-  customerName  String? // à emporter : nom appelé au comptoir
-  serviceCharge Int                @default(0)
-  paidAmount    Int                @default(0)
-  paymentStatus OrderPaymentStatus @default(UNPAID)
-  cancelledAt   DateTime?
-  cancelReason  String?
-  subtotal      Int                @default(0)
-  vat           Int                @default(0)
-  tip           Int                @default(0)
-  total         Int                @default(0)
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-  closedAt      DateTime?
+  tenantId       String
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id             String             @id @default(uuid())
+  number         Int
+  type           OrderType
+  status         OrderStatus        @default(PENDING)
+  tableId        String?
+  reservationId  String?
+  customerId     String?
+  waiterId       String?
+  notes          String?
+  customerName   String? // à emporter : nom appelé au comptoir
+  customerPhone  String? // à emporter : téléphone pour le SMS « commande prête »
+  trackTokenHash String?            @unique // SHA-256 du jeton du lien de suivi imprimé sur le ticket (jamais conservé en clair)
+  serviceCharge  Int                @default(0)
+  paidAmount     Int                @default(0)
+  paymentStatus  OrderPaymentStatus @default(UNPAID)
+  cancelledAt    DateTime?
+  cancelReason   String?
+  subtotal       Int                @default(0)
+  vat            Int                @default(0)
+  tip            Int                @default(0)
+  total          Int                @default(0)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  closedAt       DateTime?
 
   table       RestaurantTable? @relation(fields: [tableId], references: [id])
   reservation Reservation?     @relation(fields: [reservationId], references: [id])
@@ -1044,18 +1050,42 @@ model Message {
 
 // ───────── AVIS, AUDIT, PARAMÈTRES ─────────
 model Feedback {
-  tenantId   String
-  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id         String   @id @default(uuid())
-  orderId    String   @unique
-  customerId String
-  rating     Int
-  comment    String?
-  createdAt  DateTime @default(now())
-  order      Order    @relation(fields: [orderId], references: [id])
-  customer   User     @relation(fields: [customerId], references: [id])
+  tenantId    String
+  tenant      Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id          String    @id @default(uuid())
+  orderId     String    @unique
+  customerId  String? // null : avis laissé par le lien du ticket, sans compte
+  authorName  String? // prénom affiché publiquement
+  rating      Int
+  comment     String?
+  hiddenAt    DateTime? // modéré : masqué au public, conservé pour le restaurant
+  hiddenById  String?
+  reply       String? // réponse publique du restaurant
+  repliedAt   DateTime?
+  repliedById String?
+  createdAt   DateTime  @default(now())
+  order       Order     @relation(fields: [orderId], references: [id])
+  customer    User?     @relation(fields: [customerId], references: [id])
 
   @@index([tenantId])
+  @@index([tenantId, createdAt])
+}
+
+// Code de vérification d'email (espace client) : haché, expirant, tentatives limitées.
+model EmailVerification {
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id        String   @id @default(uuid())
+  userId    String
+  email     String
+  codeHash  String
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
 }
 
 model AuditLog {
@@ -1242,6 +1272,7 @@ model Tenant {
   channelMembers     ChannelMember[]
   messages           Message[]
   feedbacks          Feedback[]
+  emailVerifications EmailVerification[]
   auditLogs          AuditLog[]
   settings           Setting[]
 }

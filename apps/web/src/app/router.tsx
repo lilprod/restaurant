@@ -134,6 +134,10 @@ const tenantChildren: RouteObject[] = [
   // Réservation en ligne (sans compte) et gestion par lien.
   { path: "reserver", element: fullScreen(() => import("@/features/public-reservation/reserve-page"), "ReservePage") },
   { path: "reservation/:token", element: fullScreen(() => import("@/features/public-reservation/manage-page"), "ManageReservationPage") },
+  // Espace client : compte (connexion, inscription, réservations, avis), suivi de commande et avis par le lien du ticket.
+  { path: "compte", element: fullScreen(() => import("@/features/customer/account-page"), "CustomerAccountPage") },
+  { path: "suivi/:token", element: fullScreen(() => import("@/features/customer/tracking-page"), "TrackingPage") },
+  { path: "avis/:token", element: fullScreen(() => import("@/features/customer/review-page"), "ReviewPage") },
   {
     // Espace connecté : une seule connexion temps réel partagée par la coquille et les écrans plein écran.
     element: (
@@ -155,6 +159,7 @@ const tenantChildren: RouteObject[] = [
           { path: "commandes/:id/encaisser", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/checkout/checkout-page"), "CheckoutPage")) },
           { path: "commandes/:id/ticket", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/orders/ticket-page"), "TicketPage")) },
           { path: "reservations", element: lazyPage(() => import("@/features/tenant/reservations/reservations-page"), "ReservationsPage") },
+          { path: "avis", element: gate(MANAGERS, lazyPage(() => import("@/features/tenant/reviews/reviews-page"), "ReviewsPage")) },
           { path: "plan-de-salle", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/floor/floor-service-page"), "FloorServicePage")) },
           { path: "plan-de-salle/editeur", element: gate(MANAGERS, lazyPage(() => import("@/features/tenant/floor/floor-editor-page"), "FloorEditorPage")) },
           { path: "tables", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/tables/tables-page"), "TablesPage")) },
@@ -171,7 +176,7 @@ const tenantChildren: RouteObject[] = [
           { path: "parametres", element: lazyPage(() => import("@/features/tenant/settings-page"), "TenantSettingsPage") },
           { path: "securite", element: lazyPage(() => import("@/features/tenant/security-page"), "TenantSecurityPage") },
           { path: "licence", element: lazyPage(() => import("@/features/tenant/license-page"), "TenantLicensePage") },
-          { path: "compte", element: lazyPage(() => import("@/features/account/account-page"), "AccountPage") },
+          { path: "mon-compte", element: lazyPage(() => import("@/features/account/account-page"), "AccountPage") },
           { path: "*", element: <NotFoundPage inShell /> },
         ],
       },

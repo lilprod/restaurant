@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   BookOpen, CalendarClock, CalendarDays, Package, Truck, ChefHat, ClipboardList, HandPlatter, Landmark, LayoutDashboard, LayoutGrid, Settings, ShieldCheck,
-  ShoppingBag, Map as MapIcon, SquarePlus, Users, WalletCards, Bell, CalendarRange, MessageSquare, UserCog,
+  ShoppingBag, Star, Map as MapIcon, SquarePlus, Users, WalletCards, Bell, CalendarRange, MessageSquare, UserCog,
 } from "lucide-react";
 import { motion } from "motion/react";
 import * as React from "react";
@@ -46,6 +46,7 @@ export function useTenantNav(): NavItem[] {
       stock.moduleEnabled && { to: to("/stock"), label: "Stock", icon: <Package />, keywords: ["ingrédients", "inventaire", "pertes", "alertes", "recette"], section: G },
       stock.moduleEnabled && t.isManager && { to: to("/fournisseurs"), label: "Fournisseurs", icon: <Truck />, keywords: ["achats", "réception", "commande fournisseur"], section: G },
       hr.moduleEnabled && t.isManager && { to: to("/personnel"), label: "Personnel", icon: <UserCog />, keywords: ["planning", "pointage", "paie", "heures", "performances", "absences", "fiches", "congés"], section: G },
+      t.isManager && { to: to("/avis"), label: "Avis", icon: <Star />, keywords: ["clients", "notes", "commentaires", "modération", "réponse", "satisfaction"], section: G },
       t.isManager && { to: to("/equipe"), label: "Équipe", icon: <Users />, keywords: ["personnel", "serveur", "rôle"], section: G },
       { to: to("/parametres"), label: "Paramètres", icon: <Settings />, keywords: ["marque", "logo", "tva", "réservations"], section: G },
       t.isAdmin && { to: to("/securite"), label: "Sécurité", icon: <ShieldCheck />, keywords: ["utilisateurs", "connexions"], section: G },
@@ -77,7 +78,7 @@ export function TenantShell() {
       actions={actions}
       spaceLabel="Espace restaurant"
       roleLabel={TENANT_ROLE_LABEL[user?.role ?? ""] ?? ""}
-      accountPath={to("/compte")}
+      accountPath={to("/mon-compte")}
       banner={<LicenseBanner />}
     >
       <Outlet />

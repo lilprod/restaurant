@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { Prisma } from "@prisma/client";
 import type { CategoryInput, MenuItemInput } from "@restaurant/validation";
 import { availabilityAt } from "@restaurant/utils";
+import { reviewSummary } from "../customers/review-stats";
 import { PrismaService, Tx } from "../prisma/prisma.service";
 import { RealtimeService } from "../realtime/realtime.service";
 import { MenuExtrasService } from "./menu-extras.service";
@@ -82,8 +83,12 @@ export class MenuService {
       include: { items: { where: { archivedAt: null, isAvailable: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: itemInclude } },
     }));
     const extras = await this.extras.publicExtras(tenant.id);
+    // P2C : moyenne des avis, seulement si le restaurant a activé l'affichage public.
+    const ops = (await this.settings.getSection("operations", tenant)) as { publicReviews?: boolean };
+    const reviews = ops.publicReviews ? await this.prisma.asTenant(tenant.id, (tx) => reviewSummary(tx, tenant.id, true)) : null;
     return {
       restaurant: { name: tenant.name, slug: tenant.slug, currency: tenant.currency },
+      reviews,
       categories: cats.filter((c) => c.items.length).map((c) => ({
         id: c.id, name: c.name, description: c.description,
         items: c.items.map((i) => {

@@ -547,3 +547,50 @@ Unités du plan : entiers, origine en haut à gauche, rotation en degrés (0–3
 Commande ouverte **sur place** vers une table active, non absorbée, **sans commande ouverte ni réservation installée** (409 sinon ; 404 table inconnue). Verrou sur la commande et les deux tables
 (deux transferts simultanés vers la même table : un seul aboutit). Statuts des deux tables recalculés ; si la commande vient d'une réservation **installée**, la réservation change de table
 (409 si la contrainte d'exclusion refuse, p. ex. table réservée au même moment). Audit `order.move` ; `order.updated`, `reservation.updated`, `table.updated` × 2.
+
+# P2C — Espace client (module `src/customers`)
+Comptes clients d'un restaurant (rôle `CUSTOMER`, un compte par restaurant), réservations rattachées, suivi de commande par lien de ticket, avis. Migration `customer_space`.
+**Un client ne peut appeler aucune route du personnel** : toutes les routes `/tenant/*` portent `@TenantRoles` ; le test `test/customers.e2e-spec.ts` parcourt la documentation OpenAPI et vérifie 403 sur chacune
+avec un jeton client (seules `/tenant/auth/*`, `/tenant/account/*` et `/tenant/customer/*` sont ouvertes au client). Les routes `/tenant/customer/*` sont réservées au rôle `CUSTOMER` (le personnel reçoit 403).
+
+## Sans compte — `/public` (limitation de débit par IP)
+| Méthode | Route | Limite | Description |
+|---|---|---|---|
+| POST | `/public/tenants/:slug/customers` | 5/h | `{ firstName, lastName, email, phone?, password, consent: true }` → 201 `{ id, email, emailVerificationSent }`. Politique de mot de passe du restaurant ; 409 si l'email existe déjà dans ce restaurant. Un code à 6 chiffres est envoyé par email. Connexion ensuite par `POST /tenant/auth/login` |
+| GET | `/public/tracking/:token` | 60/min | Suivi : `{ number, type, typeLabel, stage: received\|preparing\|ready\|done\|cancelled, table, items: [{name, quantity}], expiresAt, canReview, review, restaurant }`. Sans prix, nom ni téléphone. **À interroger toutes les 5 s** (pas de socket publique). 404 jeton inconnu ; **410 `TRACKING_EXPIRED`** |
+| POST | `/public/tracking/:token/review` | 10/h | `{ rating 1–5, comment?, authorName? }` → suivi mis à jour. 409 si la commande n'est pas clôturée ou déjà notée |
+| GET | `/public/tenants/:slug/reviews?page=&pageSize=` | 60/min | `{ enabled, summary: { count, average, distribution } \| null, items: [{ rating, comment, author, reply, createdAt }], total }`. `enabled = false` (liste vide) tant que `operations.publicReviews` est faux |
+
+- La carte publique (`GET /public/tenants/:slug/menu`) renvoie en plus `reviews` (`{ count, average, distribution }` ou `null` si l'affichage est désactivé).
+- **Jeton de suivi** : HMAC-SHA256 du secret serveur et de l'identifiant de commande (stable : réimprimer le ticket ne change pas le lien, indevinable sans le secret) ; **seule l'empreinte SHA-256 est stockée** (`Order.trackTokenHash`).
+  Le lien expire **24 h après la clôture** (ou l'annulation) de la commande ; 72 h après la création si elle n'est jamais clôturée. Lien : `${APP_URL}/r/:slug/suivi/:token` (page d'avis : `/r/:slug/avis/:token`).
+
+## Personnel
+| Méthode | Route | Rôles | Description |
+|---|---|---|---|
+| GET | `/tenant/orders/:id/tracking-link` | salle | `{ token, url }` à imprimer en QR sur le ticket (le ticket 80 mm le fait) ; idempotent (enregistre l'empreinte au premier appel) |
+| GET | `/tenant/reviews?status=all\|visible\|hidden&rating=&unanswered=&page=&pageSize=` | responsables | `{ items: [{ id, rating, comment, author, hasAccount, order, hidden, reply, repliedAt, createdAt }], total, page, pageSize }` |
+| GET | `/tenant/reviews/stats` | responsables | `{ count, average, distribution, visible: {count, average, distribution}, hiddenCount, unanswered }` (moyenne à une décimale ; `visible` = ce que voit le public) |
+| POST | `/tenant/reviews/:id/hide` · `/unhide` | responsables | Modération (audit `review.hide` / `review.unhide`) |
+| PUT · DELETE | `/tenant/reviews/:id/reply` | responsables | `{ text }` réponse publique / suppression (audit `review.reply` / `review.reply_delete`) |
+
+## Client connecté (rôle `CUSTOMER`) — `/tenant/customer`
+| Méthode | Route | Description |
+|---|---|---|
+| GET · PATCH | `/profile` | `{ id, email, firstName, lastName, phone, emailVerified, notificationPrefs }` ; PATCH `{ firstName?, lastName?, phone? }` (chaîne vide = effacer le téléphone) |
+| PUT | `/notification-prefs` | `{ reservationReminders, orderReadySms }` |
+| POST | `/verify-email/send` · `/verify-email` | Renvoie un code (3/10 min) · `{ code }` (5 essais, 15 min) → `{ verified, reservationsLinked }` |
+| GET | `/reservations` | Réservations du client (forme publique + `id`, `canModify`, `canCancel`) |
+| GET · PATCH · POST | `/reservations/:id/availability` · `/reservations/:id` · `/reservations/:id/cancel` | Mêmes règles que le lien de gestion (délais, créneaux, notifications) ; la réservation d'un autre client → 404 |
+| GET | `/orders` | Commandes rattachées (`customerId` du client ou d'une de ses réservations) : `{ id, number, items, total, canReview, review }` |
+| POST | `/orders/claim` | `{ token }` : rattache une commande avec le lien de son ticket (409 si déjà à un autre compte) |
+| POST | `/orders/:id/review` | `{ rating, comment? }` : une fois la commande clôturée, une fois par commande (409 sinon) |
+| GET | `/export` | JSON de toutes les données du client (profil, réservations, commandes, avis) |
+| POST | `/delete` | `{ password }` : réservations à venir annulées ; réservations, commandes et avis **conservés mais anonymisés** (`customerId` nul, nom « Client supprimé », email/téléphone effacés, jeton de gestion supprimé, journal de notifications masqué) ; compte désactivé (`anonymizedAt`), sessions révoquées. Audit `customer.delete` |
+Mot de passe, sessions : `/tenant/account/*` (inchangé).
+
+## Règles
+- **Rattachement des réservations** : par **email vérifié** uniquement (`User.emailVerifiedAt`, code à 6 chiffres envoyé par email). À la vérification, les réservations sans compte faites avec cette adresse sont rattachées ; ensuite, toute réservation en ligne faite avec cette adresse l'est d'office. Le téléphone n'est pas un identifiant de rattachement (un SMS ne porte jamais de code, voir X1).
+- **Avis** : un par commande (`Feedback.orderId` unique, 409 sinon, y compris deux requêtes simultanées), commande **clôturée** et non annulée. Un avis masqué disparaît du public, de la moyenne publique et de la réponse affichée au client ; le restaurant le garde (`hidden`).
+- **SMS « commande prête »** (à emporter, modèle `order.ready`) : envoyé **une seule fois** quand la commande passe à `READY`, si le canal SMS est actif (réglage `notifications.channels.sms`, désactivé par défaut), l'événement `orderReady` n'est pas coupé, un téléphone est connu (`Order.customerPhone` saisi en caisse, ou téléphone du compte rattaché) et le client n'a pas désactivé `orderReadySms`. Les rappels de réservation respectent `reservationReminders`.
+- Réglage `operations.publicReviews` (administrateur) : affiche la moyenne et les avis publiés sur la carte publique.

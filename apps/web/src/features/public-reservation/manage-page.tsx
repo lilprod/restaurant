@@ -1,4 +1,5 @@
-import { ApiError, type PublicReservation } from "@restaurant/api-client";
+import { ApiError, type PublicAvailability, type PublicReservation } from "@restaurant/api-client";
+import type { PublicUpdateReservationInput } from "@restaurant/validation";
 import { publicUpdateReservationSchema } from "@restaurant/validation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarCheck, CalendarX2, Clock, Phone, Users } from "lucide-react";
@@ -83,14 +84,19 @@ export function ManageReservationPage() {
         {!closed && !editing && (!r.canModify || !r.canCancel) && (
           <Callout tone="info">{!r.canCancel ? "Cette réservation a déjà commencé." : "Le délai pour modifier en ligne est dépassé."} Contactez directement le restaurant{r.restaurant.phone ? ` au ${r.restaurant.phone}` : ""}.</Callout>
         )}
-        {editing && <EditForm r={r} token={token} onDone={(next) => { if (next) qc.setQueryData(key, next); setEditing(false); }} />}
+        {editing && <EditForm r={r} cacheKey={token} slots={(q) => publicSpace.reservationAvailability(token, q)} update={(b) => publicSpace.updateReservation(token, b)} onDone={(next) => { if (next) qc.setQueryData(key, next); setEditing(false); }} />}
         {closed && <Button asChild variant="secondary" size="lg" className="w-fit"><Link to={`/r/${r.restaurant.slug}/reserver`}>Réserver une autre table</Link></Button>}
       </div>
     </PublicShell>
   );
 }
 
-function EditForm({ r, token, onDone }: { r: PublicReservation; token: string; onDone: (r?: PublicReservation) => void }) {
+/** Modification d'une réservation (lien de gestion ou espace client) : nombre, jour, heure, demandes. */
+export function EditForm<R extends PublicReservation>({ r, cacheKey, slots, update, onDone }: {
+  r: R; cacheKey: string; onDone: (r?: R) => void;
+  slots: (q: { date: string; partySize: number }) => Promise<PublicAvailability>;
+  update: (body: PublicUpdateReservationInput) => Promise<R>;
+}) {
   const tz = r.restaurant.timezone;
   const today = todayIn(tz);
   const [party, setParty] = React.useState(r.partySize);
@@ -98,8 +104,8 @@ function EditForm({ r, token, onDone }: { r: PublicReservation; token: string; o
   const [startsAt, setStartsAt] = React.useState<string | null>(r.startsAt);
   const [requests, setRequests] = React.useState(r.specialRequests ?? "");
   const avail = useQuery({
-    queryKey: ["public", "availability", "manage", token, date, party],
-    queryFn: () => publicSpace.reservationAvailability(token, { date, partySize: party }),
+    queryKey: ["public", "availability", "manage", cacheKey, date, party],
+    queryFn: () => slots({ date, partySize: party }),
     placeholderData: (p) => p,
   });
   const save = useMutation({
@@ -110,7 +116,7 @@ function EditForm({ r, token, onDone }: { r: PublicReservation; token: string; o
       if (requests.trim() !== (r.specialRequests ?? "")) body.specialRequests = requests;
       const parsed = publicUpdateReservationSchema.safeParse(body);
       if (!parsed.success) throw new Error("Aucune modification à enregistrer.");
-      return publicSpace.updateReservation(token, { ...parsed.data, startsAt: parsed.data.startsAt?.toISOString() } as never);
+      return update({ ...parsed.data, startsAt: parsed.data.startsAt?.toISOString() } as never);
     },
     onSuccess: (next) => { toast.success("Réservation modifiée"); onDone(next); },
     onError: (e) => { if (e instanceof ApiError && e.status === 409) void avail.refetch(); },

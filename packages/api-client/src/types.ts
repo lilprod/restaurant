@@ -519,6 +519,8 @@ export interface PublicFormula {
   steps: { id: string; name: string; minChoices: number; maxChoices: number; items: { menuItemId: string; name: string }[] }[];
 }
 export interface PublicMenu {
+  /** P2C : moyenne des avis, seulement si le restaurant a activé l'affichage public. */
+  reviews?: ReviewSummary | null;
   restaurant: { name: string; slug: string; currency: string };
   categories: { id: string; name: string; description: string | null; items: PublicMenuItem[] }[];
   formulas: PublicFormula[];
@@ -1081,4 +1083,47 @@ export interface ChatMessage {
   body: string;
   mentions: string[];
   createdAt: ISODate;
+}
+
+// ── P2C : espace client, suivi de commande, avis ──
+export interface ReviewSummary {
+  count: number;
+  average: number | null;
+  distribution: Record<"1" | "2" | "3" | "4" | "5", number>;
+}
+export interface CustomerProfile {
+  id: string; email: string; firstName: string; lastName: string; phone: string | null;
+  emailVerified: boolean; consentAt: ISODate | null; createdAt: ISODate;
+  notificationPrefs: { reservationReminders: boolean; orderReadySms: boolean };
+}
+export interface CustomerReservation extends PublicReservation { id: string }
+export interface CustomerOrder {
+  id: string; number: number; type: OrderType; status: OrderStatus; total: number; createdAt: ISODate; closedAt: ISODate | null;
+  items: { name: string; quantity: number }[];
+  canReview: boolean;
+  review: { rating: number; comment: string | null; reply: string | null; createdAt: ISODate } | null;
+}
+export type TrackingStage = "received" | "preparing" | "ready" | "done" | "cancelled";
+export interface OrderTracking {
+  number: number; type: OrderType; typeLabel: string; stage: TrackingStage; table: string | null;
+  items: { name: string; quantity: number }[];
+  createdAt: ISODate; updatedAt: ISODate; closedAt: ISODate | null; expiresAt: ISODate;
+  canReview: boolean;
+  review: { rating: number; comment: string | null; reply: string | null; createdAt: ISODate } | null;
+  restaurant: { name: string; slug: string; phone: string | null; timezone: string };
+}
+export interface Review {
+  id: string; rating: number; comment: string | null; author: string; hasAccount: boolean;
+  order: { id: string; number: number; type: OrderType };
+  hidden: boolean; hiddenAt: ISODate | null; reply: string | null; repliedAt: ISODate | null; createdAt: ISODate;
+}
+export interface ReviewStats extends ReviewSummary {
+  visible: ReviewSummary; hiddenCount: number; unanswered: number;
+}
+export interface PublicReview { id: string; rating: number; comment: string | null; author: string; reply: string | null; repliedAt: ISODate | null; createdAt: ISODate }
+export interface PublicReviews {
+  enabled: boolean; summary: ReviewSummary | null; items: PublicReview[]; total: number; page: number; pageSize: number;
+}
+export interface CustomerExport {
+  exportedAt: ISODate; profile: CustomerProfile; reservations: Record<string, unknown>[]; orders: Record<string, unknown>[]; reviews: Record<string, unknown>[];
 }

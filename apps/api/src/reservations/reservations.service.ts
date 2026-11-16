@@ -489,10 +489,14 @@ export class ReservationsService {
     const token = randomBytes(24).toString("base64url");
     const pending = ctx.rs.requireConfirmation;
     const view = await this.write(tenant.id, async (tx) => {
+      // Espace client : une réservation faite avec l'email vérifié d'un compte lui est rattachée d'office.
+      const owner = input.guestEmail
+        ? await tx.user.findFirst({ where: { tenantId: tenant.id, role: "CUSTOMER", isActive: true, email: input.guestEmail, emailVerifiedAt: { not: null } }, select: { id: true } })
+        : null;
       const placed = await this.place(tx, ctx, { partySize: input.partySize, start: input.startsAt, durationMinutes });
       const r = await tx.reservation.create({
         data: {
-          tenantId: tenant.id, code: await this.newCode(tx, tenant.id), manageTokenHash: hashToken(token), source: "ONLINE",
+          tenantId: tenant.id, code: await this.newCode(tx, tenant.id), manageTokenHash: hashToken(token), source: "ONLINE", customerId: owner?.id ?? null,
           guestName: input.guestName, guestPhone: input.guestPhone, guestEmail: input.guestEmail, partySize: input.partySize,
           startsAt: input.startsAt, endsAt: placed.end, specialRequests: input.specialRequests,
           status: pending ? "PENDING" : "CONFIRMED", confirmedAt: pending ? null : new Date(),
@@ -537,7 +541,16 @@ export class ReservationsService {
   }
 
   async publicUpdate(token: string, input: PublicUpdateReservationInput) {
-    const { ctx, view: before } = await this.byToken(token);
+    const { ctx, view } = await this.byToken(token);
+    return this.guestUpdate(ctx, view, input);
+  }
+
+  async publicCancel(token: string) {
+    const { ctx, view } = await this.byToken(token);
+    return this.guestCancel(ctx, view);
+  }
+
+  private async guestUpdate(ctx: BookingContext, before: ReservationView, input: PublicUpdateReservationInput) {
     if (!this.rights(before, ctx).canModify) throw new ConflictException("Cette réservation ne peut plus être modifiée en ligne : appelez le restaurant");
     let notifyChange = false;
     const view = await this.mutate(ctx.tenant.id, before.id, async (tx, r) => {
@@ -550,11 +563,45 @@ export class ReservationsService {
     return this.publicView(view, ctx);
   }
 
-  async publicCancel(token: string) {
-    const { ctx, view } = await this.byToken(token);
+  private async guestCancel(ctx: BookingContext, view: ReservationView) {
     if (!this.rights(view, ctx).canCancel) throw new ConflictException("Cette réservation ne peut plus être annulée en ligne : appelez le restaurant");
     const res = await this.cancel(null, ctx.tenant.id, view.id, { notifyGuest: true, byGuest: true });
     return this.publicView(res, ctx);
+  }
+
+  // ── Espace client (compte) : mêmes règles que le lien de gestion, réservation désignée par son identifiant ──
+
+  /** Réservation du client connecté (404 si elle n'est pas la sienne). */
+  private async owned(tenantId: string, customerId: string, id: string) {
+    const own = await this.prisma.asTenant(tenantId, (tx) => tx.reservation.findFirst({ where: { id, tenantId, customerId }, select: { id: true } }));
+    if (!own) throw new NotFoundException("Réservation introuvable");
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+    return { ctx: await this.schedule.context(tenantId, tenant), view: await this.get(tenantId, id) };
+  }
+
+  async customerList(tenantId: string, customerId: string) {
+    const tenant = await this.prisma.tenant.findUniqueOrThrow({ where: { id: tenantId } });
+    const ctx = await this.schedule.context(tenantId, tenant);
+    const rows = await this.prisma.asTenant(tenantId, (tx) => tx.reservation.findMany({
+      where: { tenantId, customerId }, orderBy: { startsAt: "desc" }, take: 100, include: reservationInclude,
+    }));
+    return rows.map((r) => ({ id: r.id, ...this.publicView(reservationView(r), ctx) }));
+  }
+
+  async customerAvailability(tenantId: string, customerId: string, id: string, q: PublicAvailabilityQuery) {
+    const { ctx, view } = await this.owned(tenantId, customerId, id);
+    this.assertOnline(ctx);
+    return this.publicSlots(ctx, q, view.id);
+  }
+
+  async customerUpdate(tenantId: string, customerId: string, id: string, input: PublicUpdateReservationInput) {
+    const { ctx, view } = await this.owned(tenantId, customerId, id);
+    return { id, ...(await this.guestUpdate(ctx, view, input)) };
+  }
+
+  async customerCancel(tenantId: string, customerId: string, id: string) {
+    const { ctx, view } = await this.owned(tenantId, customerId, id);
+    return { id, ...(await this.guestCancel(ctx, view)) };
   }
 
   // ── Notifications ──

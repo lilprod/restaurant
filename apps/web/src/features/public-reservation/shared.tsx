@@ -19,7 +19,7 @@ export function usePublicSlug() {
 }
 
 /** Coque des pages publiques de réservation : marque du restaurant, une colonne, mobile d'abord. */
-export function PublicShell({ title, children }: { title: string; children: React.ReactNode }) {
+export function PublicShell({ title, children, actions }: { title: string; children: React.ReactNode; actions?: React.ReactNode }) {
   const { branding } = useBranding();
   React.useEffect(() => { if (branding) document.title = `${title} · ${branding.displayName}`; }, [branding, title]);
   return (
@@ -30,7 +30,7 @@ export function PublicShell({ title, children }: { title: string; children: Reac
             <BrandMark size={36} />
             <span className="truncate font-brand text-lg font-semibold tracking-tight">{branding?.displayName}</span>
           </div>
-          <ThemeToggleButton />
+          <div className="flex shrink-0 items-center gap-1">{actions}<ThemeToggleButton /></div>
         </div>
       </header>
       <main className="mx-auto max-w-xl px-4 pb-20 pt-6 sm:px-6">{children}</main>

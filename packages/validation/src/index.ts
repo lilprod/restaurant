@@ -123,3 +123,4 @@ export * from "./reservations";
 export * from "./floor";
 export * from "./zod-fr";
 export * from "./staff";
+export * from "./customers";

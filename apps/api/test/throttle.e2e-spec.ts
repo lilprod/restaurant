@@ -38,4 +38,17 @@ describe("limitation des tentatives de connexion (e2e)", () => {
     for (let i = 0; i < 47; i++) expect((await attempt(`u${i}@nimes.tg`)).status).not.toBe(429);   // 13 + 47 = 60
     expect((await attempt("u-final@nimes.tg")).status).toBe(429);
   });
+
+  it("limite les routes publiques de l'espace client (inscription 5/h, suivi 60/min)", async () => {
+    const signup = () => request(app.getHttpServer()).post(`${V}/public/tenants/inconnu/customers`).send({});
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) codes.push((await signup()).status);
+    expect(codes.slice(0, 5).every((c) => c !== 429)).toBe(true);
+    expect(codes[5]).toBe(429);
+    const track = () => request(app.getHttpServer()).get(`${V}/public/tracking/${"a".repeat(43)}`);
+    const t: number[] = [];
+    for (let i = 0; i < 61; i++) t.push((await track()).status);
+    expect(t.slice(0, 60).every((c) => c === 404)).toBe(true);
+    expect(t[60]).toBe(429);
+  });
 });

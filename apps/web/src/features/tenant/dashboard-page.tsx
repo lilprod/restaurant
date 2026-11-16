@@ -201,7 +201,7 @@ function SetupCard({ className }: { className?: string }) {
   const steps = [
     { done: !!(b?.taxId && b?.address?.city), label: "Informations légales", hint: "NIF et adresse sur vos tickets.", to: to("/parametres?onglet=informations"), icon: Store },
     { done: !!settings.data?.assets?.logo, label: "Logo et couleurs", hint: "Votre marque sur l'espace et la carte.", to: to("/parametres?onglet=marque"), icon: Palette },
-    { done: user.twoFactorEnabled, label: "Double authentification", hint: "Protège votre compte.", to: to("/compte?onglet=securite"), icon: ShieldCheck },
+    { done: user.twoFactorEnabled, label: "Double authentification", hint: "Protège votre compte.", to: to("/mon-compte?onglet=securite"), icon: ShieldCheck },
   ];
   const done = steps.filter((s) => s.done).length;
   return (
