@@ -19,6 +19,7 @@ import { ReservationsModule } from "./reservations/reservations.module";
 import { StaffModule } from "./staff/staff.module";
 import { CustomersModule } from "./customers/customers.module";
 import { AuditModule } from "./audit/audit.module";
+import { HealthModule } from "./health/health.module";
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { AuditModule } from "./audit/audit.module";
     StaffModule,
     CustomersModule,
     AuditModule,
+    HealthModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

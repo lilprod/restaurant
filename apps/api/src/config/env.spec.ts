@@ -5,6 +5,7 @@ describe("loadEnv : secrets", () => {
   const prod = {
     DATABASE_URL: "x", NODE_ENV: "production",
     JWT_ACCESS_SECRET: "a".repeat(32), DATA_ENCRYPTION_KEY: "b".repeat(32), TRACKING_TOKEN_SECRET: "c".repeat(32),
+    MAIL_DRIVER: "smtp", SMTP_URL: "smtp://u:p@smtp.example.com:587",
   };
 
   it("en développement, le secret de suivi est facultatif", () => {
@@ -24,5 +25,23 @@ describe("loadEnv : secrets", () => {
     expect(loadEnv(base).TRUST_PROXY).toBe(1);
     expect(loadEnv({ ...base, TRUST_PROXY: "0" }).TRUST_PROXY).toBe(0);
     expect(() => loadEnv({ ...base, TRUST_PROXY: "abc" })).toThrow("TRUST_PROXY");
+  });
+  it("en production, refuse le pilote email « log » sauf dérogation explicite", () => {
+    const log = { ...prod, MAIL_DRIVER: "log", SMTP_URL: undefined };
+    expect(() => loadEnv(log)).toThrow("MAIL_DRIVER");
+    expect(() => loadEnv({ ...log, MAIL_DRIVER: undefined })).toThrow("n'envoie aucun email");   // défaut = log
+    expect(loadEnv({ ...log, ALLOW_MAIL_LOG: "on" }).MAIL_DRIVER).toBe("log");
+    expect(loadEnv({ ...base, MAIL_DRIVER: "log" }).MAIL_DRIVER).toBe("log");                      // développement : libre
+  });
+  it("STORAGE_DRIVER=s3 exige le bucket et les clés ; disk par défaut", () => {
+    expect(loadEnv(base).STORAGE_DRIVER).toBe("disk");
+    expect(() => loadEnv({ ...base, STORAGE_DRIVER: "s3" })).toThrow("S3_BUCKET");
+    const s3 = { ...base, STORAGE_DRIVER: "s3", S3_BUCKET: "b", S3_ACCESS_KEY_ID: "k", S3_SECRET_ACCESS_KEY: "s" };
+    expect(loadEnv(s3).S3_REGION).toBe("us-east-1");
+    expect(() => loadEnv({ ...s3, S3_ENDPOINT: "pas une url" })).toThrow("S3_ENDPOINT");
+  });
+  it("une variable vide vaut une variable absente (docker compose, .env)", () => {
+    const e = loadEnv({ ...base, S3_ENDPOINT: "", S3_PUBLIC_URL: "", SMS_HTTP_URL: "", SMS_HTTP_METHOD: "", DATA_ENCRYPTION_KEY: "" });
+    expect([e.S3_ENDPOINT, e.SMS_HTTP_URL, e.SMS_HTTP_METHOD, e.DATA_ENCRYPTION_KEY]).toEqual([undefined, undefined, "POST", undefined]);
   });
 });

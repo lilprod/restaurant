@@ -1,6 +1,12 @@
 name: CI
 on: [push, pull_request]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Types, build, tests unitaires (API + web) et e2e de l'API sur PostgreSQL (rôle propriétaire : la RLS est testée par test/rls.e2e-spec.ts).
   build:
     runs-on: ubuntu-latest
     services:
@@ -20,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20, cache: pnpm }
+        with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - name: Audit des dépendances (hautes et critiques bloquantes, exemptions justifiées)
         run: node scripts/ci/audit.mjs
@@ -30,7 +36,135 @@ jobs:
       - run: pnpm test
       - name: Tests e2e API (PostgreSQL + RLS)
         run: pnpm --filter api test:e2e
+
+  # Toute la suite e2e sous un rôle NON superuser (la RLS s'applique vraiment) : c'est la configuration de production.
+  e2e-rls:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: restaurant_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGPORT: "5432"
+      PGPASSWORD: app
+      DATABASE_URL: postgresql://app:app@localhost:5432/restaurant_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter api prisma:generate
+      - run: pnpm --filter @restaurant/shared-types --filter @restaurant/utils --filter @restaurant/validation build
       - name: Tests e2e API sous RLS (rôle non superuser app_rls)
         run: bash scripts/dev/test-rls.sh
+
+  # Web : types, tests Vitest et build de production.
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter web... lint
+      - run: pnpm --filter web... test
+      - run: pnpm --filter web build
+
+  # Déploiement : analyse statique des scripts et Dockerfiles, mise en service de la base, sauvegarde / restauration réelles.
+  ops:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
         env:
-          PGPORT: "5432"
+          POSTGRES_PASSWORD: ci-admin-password-0123456789
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PG_ADMIN_USER: postgres
+      PG_ADMIN_PASSWORD: ci-admin-password-0123456789
+      DB_OWNER_PASSWORD: ci-owner-password-0123456789
+      DB_APP_PASSWORD: ci-app-password-0123456789
+      SEED_SUPERADMIN_EMAIL: superadmin@ci.local
+      SEED_SUPERADMIN_PASSWORD: ci-superadmin-password-0123
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck (scripts de déploiement et d'exploitation)
+        run: shellcheck -x -S warning scripts/deploy/*.sh scripts/ops/*.sh docker/nginx/10-csp.envsh
+      - name: hadolint (Dockerfiles)
+        run: |
+          for f in docker/*.Dockerfile; do
+            echo "== $f"
+            docker run --rm -i hadolint/hadolint hadolint --failure-threshold warning - < "$f"
+          done
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter api prisma:generate
+      - name: Mise en service de la base (rôles, migrations, droits, RLS, seed), exécutée deux fois (idempotente)
+        run: bash scripts/deploy/migrate.sh && bash scripts/deploy/migrate.sh
+      - name: Données d'exemple (rôle propriétaire)
+        working-directory: apps/api
+        run: DATABASE_URL="postgresql://restaurant_owner:${DB_OWNER_PASSWORD}@localhost:5432/restaurant" pnpm exec tsx prisma/seed-demo.ts demo --create
+      - name: Sauvegarde chiffrée puis restauration vérifiée
+        env: { PGUSER: postgres, PGPASSWORD: ci-admin-password-0123456789, PGDATABASE: restaurant }
+        run: bash scripts/ops/test-backup-restore.sh
+
+  # Images Docker (api, outils de migration, web, exploitation) puis pile de production complète : santé, en-têtes, connexion.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Construction des images
+        run: |
+          set -e
+          build() { docker buildx build --load --cache-from "type=gha,scope=$2" --cache-to "type=gha,scope=$2,mode=max" "${@:3}" -f "docker/$1.Dockerfile" -t "$2:ci" .; }
+          build api    restaurant-api   --target runtime
+          build api    restaurant-tools --target tools
+          build web    restaurant-web   --build-arg VITE_ROOT_DOMAIN=ci.local
+          build ops    restaurant-ops
+      - name: Pile de production (docker compose) et contrôles
+        run: |
+          set -e
+          gen() { openssl rand -hex 24; }
+          cat > .env <<EOF
+          APP_DOMAIN=ci.local
+          APP_URL=http://localhost:8080
+          PUBLIC_API_URL=http://localhost:8080
+          APP_VERSION=ci
+          COOKIE_SECURE=off
+          TRUST_PROXY=1
+          PG_ADMIN_PASSWORD=$(gen)
+          DB_OWNER_PASSWORD=$(gen)
+          DB_APP_PASSWORD=$(gen)
+          REDIS_PASSWORD=$(gen)
+          JWT_ACCESS_SECRET=$(gen)
+          DATA_ENCRYPTION_KEY=$(gen)
+          TRACKING_TOKEN_SECRET=$(gen)
+          SEED_SUPERADMIN_EMAIL=superadmin@ci.local
+          SEED_SUPERADMIN_PASSWORD=Ci-$(gen)
+          MAIL_DRIVER=smtp
+          SMTP_URL=smtp://u:p@127.0.0.1:2525
+          BACKUP_PASSPHRASE=$(gen)
+          EOF
+          docker compose -f docker-compose.prod.yml config -q
+          docker compose -f docker-compose.prod.yml up -d --no-build
+          for _ in $(seq 1 60); do curl -fsS http://localhost:8080/api/v1/health >/dev/null 2>&1 && break; sleep 3; done
+          docker compose -f docker-compose.prod.yml ps -a
+          BASE_URL=http://localhost:8080 SMOKE_SUPERADMIN_EMAIL=superadmin@ci.local SMOKE_SUPERADMIN_PASSWORD="$(grep ^SEED_SUPERADMIN_PASSWORD .env | cut -d= -f2)" bash scripts/deploy/smoke.sh
+      - name: Journaux en cas d'échec
+        if: failure()
+        run: docker compose -f docker-compose.prod.yml logs --tail 80

@@ -19,8 +19,29 @@ const envSchema = z.object({
   SWAGGER: z.enum(["on", "off"]).optional(),
   /** Cookie du jeton de rafraîchissement marqué `Secure` (défaut : oui en production). */
   COOKIE_SECURE: z.enum(["on", "off"]).optional(),
-  /** Dossier des fichiers envoyés (logos, favicons). */
+  /** Dossier des fichiers envoyés (logos, favicons) : pilote `disk`. */
   UPLOAD_DIR: z.string().default("uploads"),
+  // ── Stockage des fichiers (X4) ──
+  /** `disk` (défaut, volume persistant) ou `s3` (AWS S3, Cloudflare R2, MinIO, Scaleway, OVH…). */
+  STORAGE_DRIVER: z.enum(["disk", "s3"]).default("disk"),
+  S3_BUCKET: z.string().optional(),
+  /** Région (`auto` pour Cloudflare R2). */
+  S3_REGION: z.string().default("us-east-1"),
+  /** Point d'accès pour un service compatible S3 (MinIO, R2…) ; vide = AWS. */
+  S3_ENDPOINT: z.string().url().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /** Adressage `endpoint/bucket/clé` (MinIO) plutôt que `bucket.endpoint/clé` ; défaut : oui si S3_ENDPOINT est défini. */
+  S3_FORCE_PATH_STYLE: z.enum(["on", "off"]).optional(),
+  /** Base publique des fichiers si le bucket (ou son CDN) est lisible directement ; vide = l'API relaie `/uploads/*` (bucket privé). */
+  S3_PUBLIC_URL: z.string().url().optional(),
+  // ── Exploitation (X4) ──
+  /** Format des journaux : `json` (une ligne JSON par événement, défaut en production) ou `text`. */
+  LOG_FORMAT: z.enum(["json", "text"]).optional(),
+  /** Dérogation explicite : autorise MAIL_DRIVER=log en production (aucun email réel ne partira). */
+  ALLOW_MAIL_LOG: z.enum(["on", "off"]).optional(),
+  /** Dérogation explicite : autorise un rôle SQL superuser / BYPASSRLS en production (la RLS serait ignorée). */
+  ALLOW_PRIVILEGED_DB: z.enum(["on", "off"]).optional(),
   /** URL publique de l'API (pour construire les liens vers les fichiers). */
   PUBLIC_API_URL: z.string().url().optional(),
   /** URL de l'application web (liens de réinitialisation de mot de passe). */
@@ -65,7 +86,15 @@ const envSchema = z.object({
     }
   }
   if (env.NOTIFICATIONS_QUEUE === "bullmq") need(!!env.REDIS_URL, "REDIS_URL", "obligatoire avec NOTIFICATIONS_QUEUE=bullmq");
+  if (env.STORAGE_DRIVER === "s3") {
+    need(!!env.S3_BUCKET, "S3_BUCKET", "obligatoire avec STORAGE_DRIVER=s3");
+    need(!!env.S3_ACCESS_KEY_ID, "S3_ACCESS_KEY_ID", "obligatoire avec STORAGE_DRIVER=s3");
+    need(!!env.S3_SECRET_ACCESS_KEY, "S3_SECRET_ACCESS_KEY", "obligatoire avec STORAGE_DRIVER=s3");
+  }
   if (env.NODE_ENV === "production") {
+    // Un email « journalisé » n'est jamais livré : refuser de démarrer plutôt que perdre silencieusement les mots de passe oubliés.
+    need(env.MAIL_DRIVER !== "log" || env.ALLOW_MAIL_LOG === "on", "MAIL_DRIVER",
+      "« log » n'envoie aucun email : choisissez smtp, ou posez ALLOW_MAIL_LOG=on pour l'accepter en connaissance de cause");
     need(!!env.DATA_ENCRYPTION_KEY, "DATA_ENCRYPTION_KEY", "obligatoire en production");
     need(!!env.TRACKING_TOKEN_SECRET, "TRACKING_TOKEN_SECRET", "obligatoire en production");
     need(env.JWT_ACCESS_SECRET.length >= 32, "JWT_ACCESS_SECRET", "32 caractères minimum en production");
@@ -79,7 +108,8 @@ export type Env = z.infer<typeof envSchema> & { PUBLIC_API_URL: string };
 export const APP_ENV = Symbol("APP_ENV");
 
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const parsed = envSchema.safeParse(source);
+  // Une variable vide (`KEY=` dans un .env, `${KEY:-}` dans docker compose) équivaut à une variable absente.
+  const parsed = envSchema.safeParse(Object.fromEntries(Object.entries(source).filter(([, v]) => v !== "")));
   if (!parsed.success) {
     const msg = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
     throw new Error(`Configuration invalide : ${msg}`);

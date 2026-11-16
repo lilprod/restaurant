@@ -57,3 +57,12 @@ modules activés). Les guards NestJS vérifient plan + statut de licence avant c
   (`/tenant/audit-logs`, `/platform/audit-logs`).
 - **Vérifications automatiques** : couverture RLS de chaque table à `tenantId` (`test/rls.e2e-spec.ts`), parcours anti-IDOR de toutes les routes
   (`test/idor.e2e-spec.ts`), suite e2e complète sous rôle non superuser (`scripts/dev/test-rls.sh`), audit des dépendances (`scripts/ci/audit.mjs`), en CI.
+
+## Déploiement (X4)
+Guide complet : `docs/DEPLOIEMENT.md`. `docker-compose.prod.yml` : `postgres`, `redis` (réseau interne, rien de publié), `migrate` (job : rôles SQL, migrations, droits,
+`rls.sql`, seed), `api` (NestJS, utilisateur non root, `HEALTHCHECK` sur `/api/v1/health`), `web` (nginx : SPA, proxy `/api`, `/uploads`, `/socket.io` sur la **même origine**,
+CSP / HSTS / Permissions-Policy), `backup` (pg_dump chiffré quotidien, rotation 7 j / 4 sem. / 6 mois, copie S3 facultative).
+- **Rôles SQL** : administrateur du serveur (création des rôles, sauvegardes) ≠ propriétaire des tables (migrations) ≠ rôle de l'API (`restaurant_app`, sans superuser ni `BYPASSRLS`) ; l'API refuse de démarrer sinon.
+- **Fichiers** : `StorageService` → pilote `disk` (volume) ou `s3` (compatible S3, bucket privé relayé par l'API ou public / CDN).
+- **Sauvegarde** : `scripts/ops/backup.sh` / `restore.sh` (+ `restore.md`), supervision `scripts/ops/check.sh`, contrôle après déploiement `scripts/deploy/smoke.sh`.
+

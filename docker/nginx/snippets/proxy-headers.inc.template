@@ -1,0 +1,16 @@
+# Réponses de l'API relayées : l'API pose déjà sa propre CSP et nosniff (helmet, /uploads) ; on remplace seulement
+# les en-têtes communs pour éviter les doublons.
+proxy_hide_header Strict-Transport-Security;
+proxy_hide_header Referrer-Policy;
+proxy_hide_header Permissions-Policy;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Strict-Transport-Security $hsts_header always;
+proxy_hide_header X-Request-Id;
+add_header X-Request-Id $request_id always;
+proxy_http_version 1.1;
+proxy_set_header Host $host;
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Forwarded-Proto $forwarded_proto;
+proxy_set_header X-Forwarded-Host $host;
+proxy_set_header X-Request-Id $request_id;

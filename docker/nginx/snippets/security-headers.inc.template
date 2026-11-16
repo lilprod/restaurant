@@ -1,0 +1,7 @@
+# Gabarit : en-têtes de sécurité des pages (à inclure dans CHAQUE location qui ajoute ses propres add_header : nginx n'hérite pas).
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: ${CSP_API_ORIGIN} ${CSP_CDN_ORIGIN}; connect-src 'self' wss://$http_host ${CSP_API_ORIGIN} ${CSP_API_WSS}; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Strict-Transport-Security $hsts_header always;

@@ -50,6 +50,8 @@ export default defineConfig({
   build: {
     target: "es2022",
     sourcemap: true,
+    // Polices jamais incorporées en `data:` : la CSP de production (`font-src 'self'`) les bloquerait.
+    assetsInlineLimit: (file: string) => (/\.woff2?$/.test(file) ? false : undefined),
     rollupOptions: {
       output: {
         // Bibliothèques stables dans des fichiers séparés : mises en cache entre deux déploiements.

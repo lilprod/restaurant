@@ -9,6 +9,7 @@ Rôles plateforme : `SUPER_ADMIN` (lecture + écriture), `SUPPORT` (lecture seul
 |---|---|---|
 | GET | `/public/plans` | Plans actifs (formulaire d'inscription) |
 | POST | `/public/registrations` | Demande d'inscription d'un restaurant (5/h/IP). Crée une demande **PENDING**, aucun tenant |
+| GET | `/health` | Sonde (X4) : `200 {"status":"ok","checks":{"database":"up","redis":"up\|disabled"},"uptime":…}`, **503** `degraded` si la base ou Redis (quand `NOTIFICATIONS_QUEUE=bullmq`) ne répond pas. Sans authentification ni limitation de débit, jamais mise en cache, sans donnée sensible |
 
 ## Authentification
 | POST | `/platform/auth/login` · `/refresh` · `/logout` | GET `/platform/auth/me` |
@@ -172,7 +173,17 @@ Constantes : `RETENTION_DAYS` (`apps/api/src/security/retention.service.ts`).
 ## Images (logo, favicon, avatar)
 PNG / JPEG / WebP (favicon : PNG / ICO / WebP). Le format est vérifié sur le **contenu** du fichier, pas sur l'extension. SVG refusé (script embarqué).
 Logo 2 Mo, favicon 512 Ko, avatar 1 Mo. Fichiers servis sous `/uploads/...` avec `nosniff` et `Content-Security-Policy: sandbox`, nom aléatoire,
-isolés par restaurant ; l'ancien fichier est supprimé au remplacement. Le stockage passe par `StorageService` (disque aujourd'hui, Cloudinary / S3 plus tard).
+isolés par restaurant ; l'ancien fichier est supprimé au remplacement. Le stockage passe par `StorageService`, choisi par `STORAGE_DRIVER` (X4) :
+`disk` (défaut, `UPLOAD_DIR`) ou `s3` (AWS S3, Cloudflare R2, MinIO… : `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`,
+`S3_FORCE_PATH_STYLE`, `S3_PUBLIC_URL`). Bucket privé (défaut) : l'API relaie `/uploads/*` avec les mêmes en-têtes ; `S3_PUBLIC_URL` : les URL pointent
+directement vers le bucket / son CDN. Les URL déjà enregistrées ne sont pas réécrites : migrer les fichiers = copier `UPLOAD_DIR` dans le bucket (mêmes clés `tenants/…`).
+
+## Exploitation (X4)
+- `GET /health` (ci-dessus) ; journaux JSON (`LOG_FORMAT`, défaut `json` en production) : une ligne par requête `{time, level, context:"http", method, path, status, ms, ip, requestId}`
+  et par événement Nest ; `X-Request-Id` (repris de nginx, sinon généré) renvoyé à chaque réponse. Ni requête, ni corps, ni jeton de suivi n'y figurent.
+- Démarrage refusé en production : `MAIL_DRIVER=log` (sauf `ALLOW_MAIL_LOG=on`) ; rôle SQL superuser ou `BYPASSRLS` (sauf `ALLOW_PRIVILEGED_DB=on`), car la RLS serait ignorée.
+- Une variable d'environnement vide (`KEY=`) vaut une variable absente.
+
 
 ---
 

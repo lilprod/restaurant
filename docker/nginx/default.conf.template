@@ -1,0 +1,77 @@
+# Gabarit nginx du site web (rempli au démarrage : API_UPSTREAM, RESOLVER, CSP_*). Port 8080, derrière un terminateur TLS.
+
+# HSTS seulement si la requête d'origine était en HTTPS (terminateur TLS devant nginx qui pose X-Forwarded-Proto).
+map $http_x_forwarded_proto $hsts_header { default ""; https "max-age=31536000; includeSubDomains"; }
+map $http_x_forwarded_proto $forwarded_proto { default $scheme; https https; http http; }
+map $http_upgrade $connection_upgrade { default upgrade; "" close; }
+# Jamais de jeton dans les journaux : le lien de suivi d'une commande contient un secret.
+map $request_uri $log_uri {
+  "~^(?<pre>[^?]*/tracking/)[^/?]+(?<post>[^?]*)" "${pre}:token${post}";
+  "~^(?<plain>[^?]*)"                              $plain;                 # sans la chaîne de requête
+  default                                          $request_uri;
+}
+
+log_format json escape=json '{"time":"$time_iso8601","level":"info","context":"nginx","method":"$request_method","path":"$log_uri","status":$status,"bytes":$body_bytes_sent,"ms":"$request_time","ip":"$remote_addr","host":"$host","requestId":"$request_id"}';
+
+server {
+  listen 8080 default_server;
+  server_name _;
+  server_tokens off;
+  access_log /dev/stdout json;
+  error_log /dev/stderr warn;
+
+  root /usr/share/nginx/html;
+  client_max_body_size 4m;                         # plus gros envoi : 3 Mo (photo de plat)
+  resolver ${RESOLVER} valid=10s ipv6=off;         # le conteneur api peut changer d'adresse au redémarrage
+  set $api_upstream ${API_UPSTREAM};
+
+  gzip on;
+  gzip_comp_level 5;
+  gzip_min_length 512;
+  gzip_vary on;
+  gzip_types text/plain text/css application/javascript application/json image/svg+xml;
+
+  location = /healthz {
+    access_log off;
+    default_type text/plain;
+    return 200 "ok\n";
+  }
+
+  # API REST (le préfixe /api/v1 est conservé)
+  location /api/ {
+    include /etc/nginx/conf.d/snippets/proxy-headers.inc;
+    proxy_read_timeout 60s;
+    proxy_pass $api_upstream;
+  }
+
+  # Fichiers téléversés (logos, photos) : en-têtes (cache, nosniff, sandbox) posés par l'API
+  location /uploads/ {
+    include /etc/nginx/conf.d/snippets/proxy-headers.inc;
+    proxy_pass $api_upstream;
+  }
+
+  # Temps réel (Socket.io) : WebSocket + repli long-polling
+  location /socket.io/ {
+    include /etc/nginx/conf.d/snippets/proxy-headers.inc;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
+    proxy_buffering off;
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    proxy_pass $api_upstream;
+  }
+
+  # Fichiers du build, nommés par empreinte : cache d'un an
+  location /assets/ {
+    include /etc/nginx/conf.d/snippets/security-headers.inc;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    try_files $uri =404;
+  }
+
+  # Application monopage : toute autre route renvoie index.html (jamais mis en cache)
+  location / {
+    include /etc/nginx/conf.d/snippets/security-headers.inc;
+    add_header Cache-Control "no-cache" always;
+    try_files $uri /index.html;
+  }
+}

@@ -8,17 +8,8 @@
     <meta name="theme-color" content="#0a0a0a" media="(prefers-color-scheme: dark)" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Gestion Restaurant</title>
-    <script>
-      // Applique le thème avant le premier rendu (pas de flash clair → sombre).
-      (function () {
-        try {
-          var pref = localStorage.getItem("restaurant.theme") || "system";
-          var dark = pref === "dark" || (pref === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-          document.documentElement.classList.toggle("dark", dark);
-          document.documentElement.style.colorScheme = dark ? "dark" : "light";
-        } catch (e) {}
-      })();
-    </script>
+    <!-- Script externe (et non en ligne) : la CSP de production interdit les scripts en ligne. -->
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>
