@@ -3,10 +3,11 @@ import type { Order, OrderItem } from "@restaurant/api-client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as React from "react";
 import {
-  ArrowLeft, Ban, Banknote, ChevronRight, HandPlatter, MoreHorizontal, NotebookPen, Pencil, Plus, Printer, Undo2, XCircle,
+  ArrowLeft, Ban, FileText, Banknote, ChevronRight, HandPlatter, MoreHorizontal, NotebookPen, Pencil, Plus, Printer, Undo2, XCircle,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { DownloadButton } from "@/components/ui/download-button";
 import { DishImage } from "@/components/dish-image";
 import { LiveIndicator } from "@/components/live-indicator";
 import { Button } from "@/components/ui/button";
@@ -94,6 +95,7 @@ export function OrderDetailPage() {
         <div className="flex flex-wrap items-center gap-2">
           {t.isFloor && open && <Button asChild variant="secondary"><Link to={to(`/commandes/${o.id}/ajouter`)}><Plus /> Ajouter des articles</Link></Button>}
           {t.isFloor && <Button asChild variant="secondary"><Link to={to(`/commandes/${o.id}/ticket`)}><Printer /> Ticket</Link></Button>}
+          {t.isFloor && !o.cancelledAt && <DownloadButton variant="secondary" fetchFile={() => t.api.invoice(o.id)}><FileText /> Facture PDF</DownloadButton>}
           {t.isFloor && !o.cancelledAt && o.remaining > 0 && (
             <Button asChild variant="primary" className="order-first w-full sm:order-none sm:w-auto"><Link to={to(`/commandes/${o.id}/encaisser`)}><Banknote /> Encaisser {formatFcfa(o.remaining)}</Link></Button>
           )}

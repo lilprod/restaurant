@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Banknote, Building2, Globe, Mail, Phone, Receipt, RefreshCw, Smartphone, WalletCards } from "lucide-react";
+import { FileText, Banknote, Building2, Globe, Mail, Phone, Receipt, RefreshCw, Smartphone, WalletCards } from "lucide-react";
 import { Navigate } from "react-router-dom";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { DescriptionList, PageHeader } from "@/components/ui/page-header";
 import { ProgressRing } from "@/components/ui/progress-ring";
 import { Skeleton } from "@/components/ui/skeleton";
+import { DownloadButton } from "@/components/ui/download-button";
 import { errorMessage } from "@/lib/errors";
 import { daysUntil, formatDate, formatFcfa } from "@/lib/format";
 import { BILLING_CYCLE_LABEL, FEATURE_LABEL, PAYMENT_METHOD_LABEL, SUBSCRIPTION_STATUS_LABEL } from "@/lib/labels";
@@ -78,6 +79,9 @@ export function TenantLicensePage() {
                 { key: "m", header: "Moyen", cell: (p) => PAYMENT_METHOD_LABEL[p.method] },
                 { key: "p", header: "Période", hideOnMobile: true, cell: (p) => <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">{formatDate(p.periodStart)} → {formatDate(p.periodEnd)}</span> },
                 { key: "a", header: "Montant", align: "right", cell: (p) => <span className="font-mono font-medium tabular">{formatFcfa(p.amount)}</span> },
+                ...(t.isAdmin ? [{ key: "pdf", header: <span className="sr-only">Reçu PDF</span>, align: "right" as const, cell: (p: { id: string; receiptNumber: string }) => (
+                  <DownloadButton variant="ghost" size="sm" aria-label={`Télécharger le reçu ${p.receiptNumber}`} fetchFile={() => t.api.licenseReceipt(p.id)}><FileText /> PDF</DownloadButton>
+                ) }] : []),
               ]}
               empty={<EmptyState icon={<Receipt />} title="Aucun paiement" description={l.status === "TRIALING" ? "Vous êtes en essai gratuit. Réglez votre licence avant l'échéance pour continuer sans interruption." : "Vos reçus apparaîtront ici."} />}
             />

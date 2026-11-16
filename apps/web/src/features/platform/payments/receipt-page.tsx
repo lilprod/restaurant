@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Ban, FileText, Printer } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { DownloadButton } from "@/components/ui/download-button";
 import { BrandMark } from "@/components/brand-mark";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,7 @@ export function ReceiptPage() {
               onConfirm: (reason) => voidPay.mutateAsync(reason!),
             })}><Ban /> Annuler le paiement</Button>
           )}
+          <DownloadButton variant="secondary" size="sm" fetchFile={() => papi.payments.receiptPdf(p.id)}><FileText /> Reçu PDF</DownloadButton>
           <Button variant="secondary" size="sm" onClick={() => window.print()}><Printer /> Imprimer</Button>
         </div>
       </div>

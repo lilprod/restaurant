@@ -19,6 +19,7 @@ import { ReservationsModule } from "./reservations/reservations.module";
 import { StaffModule } from "./staff/staff.module";
 import { CustomersModule } from "./customers/customers.module";
 import { AuditModule } from "./audit/audit.module";
+import { ReportsModule } from "./reports/reports.module";
 import { HealthModule } from "./health/health.module";
 
 @Module({
@@ -40,6 +41,7 @@ import { HealthModule } from "./health/health.module";
     StaffModule,
     CustomersModule,
     AuditModule,
+    ReportsModule,
     HealthModule,
   ],
   providers: [

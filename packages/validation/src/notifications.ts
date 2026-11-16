@@ -18,6 +18,7 @@ export const NOTIFICATION_EVENTS = [
   { key: "reservations", label: "Réservations", description: "Confirmation, modification et annulation envoyées au client." },
   { key: "reservationReminders", label: "Rappels de réservation", description: "Rappel envoyé au client la veille à 18 h." },
   { key: "staffPlanning", label: "Planning du personnel", description: "Message au personnel quand son planning est publié." },
+  { key: "dailyReport", label: "Rapport quotidien", description: "Récapitulatif des ventes de la veille envoyé aux responsables (activé dans la page Rapports)." },
   { key: "orderReady", label: "Commande prête (à emporter)", description: "SMS au client quand sa commande à emporter est prête." },
   { key: "waitlist", label: "Liste d'attente", description: "Message au client quand une place se libère." },
 ] as const;

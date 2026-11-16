@@ -8,9 +8,12 @@ export interface ReviewSummary {
   distribution: Record<1 | 2 | 3 | 4 | 5, number>;
 }
 
-/** Moyenne et répartition des notes d'un restaurant (`visibleOnly` : avis non masqués, ce que voit le public). */
-export async function reviewSummary(tx: Tx, tenantId: string, visibleOnly: boolean): Promise<ReviewSummary> {
-  const rows = await tx.feedback.groupBy({ by: ["rating"], where: { tenantId, ...(visibleOnly ? { hiddenAt: null } : {}) }, _count: { _all: true } });
+/** Moyenne et répartition des notes d'un restaurant (`visibleOnly` : avis non masqués, ce que voit le public ; `range` : avis déposés dans la période). */
+export async function reviewSummary(tx: Tx, tenantId: string, visibleOnly: boolean, range?: { start: Date; end: Date }): Promise<ReviewSummary> {
+  const rows = await tx.feedback.groupBy({
+    by: ["rating"], _count: { _all: true },
+    where: { tenantId, ...(visibleOnly ? { hiddenAt: null } : {}), ...(range ? { createdAt: { gte: range.start, lt: range.end } } : {}) },
+  });
   const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 } as ReviewSummary["distribution"];
   for (const r of rows) if (r.rating >= 1 && r.rating <= 5) distribution[r.rating as 1 | 2 | 3 | 4 | 5] = r._count._all;
   return summarize(distribution);

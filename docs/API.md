@@ -646,3 +646,79 @@ Mot de passe, sessions : `/tenant/account/*` (inchangé).
 - **Avis** : un par commande (`Feedback.orderId` unique, 409 sinon, y compris deux requêtes simultanées), commande **clôturée** et non annulée. Un avis masqué disparaît du public, de la moyenne publique et de la réponse affichée au client ; le restaurant le garde (`hidden`).
 - **SMS « commande prête »** (à emporter, modèle `order.ready`) : envoyé **une seule fois** quand la commande passe à `READY`, si le canal SMS est actif (réglage `notifications.channels.sms`, désactivé par défaut), l'événement `orderReady` n'est pas coupé, un téléphone est connu (`Order.customerPhone` saisi en caisse, ou téléphone du compte rattaché) et le client n'a pas désactivé `orderReadySms`. Les rappels de réservation respectent `reservationReminders`.
 - Réglage `operations.publicReviews` (administrateur) : affiche la moyenne et les avis publiés sur la carte publique.
+
+# P5 — Rapports, analyses et exports (PDF/CSV)
+
+Module `src/reports/`. Migration `reports` : index seulement (`OrderItem(orderId)`, `Payment(orderId)`, `Payment(tenantId,status,paidAt)`, `Order(tenantId,cancelledAt)`, `RegisterSession(tenantId,openedAt)`), aucune nouvelle table (donc rien dans `rls.sql`).
+Réglage `reports` (`GET/PATCH /tenant/settings/reports`, lecture responsables, écriture administrateur) : `{ dailyReport: false, dailyReportHour: 8 }`.
+
+## Rapports du restaurant — `GET /tenant/reports/...` (responsables ; plan avec `reports`, sinon `403 {code:"PLAN_FEATURE"}`)
+Période en jours **du restaurant** : `?from=AAAA-MM-JJ&to=AAAA-MM-JJ` (bornes incluses, 366 jours au plus ; 400 « La fin précède le début »).
+| Route | Contenu |
+|---|---|
+| `sales` | synthèse + **période précédente de même durée** (`previous`), par catégorie, plat, heure, jour de semaine, jour, serveur, moyen de paiement, type (sur place / emporter / livraison), remises, annulations, articles annulés, remboursements |
+| `vat` | TVA collectée **par taux** (base HT, TVA, TTC) ; commandes non annulées créées dans la période ; service rattaché au taux par défaut avant arrondi (comme `computeTotals`) ; remboursements non déduits |
+| `register` | sessions de caisse ouvertes dans la période : fond, encaissé, attendu, compté, écart ; totaux et sessions avec écart |
+| `margins` | marge par plat vendu = `dishMargin(ventes TTC, taux, coût unitaire actuel × quantité)` (fiche technique P3) ; ventes sans fiche signalées (`uncosted`) |
+| `waste` | pertes valorisées (P3) par ingrédient et par motif |
+| `staff` | performances du personnel : **même réponse que** `GET /tenant/staff/performance` (P4) |
+| `reviews` | avis (P2C) : moyenne, répartition, période précédente, masqués, derniers avis |
+| `peak-hours` | carte de chaleur jour de semaine (1 = lundi) × heure locale, 5 créneaux les plus chargés |
+| `export/:kind?format=csv\|pdf` | `kind` ∈ `sales, vat, register, margins, waste, staff, reviews, peak-hours` ; `orders` (CSV seulement : détail des commandes **en flux**, lecture par lots de 1 000). Journalisé (audit `report.export`) |
+
+**Définitions (identiques au tableau de bord)** : encaissé = paiements `PAID` par date de paiement ; commandes = non annulées, par date de création ; ticket moyen = total des commandes ÷ nombre ; heure/jour dans le fuseau du restaurant.
+Les lignes (catégories, plats, TVA, marges) sont rattachées à la **date de la commande** (leur somme égale le sous-total des commandes ; le « top plats » du tableau de bord, lui, utilise la date de la ligne).
+Un test e2e compare rapport, tableau de bord et sommes en base, jour par jour, dans un fuseau UTC+5:30.
+
+## Exports
+- **CSV** : séparateur « ; », virgule décimale, BOM UTF-8, CRLF. Tout texte commençant par `= + - @`, tabulation ou retour chariot (après espaces éventuels) est préfixé d'une apostrophe (pas d'injection de formule) ; les nombres restent des nombres.
+- **PDF** (pdfkit, polices Lato embarquées dans `src/reports/fonts`, copiées dans `dist` par `nest-cli.json`) : en-tête à la marque du restaurant (nom, couleur, logo PNG/JPEG, coordonnées, NIF/RCCM des paramètres), tableaux paginés (300 lignes au plus par tableau, renvoi vers le CSV), pied « Page x / y ».
+- `GET /tenant/orders/:id/invoice.pdf` (salle, **tous plans**) : facture n° `F-000123` (numéro de commande), lignes, TVA par taux, paiements, reste à payer, mentions du restaurant. 409 si la commande est annulée.
+- `GET /tenant/license/payments/:id/receipt.pdf` (administrateur) et `GET /platform/payments/:id/receipt.pdf` (tout rôle plateforme) : reçu de licence (n° `REC-…`, plan, période, moyen, référence, mentions légales de la société), « PAIEMENT ANNULÉ » le cas échéant. Autre restaurant : 404.
+
+## Plateforme — `GET /platform/reports/licenses?from=&to=` et `/export?format=csv|pdf` (SuperAdmin)
+Revenus de licences par mois (UTC) et par moyen, premiers paiements / renouvellements, résiliations (`Subscription.cancelledAt`), paiements annulés, restaurants par statut (état du jour). Période de 5 ans au plus.
+
+## Rapport quotidien par email (X1)
+Modèle `reports.daily` (événement `dailyReport`, désactivable dans les notifications). `DailyReportService` (cron `7 * * * *`, coupé par `DISABLE_CRON`) : pour chaque restaurant actif dont le plan inclut `reports` et qui l'a activé, à partir de `dailyReportHour` (heure locale), envoie la veille aux administrateurs et gérants actifs. Une fois par jour et destinataire (`dedupeKey report:daily:<tenant>:<jour>:<user>`) ; rien les jours sans commande ni encaissement.
+
+## Performance
+Agrégats par la base (groupBy / SQL groupé), jamais de chargement des commandes en mémoire. `apps/api/scripts/generate-orders.ts <slug> [n] [jours]` génère un gros volume (`--clean` le supprime).
+
+# P5 — Rapports, analyses et exports (PDF/CSV)
+
+Module `src/reports/`. Migration `reports` : index seulement (`OrderItem(orderId)`, `Payment(orderId)`, `Payment(tenantId,status,paidAt)`, `Order(tenantId,cancelledAt)`, `RegisterSession(tenantId,openedAt)`), aucune nouvelle table (donc rien dans `rls.sql`).
+Réglage `reports` (`GET/PATCH /tenant/settings/reports`, lecture responsables, écriture administrateur) : `{ dailyReport: false, dailyReportHour: 8 }`.
+
+## Rapports du restaurant — `GET /tenant/reports/...` (responsables ; plan avec `reports`, sinon `403 {code:"PLAN_FEATURE"}`)
+Période en jours **du restaurant** : `?from=AAAA-MM-JJ&to=AAAA-MM-JJ` (bornes incluses, 366 jours au plus ; 400 « La fin précède le début »).
+| Route | Contenu |
+|---|---|
+| `sales` | synthèse + **période précédente de même durée** (`previous`), par catégorie, plat, heure, jour de semaine, jour, serveur, moyen de paiement, type (sur place / emporter / livraison), remises, annulations, articles annulés, remboursements |
+| `vat` | TVA collectée **par taux** (base HT, TVA, TTC) ; commandes non annulées créées dans la période ; service rattaché au taux par défaut avant arrondi (comme `computeTotals`) ; remboursements non déduits |
+| `register` | sessions de caisse ouvertes dans la période : fond, encaissé, attendu, compté, écart ; totaux et sessions avec écart |
+| `margins` | marge par plat vendu = `dishMargin(ventes TTC, taux, coût unitaire actuel × quantité)` (fiche technique P3) ; ventes sans fiche signalées (`uncosted`) |
+| `waste` | pertes valorisées (P3) par ingrédient et par motif |
+| `staff` | performances du personnel : **même réponse que** `GET /tenant/staff/performance` (P4) |
+| `reviews` | avis (P2C) : moyenne, répartition, période précédente, masqués, derniers avis |
+| `peak-hours` | carte de chaleur jour de semaine (1 = lundi) × heure locale, 5 créneaux les plus chargés |
+| `export/:kind?format=csv\|pdf` | `kind` ∈ `sales, vat, register, margins, waste, staff, reviews, peak-hours` ; `orders` (CSV seulement : détail des commandes **en flux**, lecture par lots de 1 000). Journalisé (audit `report.export`) |
+
+**Définitions (identiques au tableau de bord)** : encaissé = paiements `PAID` par date de paiement ; commandes = non annulées, par date de création ; ticket moyen = total des commandes ÷ nombre ; heure/jour dans le fuseau du restaurant.
+Les lignes (catégories, plats, TVA, marges) sont rattachées à la **date de la commande** (leur somme égale le sous-total des commandes ; le « top plats » du tableau de bord, lui, utilise la date de la ligne).
+Un test e2e compare rapport, tableau de bord et sommes en base, jour par jour, dans un fuseau UTC+5:30.
+
+## Exports
+- **CSV** : séparateur « ; », virgule décimale, BOM UTF-8, CRLF. Tout texte commençant par `= + - @`, tabulation ou retour chariot (après espaces éventuels) est préfixé d'une apostrophe (pas d'injection de formule) ; les nombres restent des nombres.
+- **PDF** (pdfkit, polices Lato embarquées dans `src/reports/fonts`, copiées dans `dist` par `nest-cli.json`) : en-tête à la marque du restaurant (nom, couleur, logo PNG/JPEG, coordonnées, NIF/RCCM des paramètres), tableaux paginés (300 lignes au plus par tableau, renvoi vers le CSV), pied « Page x / y ».
+- `GET /tenant/orders/:id/invoice.pdf` (salle, **tous plans**) : facture n° `F-000123` (numéro de commande), lignes, TVA par taux, paiements, reste à payer, mentions du restaurant. 409 si la commande est annulée.
+- `GET /tenant/license/payments/:id/receipt.pdf` (administrateur) et `GET /platform/payments/:id/receipt.pdf` (tout rôle plateforme) : reçu de licence (n° `REC-…`, plan, période, moyen, référence, mentions légales de la société), « PAIEMENT ANNULÉ » le cas échéant. Autre restaurant : 404.
+
+## Plateforme — `GET /platform/reports/licenses?from=&to=` et `/export?format=csv|pdf` (SuperAdmin)
+Revenus de licences par mois (UTC) et par moyen, premiers paiements / renouvellements, résiliations (`Subscription.cancelledAt`), paiements annulés, restaurants par statut (état du jour). Période de 5 ans au plus.
+
+## Rapport quotidien par email (X1)
+Modèle `reports.daily` (événement `dailyReport`, désactivable dans les notifications). `DailyReportService` (cron `7 * * * *`, coupé par `DISABLE_CRON`) : pour chaque restaurant actif dont le plan inclut `reports` et qui l'a activé, à partir de `dailyReportHour` (heure locale), envoie la veille aux administrateurs et gérants actifs. Une fois par jour et destinataire (`dedupeKey report:daily:<tenant>:<jour>:<user>`) ; rien les jours sans commande ni encaissement.
+
+## Performance
+Agrégats par la base (groupBy / SQL groupé), jamais de chargement des commandes en mémoire. `apps/api/scripts/generate-orders.ts <slug> [n] [jours]` génère un gros volume (`--clean` le supprime).

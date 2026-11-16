@@ -222,6 +222,32 @@ export class ApiClient {
     }
   }
 
+  /** Télécharge un fichier (CSV, PDF) avec le jeton de session ; le nom vient de `Content-Disposition`. */
+  async download(path: string, query?: RequestOptions["query"]): Promise<{ blob: Blob; filename: string }> {
+    if (!this.accessToken && this.storage.get()) await this.refresh();
+    const once = async () => {
+      let res: Response;
+      try {
+        res = await this.fetchImpl(this.url(path, query), { headers: this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : {} });
+      } catch (e) { throw ApiError.network(e); }
+      if (res.ok) {
+        const m = /filename="?([^";]+)"?/.exec(res.headers.get("Content-Disposition") ?? "");
+        return { blob: await res.blob(), filename: m?.[1] ?? "export" };
+      }
+      const text = await res.text();
+      let data: unknown = text;
+      try { data = JSON.parse(text); } catch { /* corps non JSON */ }
+      throw ApiError.fromResponse(res.status, data);
+    };
+    try {
+      return await once();
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401 && this.storage.get() && (await this.refresh())) return once();
+      if (e instanceof ApiError) this.emit({ type: "error", error: e });
+      throw e;
+    }
+  }
+
   private url(path: string, query?: RequestOptions["query"]): string {
     let url = `${this.baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
     if (query) {

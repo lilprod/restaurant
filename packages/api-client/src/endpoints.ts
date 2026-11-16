@@ -26,6 +26,7 @@ import type {
   PublicReservationCreated, Reservation, ReservationsQuery, WaitlistEntry, WaitlistStatus,
   Attendance, ChatChannel, ChatMessage, KioskPerson, LeaveBalance, MyAttendance, Payroll, Performance, PlanningAbsence, Planning, Shift, StaffFile,
   AbsenceStatus, PunchAction,
+  LicensesReport, MarginsReport, PeakHoursReport, RegisterReport, ReportKind, ReportsSettings, ReviewsReport, SalesReport, VatReport, WasteReport,
   CustomerExport, CustomerOrder, CustomerProfile, CustomerReservation, OrderTracking, PublicReviews, Review, ReviewStats,
 } from "./types";
 
@@ -123,6 +124,7 @@ type SettingsSectionMap = {
   notifications: Section<NotificationsSettingsInput>;
   reservations: Section<ReservationsSettingsInput>;
   staff: Section<StaffSettingsInput>;
+  reports: ReportsSettings;
 };
 type PlatformSectionMap = {
   branding: Section<BrandingSettings>;
@@ -146,6 +148,10 @@ export function platformApi(c: ApiClient) {
   const tenantAdmin = (id: string) => `/platform/tenants/${enc(id)}`;
   return {
     dashboard: () => c.get<PlatformDashboard>("/platform/dashboard"),
+    reports: {
+      licenses: (q: { from: string; to: string }) => c.get<LicensesReport>("/platform/reports/licenses", { query: q }),
+      download: (q: { from: string; to: string }, format: "csv" | "pdf") => c.download("/platform/reports/licenses/export", { ...q, format }),
+    },
     sweepLicenses: () => c.post<{ checked: number; changed: number }>("/platform/licensing/sweep"),
 
     plans: {
@@ -199,6 +205,7 @@ export function platformApi(c: ApiClient) {
       list: (q: { tenantId?: string; method?: string; from?: string; to?: string; page?: number; pageSize?: number } = {}) =>
         c.get<PaymentList>("/platform/payments", { query: q }),
       get: (id: string) => c.get<Receipt>(`/platform/payments/${enc(id)}`),
+      receiptPdf: (id: string) => c.download(`/platform/payments/${enc(id)}/receipt.pdf`),
       record: (body: RecordPaymentInput) => c.post<RecordPaymentResult>("/platform/payments", body),
       void: (id: string, reason: string) => c.post<Receipt>(`/platform/payments/${enc(id)}/void`, { reason }),
     },
@@ -336,6 +343,22 @@ export function tenantApi(c: ApiClient) {
       close: (body: { counted: number; notes?: string }) => c.post<RegisterCloseResult>("/tenant/register/close", body),
     },
     dashboard: (date?: string) => c.get<TenantDashboard>("/tenant/dashboard", { query: { date } }),
+
+    // ── P5 : rapports (module `reports` du plan, sinon 403 PLAN_FEATURE) ──
+    reports: {
+      sales: (q: { from: string; to: string }) => c.get<SalesReport>("/tenant/reports/sales", { query: q }),
+      vat: (q: { from: string; to: string }) => c.get<VatReport>("/tenant/reports/vat", { query: q }),
+      register: (q: { from: string; to: string }) => c.get<RegisterReport>("/tenant/reports/register", { query: q }),
+      margins: (q: { from: string; to: string }) => c.get<MarginsReport>("/tenant/reports/margins", { query: q }),
+      waste: (q: { from: string; to: string }) => c.get<WasteReport>("/tenant/reports/waste", { query: q }),
+      staff: (q: { from: string; to: string }) => c.get<Performance>("/tenant/reports/staff", { query: q }),
+      reviews: (q: { from: string; to: string }) => c.get<ReviewsReport>("/tenant/reports/reviews", { query: q }),
+      peakHours: (q: { from: string; to: string }) => c.get<PeakHoursReport>("/tenant/reports/peak-hours", { query: q }),
+      download: (kind: ReportKind, q: { from: string; to: string }, format: "csv" | "pdf") => c.download(`/tenant/reports/export/${kind}`, { ...q, format }),
+    },
+    /** Facture PDF d'une commande (tous plans). */
+    invoice: (orderId: string) => c.download(`/tenant/orders/${enc(orderId)}/invoice.pdf`),
+    licenseReceipt: (paymentId: string) => c.download(`/tenant/license/payments/${enc(paymentId)}/receipt.pdf`),
 
     // ── P3 : stock (module `inventory` du plan, sinon 403 PLAN_FEATURE) ──
     inventory: {

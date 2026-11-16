@@ -45,6 +45,7 @@ export const SETTINGS_READ: Record<string, string[]> = {
   security: ["ADMIN"],
   notifications: ["ADMIN"],
   staff: ["ADMIN", "MANAGER"],
+  reports: ["ADMIN", "MANAGER"],
 };
 
 const DEFAULT_OPS = { serviceChargePercent: 0, defaultVatRate: 18, tipsEnabled: true, tipPresets: [5, 10, 15], takeawayEnabled: true };

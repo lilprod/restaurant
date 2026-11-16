@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import type { Tenant } from "@prisma/client";
 import {
   brandingInputSchema, businessSchema, localizationSchema, notificationsSettingsSchema, operationsSchema, reservationsSettingsSchema,
-  staffSettingsSchema, tenantSecuritySchema,
+  staffSettingsSchema, tenantSecuritySchema, reportsSettingsSchema,
 } from "@restaurant/validation";
 import { PrismaService } from "../prisma/prisma.service";
 import { SecurityPolicyService } from "../security/security-policy.service";
@@ -11,11 +11,11 @@ import { ASSET_RULES, validateImage } from "../storage/image-validation";
 import { StorageService } from "../storage/storage.service";
 import { Assets, composeBranding } from "./branding";
 import {
-  DEFAULT_LOCALIZATION, DEFAULT_NOTIFICATIONS, DEFAULT_OPERATIONS, DEFAULT_RESERVATIONS, DEFAULT_STAFF, DEFAULT_TENANT_SECURITY, defaultBranding,
+  DEFAULT_LOCALIZATION, DEFAULT_NOTIFICATIONS, DEFAULT_OPERATIONS, DEFAULT_REPORTS, DEFAULT_RESERVATIONS, DEFAULT_STAFF, DEFAULT_TENANT_SECURITY, defaultBranding,
 } from "./defaults";
 import { SectionDef, SettingsEngine } from "./settings.engine";
 
-export const TENANT_SECTIONS = ["business", "branding", "operations", "localization", "security", "notifications", "reservations", "staff"] as const;
+export const TENANT_SECTIONS = ["business", "branding", "operations", "localization", "security", "notifications", "reservations", "staff", "reports"] as const;
 
 const formatAddress = (a: { street?: string; postalCode?: string; city?: string; country?: string }) =>
   [a.street, [a.postalCode, a.city].filter(Boolean).join(" "), a.country].filter(Boolean).join(", ") || null;
@@ -38,6 +38,7 @@ export class TenantSettingsService extends SettingsEngine<Tenant> {
     notifications: { schema: notificationsSettingsSchema, defaults: () => DEFAULT_NOTIFICATIONS },
     reservations: { schema: reservationsSettingsSchema, defaults: () => DEFAULT_RESERVATIONS },
     staff: { schema: staffSettingsSchema, defaults: () => DEFAULT_STAFF },
+    reports: { schema: reportsSettingsSchema, defaults: () => DEFAULT_REPORTS },
   };
 
   constructor(

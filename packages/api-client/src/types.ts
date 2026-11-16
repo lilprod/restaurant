@@ -1143,3 +1143,59 @@ export interface AuditLogEntry {
 }
 export type AuditLogList = Paginated<AuditLogEntry>;
 export interface AuditLogQueryParams { action?: string; entity?: string; entityId?: string; userId?: string; from?: string; to?: string; page?: number; pageSize?: number }
+
+// ── P5 : rapports ──
+export interface ReportSummary {
+  revenue: number; tips: number; ordersCount: number; averageTicket: number; ordersTotal: number; subtotal: number; serviceCharge: number; vat: number; discounts: number;
+  cancelledOrders: { count: number; amount: number }; cancelledItems: { count: number; amount: number }; refunds: { count: number; amount: number };
+}
+export interface SalesReport {
+  from: string; to: string; timezone: string;
+  summary: ReportSummary;
+  previous: { from: string; to: string; summary: ReportSummary };
+  byCategory: { categoryId: string | null; name: string; quantity: number; amount: number }[];
+  byItem: { menuItemId: string | null; name: string; category: string; quantity: number; amount: number }[];
+  byHour: { hour: number; orders: number; total: number }[];
+  byWeekday: { weekday: number; orders: number; total: number }[];
+  byDay: { day: string; orders: number; ordersTotal: number; revenue: number }[];
+  byWaiter: { userId: string | null; name: string; orders: number; total: number }[];
+  byMethod: { method: string; amount: number; tips: number; count: number }[];
+  byType: { type: string; orders: number; total: number }[];
+}
+export interface VatReport { from: string; to: string; basis: string; rows: { rate: number; ttc: number; base: number; vat: number }[]; totals: { ttc: number; base: number; vat: number } }
+export interface RegisterReport {
+  from: string; to: string; timezone: string;
+  rows: { id: string; openedAt: string; closedAt: string | null; openedBy: string; closedBy: string | null; opening: number; expectedCash: number | null; closing: number | null; difference: number | null; payments: number; cash: number }[];
+  totals: { sessions: number; open: number; payments: number; difference: number; withGap: number; shortfall: number; surplus: number };
+}
+export interface MarginsReport {
+  from: string; to: string;
+  rows: { menuItemId: string; name: string; category: string; vatRate: number; quantity: number; amount: number; hasRecipe: boolean; unitCost: number; revenueNet: number; cost: number; margin: number; marginRate: number | null }[];
+  totals: { revenue: number; revenueNet: number; cost: number; margin: number; marginRate: number | null };
+  uncosted: { items: number; revenue: number };
+}
+export interface WasteReport {
+  from: string; to: string;
+  ingredients: { ingredientId: string; name: string; unit: string; quantity: number; cost: number; count: number }[];
+  reasons: { reason: string; cost: number; count: number }[];
+  totals: { cost: number; count: number };
+}
+export interface ReviewsReport {
+  from: string; to: string; summary: ReviewSummary; previous: { from: string; to: string; summary: ReviewSummary }; hidden: number;
+  recent: { id: string; orderNumber: number; rating: number; comment: string | null; authorName: string | null; hidden: boolean; createdAt: string }[];
+}
+export interface PeakHoursReport {
+  from: string; to: string; timezone: string; cells: { weekday: number; hour: number; orders: number; total: number }[];
+  max: number; top: { weekday: number; hour: number; orders: number; total: number }[]; totalOrders: number;
+}
+export type ReportKind = "sales" | "vat" | "register" | "margins" | "waste" | "staff" | "reviews" | "peak-hours" | "orders";
+export interface LicensesReport {
+  from: string; to: string; tenants: Record<string, number>;
+  revenue: {
+    total: number; count: number;
+    byMonth: { month: string; total: number; count: number; byMethod: Record<string, number>; firstPayments: number; renewals: number; cancellations: number }[];
+    byMethod: { method: string; amount: number; count: number }[];
+  };
+  totals: { firstPayments: number; renewals: number; cancellations: number; voided: number };
+}
+export type ReportsSettings = { dailyReport: boolean; dailyReportHour: number };

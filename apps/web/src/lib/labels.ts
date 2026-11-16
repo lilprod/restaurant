@@ -24,6 +24,7 @@ export const NOTIFICATION_TEMPLATE_LABEL: Record<string, string> = {
   "reservation.reminder": "Rappel de réservation",
   "waitlist.available": "Place libérée (liste d'attente)",
   "staff.planning-published": "Planning publié",
+  "reports.daily": "Rapport quotidien",
 };
 export const RESERVATION_STATUS_LABEL: Record<string, string> = {
   PENDING: "À confirmer", CONFIRMED: "Confirmée", SEATED: "Installée", COMPLETED: "Terminée", CANCELLED: "Annulée", NO_SHOW: "Absent",

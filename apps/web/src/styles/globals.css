@@ -68,9 +68,15 @@
   --danger-foreground: #ffffff;
   --success: #16a34a;
   --warning: #b45309;
+
+  /* Graphiques (skill dataviz) : séries catégorielles dans l'ordre fixe, validées sur surface claire (CVD ΔE ≥ 9). */
+  --chart-1: #2a78d6; --chart-2: #eb6834; --chart-3: #1baf7a; --chart-4: #eda100;
+  --chart-muted: #c9c9c4;
 }
 
 .dark {
+  --chart-1: #3987e5; --chart-2: #d95926; --chart-3: #199e70; --chart-4: #c98500;
+  --chart-muted: #4a4a47;
   --brand-bg: var(--color-primary-dark, var(--color-primary));
   --brand-fg: var(--color-on-primary-dark, var(--color-on-primary));
   --background: #0a0a0a;

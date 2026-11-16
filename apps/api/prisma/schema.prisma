@@ -589,6 +589,7 @@ model Order {
   @@index([tenantId])
   @@index([tenantId, createdAt])
   @@index([tenantId, paymentStatus])
+  @@index([tenantId, cancelledAt])
 }
 
 model OrderItem {
@@ -627,6 +628,7 @@ model OrderItem {
   allocations PaymentAllocation[]
 
   @@index([tenantId])
+  @@index([orderId])
 }
 
 model OrderItemOption {
@@ -668,6 +670,8 @@ model Payment {
   allocations PaymentAllocation[]
 
   @@index([tenantId])
+  @@index([orderId])
+  @@index([tenantId, status, paidAt])
 }
 
 model PaymentAllocation {
@@ -700,6 +704,7 @@ model RegisterSession {
   payments     Payment[]
 
   @@index([tenantId])
+  @@index([tenantId, openedAt])
 }
 
 // ───────── LIVRAISON ─────────

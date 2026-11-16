@@ -48,6 +48,22 @@ export class StorageService {
     return this.driver.get(key);
   }
 
+  /** Contenu d'un fichier à partir de son URL publique (logo dans un PDF…) ; `null` si absent, hors de ce stockage ou trop gros. */
+  async readUrl(url: string | null | undefined, maxBytes = 2 * 1024 * 1024): Promise<Buffer | null> {
+    const key = url ? this.keyFromUrl(url) : null;
+    if (!key) return null;
+    const obj = await this.read(key);
+    if (!obj) return null;
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const c of obj.body) {
+      size += (c as Buffer).length;
+      if (size > maxBytes) { obj.body.destroy(); return null; }
+      chunks.push(c as Buffer);
+    }
+    return Buffer.concat(chunks);
+  }
+
   private publicUrl(key: string): string {
     const base = this.env.STORAGE_DRIVER === "s3" && this.env.S3_PUBLIC_URL ? this.env.S3_PUBLIC_URL.replace(/\/$/, "") : `${this.env.PUBLIC_API_URL}/uploads`;
     return `${base}/${key}`;

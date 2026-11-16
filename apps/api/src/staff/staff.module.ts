@@ -20,5 +20,6 @@ import { StaffHrController } from "./staff.controllers";
   imports: [TenantModule, RestaurantModule],
   controllers: [StaffHrController, MessagingController],
   providers: [StaffContext, ProfilesService, PlanningService, AttendanceService, AbsencesService, StaffReportsService, MessagingService, PlanFeatureGuard],
+  exports: [StaffReportsService], // P5 : performances du personnel dans les rapports
 })
 export class StaffModule {}

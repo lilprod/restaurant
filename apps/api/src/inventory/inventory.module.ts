@@ -16,5 +16,6 @@ import { RecipesService } from "./recipes.service";
   imports: [TenantModule, RestaurantModule],
   controllers: [InventoryController, RecipesController, SuppliersController, PurchaseOrdersController],
   providers: [InventoryService, RecipesService, PurchasingService, PlanFeatureGuard],
+  exports: [RecipesService], // P5 : marges par plat dans les rapports
 })
 export class InventoryModule {}
