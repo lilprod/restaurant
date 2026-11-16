@@ -68,6 +68,9 @@ export function publicApi(c: ApiClient) {
     availability: (slug: string, q: { date: string; partySize: number }) =>
       c.get<PublicAvailability>(`/public/tenants/${enc(slug)}/availability`, { auth: false, query: { date: q.date, partySize: String(q.partySize) } }),
     reserve: (slug: string, body: PublicReservationInput) => c.post<PublicReservationCreated>(`/public/tenants/${enc(slug)}/reservations`, body, { auth: false }),
+    /** Créneaux pour modifier sa réservation : elle ne compte pas comme occupée. */
+    reservationAvailability: (token: string, q: { date: string; partySize: number }) =>
+      c.get<PublicAvailability>(`/public/reservations/${enc(token)}/availability`, { auth: false, query: { date: q.date, partySize: String(q.partySize) } }),
     reservation: (token: string) => c.get<PublicReservation>(`/public/reservations/${enc(token)}`, { auth: false }),
     updateReservation: (token: string, body: PublicUpdateReservationInput) => c.patch<PublicReservation>(`/public/reservations/${enc(token)}`, body, { auth: false }),
     cancelReservation: (token: string) => c.delete<PublicReservation>(`/public/reservations/${enc(token)}`, { auth: false }),

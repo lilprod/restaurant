@@ -439,6 +439,13 @@ describe("P2A Réservations : disponibilités, double réservation, cycle de vie
       expect(u.status).toBe(200);
       expect(u.body).toMatchObject({ startsAt: at("14:00"), partySize: 3 });
       await api().patch(`${V}/public/reservations/${token}`).send({ startsAt: at("14:10") }).expect(409);
+      // créneaux par le lien : la réservation du client ne compte pas comme occupée
+      const mine = await api().get(`${V}/public/reservations/${token}/availability?date=${D}&partySize=3`).expect(200);
+      const all = await api().get(`${V}/public/tenants/baobab/availability?date=${D}&partySize=3`).expect(200);
+      const starts = (b: any) => b.slots.map((x: any) => x.startsAt);
+      expect(starts(mine.body)).toContain(at("14:00"));
+      expect(starts(mine.body)).toEqual(expect.arrayContaining(starts(all.body)));
+      await api().get(`${V}/public/reservations/${"x".repeat(32)}/availability?date=${D}&partySize=3`).expect(404);
       await api().patch(`${V}/public/reservations/${token}`).send({}).expect(400);
       notif.outbox.length = 0;
       const d = await api().delete(`${V}/public/reservations/${token}`).expect(200);

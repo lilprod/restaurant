@@ -19,12 +19,11 @@ import { Stepper } from "@/components/ui/stepper";
 import { errorMessage, toastError } from "@/lib/errors";
 import { RESERVATION_STATUS_LABEL } from "@/lib/labels";
 import { dayOf, fmtDay, fmtTime, reservationTone, todayIn } from "../tenant/reservations/time";
-import { DayChips, PublicShell, PublicSlots, usePublicSlug } from "./shared";
+import { DayChips, PublicShell, PublicSlots } from "./shared";
 
 /** Gestion d'une réservation par lien (sans compte) : consulter, modifier (nombre, créneau, demandes), annuler. */
 export function ManageReservationPage() {
   const { token = "" } = useParams();
-  const slug = usePublicSlug();
   const qc = useQueryClient();
   const key = ["public", "reservation", token];
   const q = useQuery({ queryKey: key, queryFn: () => publicSpace.reservation(token), retry: (n, e) => !(e instanceof ApiError && e.status < 500) && n < 2 });
@@ -84,14 +83,14 @@ export function ManageReservationPage() {
         {!closed && !editing && (!r.canModify || !r.canCancel) && (
           <Callout tone="info">{!r.canCancel ? "Cette réservation a déjà commencé." : "Le délai pour modifier en ligne est dépassé."} Contactez directement le restaurant{r.restaurant.phone ? ` au ${r.restaurant.phone}` : ""}.</Callout>
         )}
-        {editing && <EditForm r={r} slug={slug || r.restaurant.slug} token={token} onDone={(next) => { if (next) qc.setQueryData(key, next); setEditing(false); }} />}
+        {editing && <EditForm r={r} token={token} onDone={(next) => { if (next) qc.setQueryData(key, next); setEditing(false); }} />}
         {closed && <Button asChild variant="secondary" size="lg" className="w-fit"><Link to={`/r/${r.restaurant.slug}/reserver`}>Réserver une autre table</Link></Button>}
       </div>
     </PublicShell>
   );
 }
 
-function EditForm({ r, slug, token, onDone }: { r: PublicReservation; slug: string; token: string; onDone: (r?: PublicReservation) => void }) {
+function EditForm({ r, token, onDone }: { r: PublicReservation; token: string; onDone: (r?: PublicReservation) => void }) {
   const tz = r.restaurant.timezone;
   const today = todayIn(tz);
   const [party, setParty] = React.useState(r.partySize);
@@ -99,8 +98,8 @@ function EditForm({ r, slug, token, onDone }: { r: PublicReservation; slug: stri
   const [startsAt, setStartsAt] = React.useState<string | null>(r.startsAt);
   const [requests, setRequests] = React.useState(r.specialRequests ?? "");
   const avail = useQuery({
-    queryKey: ["public", "availability", slug, date, party],
-    queryFn: () => publicSpace.availability(slug, { date, partySize: party }),
+    queryKey: ["public", "availability", "manage", token, date, party],
+    queryFn: () => publicSpace.reservationAvailability(token, { date, partySize: party }),
     placeholderData: (p) => p,
   });
   const save = useMutation({

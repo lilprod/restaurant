@@ -127,6 +127,12 @@ export class PublicReservationsController {
     return this.reservations.publicCreate(slug, body);
   }
 
+  @Get("reservations/:token/availability") @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiOperation({ summary: "Créneaux pour modifier sa réservation (elle ne compte pas comme occupée)" })
+  availabilityForToken(@Param("token") tk: string, @Query(new ZodPipe(publicAvailabilityQuerySchema)) q: PublicAvailabilityQuery) {
+    return this.reservations.publicAvailabilityForToken(token(tk), q);
+  }
+
   @Get("reservations/:token") @Throttle({ default: { limit: 30, ttl: 60_000 } })
   get(@Param("token") tk: string) { return this.reservations.publicGet(token(tk)); }
 

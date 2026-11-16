@@ -166,7 +166,7 @@ export function PosPage() {
           {adding && existing.data && <span className="truncate text-xs text-muted-foreground">{orderPlace(existing.data)}</span>}
         </div>
         {!adding && (
-          <div className="ml-auto flex w-full items-center gap-2 sm:w-auto">
+          <div className="ml-auto flex w-full flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap">
             <Segmented ariaLabel="Type de commande" size="sm" value={type} onChange={setType} className="w-auto min-w-0 flex-1 sm:flex-none"
               options={[
                 { value: "DINE_IN", label: "Sur place", icon: <span className="hidden sm:inline-flex"><LayoutGrid /></span> },
@@ -177,7 +177,7 @@ export function PosPage() {
                 <LayoutGrid /> {table ? <>Table <span className="font-mono">{table.label}</span></> : <><span className="sm:hidden">Table</span><span className="hidden sm:inline">Choisir la table</span></>}
               </Button>
             ) : (
-              <Input aria-label="Nom du client" placeholder="Nom du client" value={customer} onChange={(e) => setCustomer(e.target.value)} maxLength={60} className="min-w-0 sm:w-48" />
+              <Input aria-label="Nom du client" placeholder="Nom du client" value={customer} onChange={(e) => setCustomer(e.target.value)} maxLength={60} className="min-w-0 basis-full sm:basis-auto sm:w-48" />
             )}
           </div>
         )}

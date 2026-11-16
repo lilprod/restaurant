@@ -454,10 +454,21 @@ export class ReservationsService {
     const tenant = await this.publicTenant(slug);
     const ctx = await this.schedule.context(tenant.id, tenant);
     this.assertOnline(ctx);
+    return this.publicSlots(ctx, q);
+  }
+
+  /** Créneaux pour modifier sa réservation par le lien : la réservation elle-même ne compte pas comme occupée. */
+  async publicAvailabilityForToken(token: string, q: PublicAvailabilityQuery) {
+    const { ctx, view } = await this.byToken(token);
+    this.assertOnline(ctx);
+    return this.publicSlots(ctx, q, view.id);
+  }
+
+  private async publicSlots(ctx: BookingContext, q: PublicAvailabilityQuery, exclude?: string) {
     this.checkRules(ctx, { partySize: q.partySize, start: new Date(), durationMinutes: 0 }, "public", false);
     const durationMinutes = ctx.ops.reservationDurationMinutes;
     const { slots, windows, closure } = await this.compute(ctx, q.date, q.partySize, durationMinutes, {
-      minNoticeMinutes: ctx.rs.minNoticeMinutes, bookingWindowDays: ctx.rs.bookingWindowDays,
+      minNoticeMinutes: ctx.rs.minNoticeMinutes, bookingWindowDays: ctx.rs.bookingWindowDays, exclude,
     });
     return {
       date: q.date, timezone: ctx.tenant.timezone, partySize: q.partySize, durationMinutes,
