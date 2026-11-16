@@ -121,3 +121,4 @@ export * from "./restaurant";
 export * from "./stock";
 export * from "./reservations";
 export * from "./zod-fr";
+export * from "./staff";

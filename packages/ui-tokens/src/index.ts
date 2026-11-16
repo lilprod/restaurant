@@ -57,3 +57,9 @@ export const STOCK_COUNT_TONES: Record<string, StatusTone> = { OPEN: "blue", VAL
 export const stockStateTone = (s: string | null | undefined): StatusTone => (s ? STOCK_STATE_TONES[s] ?? "gray" : "gray");
 export const purchaseStatusTone = (s: string | null | undefined): StatusTone => (s ? PURCHASE_STATUS_TONES[s] ?? "gray" : "gray");
 export const stockCountTone = (s: string | null | undefined): StatusTone => (s ? STOCK_COUNT_TONES[s] ?? "gray" : "gray");
+
+/** Personnel (P4) : présence (en service = vert, en pause = ambre, absent du service = gris), absences (validée = vert, refusée = rouge). */
+export const PRESENCE_TONES: Record<string, StatusTone> = { CLOCKED_IN: "green", ON_BREAK: "amber", OFF: "gray" };
+export const ABSENCE_STATUS_TONES: Record<string, StatusTone> = { PENDING: "amber", APPROVED: "green", REJECTED: "red" };
+export const presenceTone = (s: string | null | undefined): StatusTone => (s ? PRESENCE_TONES[s] ?? "gray" : "gray");
+export const absenceStatusTone = (s: string | null | undefined): StatusTone => (s ? ABSENCE_STATUS_TONES[s] ?? "gray" : "gray");

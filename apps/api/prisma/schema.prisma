@@ -119,6 +119,20 @@ enum DeliveryStatus {
   FAILED
 }
 
+enum AbsenceStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ContractType {
+  CDI
+  CDD
+  EXTRA
+  INTERN
+  OTHER
+}
+
 enum AbsenceType {
   PAID_LEAVE
   SICK
@@ -908,6 +922,12 @@ model StaffProfile {
   overtimeMultiplier Decimal      @default(1.25) @db.Decimal(3, 2)
   hiredAt            DateTime
   emergencyContact   String?
+  contractType       ContractType @default(CDI)
+  contractEndsAt     DateTime?
+  notes              String?
+  kioskPinHash       String? // code personnel de pointage (argon2), jamais renvoyé
+  kioskFailedCount   Int          @default(0)
+  kioskLockedUntil   DateTime?
   user               User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   shifts             Shift[]
   attendances        Attendance[]
@@ -926,6 +946,8 @@ model Shift {
   endsAt      DateTime
   position    String?
   notes       String?
+  publishedAt DateTime? // nul = brouillon, invisible du personnel
+  createdAt   DateTime     @default(now())
   staff       StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
   attendances Attendance[]
 
@@ -934,31 +956,41 @@ model Shift {
 }
 
 model Attendance {
-  tenantId     String
-  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id           String       @id @default(uuid())
-  staffId      String
-  shiftId      String?
-  clockIn      DateTime
-  clockOut     DateTime?
-  breakMinutes Int          @default(0)
-  staff        StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  shift        Shift?       @relation(fields: [shiftId], references: [id])
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id             String       @id @default(uuid())
+  staffId        String
+  shiftId        String?
+  clockIn        DateTime
+  clockOut       DateTime?
+  breakMinutes   Int          @default(0)
+  breakStartedAt DateTime? // pause en cours
+  source         String       @default("SELF") // SELF | KIOSK | MANUAL
+  note           String?
+  correctedById  String?
+  correctedAt    DateTime?
+  staff          StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  shift          Shift?       @relation(fields: [shiftId], references: [id], onDelete: SetNull)
 
   @@index([staffId, clockIn])
   @@index([tenantId])
 }
 
 model Absence {
-  tenantId String
-  tenant   Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  id       String       @id @default(uuid())
-  staffId  String
-  type     AbsenceType
-  from     DateTime
-  to       DateTime
-  approved Boolean      @default(false)
-  staff    StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tenantId     String
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id           String        @id @default(uuid())
+  staffId      String
+  type         AbsenceType
+  from         DateTime
+  to           DateTime // exclu : début du lendemain du dernier jour d'absence
+  status       AbsenceStatus @default(PENDING)
+  reason       String?
+  decidedById  String?
+  decidedAt    DateTime?
+  decisionNote String?
+  createdAt    DateTime      @default(now())
+  staff        StaffProfile  @relation(fields: [staffId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
 }
@@ -970,9 +1002,11 @@ model Channel {
   id       String          @id @default(uuid())
   name     String?
   isDirect Boolean         @default(false)
+  key      String? // sys:all | sys:floor | sys:kitchen | dm:<idA>:<idB> (ids triés)
   members  ChannelMember[]
   messages Message[]
 
+  @@unique([tenantId, key])
   @@index([tenantId])
 }
 
@@ -995,6 +1029,7 @@ model Message {
   channelId String
   senderId  String
   body      String
+  mentions  String[] // ids des membres mentionnés
   createdAt DateTime @default(now())
   channel   Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
   sender    User     @relation(fields: [senderId], references: [id])

@@ -117,6 +117,7 @@ function TenantGate({ children }: { children: React.ReactNode }) {
 const MANAGERS = ["ADMIN", "MANAGER"];
 const FLOOR = ["ADMIN", "MANAGER", "WAITER"];
 const KITCHEN = ["ADMIN", "MANAGER", "KITCHEN"];
+const STAFF = ["ADMIN", "MANAGER", "WAITER", "KITCHEN"];
 const gate = (roles: string[], el: React.ReactNode) => <RoleGate allow={roles}>{el}</RoleGate>;
 
 /** Écrans plein écran (cuisine, prise de commande) : hors de la coquille, chargés à la demande. */
@@ -142,6 +143,7 @@ const tenantChildren: RouteObject[] = [
     ),
     children: [
       { path: "cuisine", element: gate(KITCHEN, fullScreen(() => import("@/features/tenant/kitchen/kitchen-page"), "KitchenPage")) },
+      { path: "pointage/tablette", element: gate(STAFF, fullScreen(() => import("@/features/tenant/staff-hr/kiosk-page"), "KioskPage")) },
       { path: "commandes/nouvelle", element: gate(FLOOR, fullScreen(() => import("@/features/tenant/pos/pos-page"), "PosPage")) },
       { path: "commandes/:id/ajouter", element: gate(FLOOR, fullScreen(() => import("@/features/tenant/pos/pos-page"), "PosPage")) },
       {
@@ -158,6 +160,9 @@ const tenantChildren: RouteObject[] = [
           { path: "stock", element: gate(KITCHEN, lazyPage(() => import("@/features/tenant/stock/stock-page"), "StockPage")) },
           { path: "stock/inventaire", element: gate(MANAGERS, lazyPage(() => import("@/features/tenant/stock/count-page"), "StockCountPage")) },
           { path: "fournisseurs", element: gate(KITCHEN, lazyPage(() => import("@/features/tenant/stock/suppliers-page"), "SuppliersPage")) },
+          { path: "personnel", element: gate(MANAGERS, lazyPage(() => import("@/features/tenant/staff-hr/personnel-page"), "PersonnelPage")) },
+          { path: "mon-planning", element: lazyPage(() => import("@/features/tenant/staff-hr/my-schedule-page"), "MySchedulePage") },
+          { path: "messagerie", element: lazyPage(() => import("@/features/tenant/messaging/messaging-page"), "MessagingPage") },
           { path: "equipe", element: gate(MANAGERS, lazyPage(() => import("@/features/tenant/staff/staff-page"), "StaffPage")) },
           { path: "caisse", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/register/register-page"), "RegisterPage")) },
           { path: "notifications", element: gate(["ADMIN"], lazyPage(() => import("@/features/tenant/notifications-page"), "TenantNotificationsPage")) },

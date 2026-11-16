@@ -23,6 +23,7 @@ export const NOTIFICATION_TEMPLATE_LABEL: Record<string, string> = {
   "reservation.cancelled": "Réservation annulée",
   "reservation.reminder": "Rappel de réservation",
   "waitlist.available": "Place libérée (liste d'attente)",
+  "staff.planning-published": "Planning publié",
 };
 export const RESERVATION_STATUS_LABEL: Record<string, string> = {
   PENDING: "À confirmer", CONFIRMED: "Confirmée", SEATED: "Installée", COMPLETED: "Terminée", CANCELLED: "Annulée", NO_SHOW: "Absent",
@@ -91,3 +92,11 @@ export const PURCHASE_STATUS_LABEL: Record<string, string> = {
 };
 export const STOCK_COUNT_STATUS_LABEL: Record<string, string> = { OPEN: "En cours", VALIDATED: "Validé", CANCELLED: "Annulé" };
 export const STOCK_UNIT_LABEL: Record<string, string> = { g: "g", kg: "kg", ml: "ml", cl: "cl", l: "l", piece: "pièce" };
+
+// ── P4 : personnel ──
+export const CONTRACT_LABEL: Record<string, string> = { CDI: "CDI", CDD: "CDD", EXTRA: "Extra", INTERN: "Stagiaire", OTHER: "Autre" };
+export const ABSENCE_TYPE_LABEL: Record<string, string> = { PAID_LEAVE: "Congé payé", SICK: "Maladie", UNPAID: "Sans solde", OTHER: "Autre" };
+export const ABSENCE_STATUS_LABEL: Record<string, string> = { PENDING: "En attente", APPROVED: "Validée", REJECTED: "Refusée" };
+export const PRESENCE_LABEL: Record<string, string> = { OFF: "Hors service", CLOCKED_IN: "En service", ON_BREAK: "En pause" };
+export const ATTENDANCE_SOURCE_LABEL: Record<string, string> = { SELF: "Compte", KIOSK: "Tablette", MANUAL: "Saisie" };
+export const PUNCH_LABEL: Record<string, string> = { IN: "Arrivée", OUT: "Départ", BREAK_START: "Début de pause", BREAK_END: "Fin de pause" };

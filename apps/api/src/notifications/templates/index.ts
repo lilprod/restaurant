@@ -9,6 +9,7 @@ import {
   reservationCancelled, reservationConfirmed, reservationPending, reservationReminder, reservationUpdated, waitlistAvailable,
   type ReservationCancelledData, type ReservationData, type WaitlistAvailableData,
 } from "./reservations";
+import { planningPublished, type PlanningPublishedData } from "./staff";
 import type { TemplateDef } from "./types";
 
 /**
@@ -30,6 +31,7 @@ export interface TemplateDataMap {
   "reservation.cancelled": ReservationCancelledData;
   "reservation.reminder": ReservationData;
   "waitlist.available": WaitlistAvailableData;
+  "staff.planning-published": PlanningPublishedData;
 }
 export type TemplateName = keyof TemplateDataMap;
 
@@ -46,6 +48,7 @@ export const TEMPLATES: { [K in TemplateName]: TemplateDef<TemplateDataMap[K]> }
   "reservation.cancelled": reservationCancelled,
   "reservation.reminder": reservationReminder,
   "waitlist.available": waitlistAvailable,
+  "staff.planning-published": planningPublished,
 };
 
 export { renderEmail } from "./layout";

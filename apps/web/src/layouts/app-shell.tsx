@@ -22,6 +22,8 @@ export interface NavItem {
   keywords?: string[];
   /** Titre de groupe dans la barre latérale (affiché quand il change d'un lien au suivant). */
   section?: string;
+  /** Pastille de compteur (non-lus…) ; masquée à 0. */
+  badge?: number;
 }
 
 interface AppShellProps {
@@ -165,6 +167,7 @@ function SidebarContent({ nav, spaceLabel, roleLabel, accountPath, onSearch }: {
                     {isActive && <motion.span layoutId="nav-bar" className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-brand" />}
                     <span className={cn("relative flex [&_svg]:size-4", isActive && "text-brand-ink")}>{n.icon}</span>
                     <span className="relative">{n.label}</span>
+                    {!!n.badge && <span className="relative ml-auto rounded-full bg-brand px-1.5 py-0.5 text-[11px] font-semibold leading-none text-brand-foreground tabular-nums" aria-label={`${n.badge} non lu${n.badge > 1 ? "s" : ""}`}>{n.badge > 99 ? "99+" : n.badge}</span>}
                   </>
                 )}
               </NavLink>

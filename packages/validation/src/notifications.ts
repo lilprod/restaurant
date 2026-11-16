@@ -17,6 +17,7 @@ export const NOTIFICATION_EVENTS = [
   { key: "licenseReminders", label: "Relances de licence", description: "Rappels 7 jours et 1 jour avant l'échéance, puis le jour de l'expiration." },
   { key: "reservations", label: "Réservations", description: "Confirmation, modification et annulation envoyées au client." },
   { key: "reservationReminders", label: "Rappels de réservation", description: "Rappel envoyé au client la veille à 18 h." },
+  { key: "staffPlanning", label: "Planning du personnel", description: "Message au personnel quand son planning est publié." },
   { key: "waitlist", label: "Liste d'attente", description: "Message au client quand une place se libère." },
 ] as const;
 

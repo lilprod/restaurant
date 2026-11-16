@@ -43,6 +43,7 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       await this.gate.assertAccess(claims.tid);
       client.data = { tenantId: claims.tid, userId: acc.id, role: acc.role };
       await client.join(`tenant:${claims.tid}`);
+      await client.join(`tenant:${claims.tid}:user:${acc.id}`); // événements privés (messagerie, planning personnel)
       client.emit("ready", { tenantId: claims.tid, role: acc.role });
     } catch (e) {
       const message = e instanceof Error ? e.message : "Connexion refusée";

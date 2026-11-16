@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   BookOpen, CalendarClock, CalendarDays, Package, Truck, ChefHat, ClipboardList, HandPlatter, Landmark, LayoutDashboard, LayoutGrid, Settings, ShieldCheck,
-  ShoppingBag, SquarePlus, Users, WalletCards, Bell,
+  ShoppingBag, SquarePlus, Users, WalletCards, Bell, CalendarRange, MessageSquare, UserCog,
 } from "lucide-react";
 import { motion } from "motion/react";
 import * as React from "react";
@@ -13,6 +13,8 @@ import { TENANT_ROLE_LABEL } from "@/lib/labels";
 import { useSession } from "@/providers/session";
 import { useSpacePath } from "@/providers/space";
 import { useTenant } from "./hooks";
+import { useMyAttendance } from "./staff-hr/hr-hooks";
+import { useUnreadCount } from "./messaging/messaging-hooks";
 import { useStockAlerts } from "./stock/stock-hooks";
 
 /**
@@ -25,6 +27,8 @@ export function useTenantNav(): NavItem[] {
   const to = useSpacePath();
   const t = useTenant();
   const stock = useStockAlerts();
+  const hr = useMyAttendance();
+  const unread = useUnreadCount();
   return React.useMemo(() => {
     const S = "Service", G = "Gestion";
     const items: (NavItem | false)[] = [
@@ -35,9 +39,12 @@ export function useTenantNav(): NavItem[] {
       t.isFloor && { to: to("/tables"), label: "Tables", icon: <LayoutGrid />, keywords: ["salle", "débarrasser"], section: S },
       t.isKitchen && { to: to("/cuisine"), label: "Écran cuisine", icon: <ChefHat />, keywords: ["kds", "préparation"], section: S },
       t.isFloor && { to: to("/caisse"), label: "Caisse", icon: <Landmark />, keywords: ["fond de caisse", "clôture", "espèces"], section: S },
+      { to: to("/messagerie"), label: "Messagerie", icon: <MessageSquare />, keywords: ["message", "discussion", "équipe", "canal", "mention"], section: S, badge: unread },
+      hr.moduleEnabled && { to: to("/mon-planning"), label: "Mon planning", icon: <CalendarRange />, keywords: ["horaires", "pointage", "congés", "absence", "arrivée", "départ"], section: S },
       (t.isManager || t.role === "KITCHEN") && { to: to("/menu"), label: t.isManager ? "Menu" : "Disponibilités", icon: <BookOpen />, keywords: ["carte", "plats", "épuisé", "allergènes"], section: G },
       stock.moduleEnabled && { to: to("/stock"), label: "Stock", icon: <Package />, keywords: ["ingrédients", "inventaire", "pertes", "alertes", "recette"], section: G },
       stock.moduleEnabled && t.isManager && { to: to("/fournisseurs"), label: "Fournisseurs", icon: <Truck />, keywords: ["achats", "réception", "commande fournisseur"], section: G },
+      hr.moduleEnabled && t.isManager && { to: to("/personnel"), label: "Personnel", icon: <UserCog />, keywords: ["planning", "pointage", "paie", "heures", "performances", "absences", "fiches", "congés"], section: G },
       t.isManager && { to: to("/equipe"), label: "Équipe", icon: <Users />, keywords: ["personnel", "serveur", "rôle"], section: G },
       { to: to("/parametres"), label: "Paramètres", icon: <Settings />, keywords: ["marque", "logo", "tva", "réservations"], section: G },
       t.isAdmin && { to: to("/securite"), label: "Sécurité", icon: <ShieldCheck />, keywords: ["utilisateurs", "connexions"], section: G },
@@ -45,7 +52,7 @@ export function useTenantNav(): NavItem[] {
       t.canSeeLicense && { to: to("/licence"), label: "Licence", icon: <WalletCards />, keywords: ["paiement", "abonnement", "flooz", "tmoney"], section: G },
     ];
     return items.filter(Boolean) as NavItem[];
-  }, [to, t.role, t.isManager, t.isFloor, t.isKitchen, t.isAdmin, t.canSeeLicense, stock.moduleEnabled]);
+  }, [to, t.role, t.isManager, t.isFloor, t.isKitchen, t.isAdmin, t.canSeeLicense, stock.moduleEnabled, hr.moduleEnabled, unread]);
 }
 
 export function TenantShell() {

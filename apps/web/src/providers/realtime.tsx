@@ -1,10 +1,11 @@
-import type { Order, Reservation, WaitlistEntry } from "@restaurant/api-client";
+import type { ChatMessage, Order, Reservation, WaitlistEntry } from "@restaurant/api-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { API_BASE, getTenantSpace } from "@/app/spaces";
 import { RealtimeConnection, realtimeOrigin, type RealtimeStatus } from "@/lib/realtime/connection";
 import { applyMenuEvent, applyTableEvent, type MenuEvent, type TableEvent } from "@/lib/realtime/catalog-cache";
 import { applyOrderEvent, resyncServiceQueries } from "@/lib/realtime/order-cache";
+import { applyMessageEvent } from "@/lib/realtime/messaging-cache";
 import { applyReservationEvent, applyWaitlistEvent } from "@/lib/realtime/reservation-cache";
 import { applyStockEvent, type StockUpdatedEvent } from "@/lib/realtime/stock-cache";
 import { formatQty } from "@/lib/format";
@@ -45,6 +46,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   });
   const roleRef = React.useRef<string | undefined>(undefined);
   roleRef.current = session.user?.role;
+  const meRef = React.useRef<string | undefined>(undefined);
+  meRef.current = session.user?.id;
   const tzRef = React.useRef<string | undefined>(undefined);
   tzRef.current = localization.data?.timezone;
 
@@ -59,7 +62,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           applyOrderEvent(qc, root, order, { timeZone: tzRef.current });
           for (const l of [...listeners.current]) l(event, order);
         },
-        onResync: () => { resyncServiceQueries(qc, root); void qc.invalidateQueries({ queryKey: tenantKeys.reservations(root) }); },
+        onResync: () => {
+          resyncServiceQueries(qc, root);
+          void qc.invalidateQueries({ queryKey: tenantKeys.reservations(root) });
+          void qc.invalidateQueries({ queryKey: [...root, "chat"] });
+        },
         onOther: (event, payload) => {
           if (event === "menu.updated") applyMenuEvent(qc, root, payload as MenuEvent);
           else if (event === "menu.extras.updated") {
@@ -77,6 +84,16 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
             }
           }
           else if (event === "waitlist.updated") applyWaitlistEvent(qc, root, payload as WaitlistEntry);
+          else if (event === "message.created") {
+            // Événement privé : seuls les membres du canal le reçoivent.
+            const m = payload as ChatMessage;
+            const me = meRef.current;
+            if (me && applyMessageEvent(qc, root, m, me).notify) toast.info(`${m.senderName}`, { description: m.body.length > 90 ? `${m.body.slice(0, 90)}…` : m.body, id: `msg-${m.id}` });
+          }
+          else if (event === "planning.published") {
+            void qc.invalidateQueries({ queryKey: tenantKeys.hrPlannings(root) });
+            toast.info("Votre planning est publié", { id: "planning-published" });
+          }
           else if (event === "stock.updated") applyStockEvent(qc, root, payload as StockUpdatedEvent);
           else if (event === "stock.low" && roleRef.current !== "WAITER") {
             // Une seule fois par franchissement de seuil (garanti par l'API). Les notifications persistantes : X1.

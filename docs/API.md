@@ -436,3 +436,81 @@ Rappels de la veille · proposition d'absence : réservation `PENDING/CONFIRMED`
 - **`reservation.created`**, **`reservation.updated`** : `Reservation` complète (création salle ou en ligne ; modification, changement de statut, proposition d'absence).
 - **`waitlist.updated`** : `WaitlistEntry` (création, message, conversion, retrait).
 - **`table.updated`** à l'installation, à la fin et au changement de table d'une réservation installée.
+
+---
+
+# P4 — Personnel : fiches, planning, pointage, absences, performances, paie, messagerie (`/tenant/staff/...`, `/tenant/messaging/...`)
+
+Module **`staff`** du plan (Starter : non) : toutes les routes `/tenant/staff/...` répondent `403 {code: "PLAN_FEATURE"}` sans lui
+(garde `PlanFeatureGuard`). La **messagerie est ouverte à tous les plans**. Jours = `AAAA-MM-JJ` dans le fuseau du restaurant ; semaine = lundi→dimanche
+(`localization.firstDayOfWeek`). Mêmes routes `GET /tenant/staff` (liste des comptes) et `PATCH /tenant/staff/:id` que la phase 1 (inchangées).
+
+## Réglages — section `staff` (`GET/PATCH /tenant/settings/staff`, lecture responsables, écriture administrateur)
+`{ overtimeThresholdHours: 40, leaveDaysPerYear: 24 }` : seuil hebdomadaire d'heures supplémentaires, congés payés annuels.
+
+## Fiches (responsables ; taux horaire : administrateur)
+| Méthode | Route | Rôle | Description |
+|---|---|---|---|
+| GET | `/profiles` · `/profiles/:userId` | responsables | Comptes (hors clients) avec leur fiche ou `profile: null`. `hourlyRate` et `overtimeMultiplier` valent `null` sauf pour l'administrateur |
+| PUT | `/profiles/:userId` | responsables | Crée ou met à jour `{position, contractType: CDI\|CDD\|EXTRA\|INTERN\|OTHER, hiredAt, contractEndsAt?, emergencyContact?, notes?, hourlyRate?, overtimeMultiplier?}` ; `hourlyRate`/`overtimeMultiplier` par un gérant → **403** |
+| GET | `/me` | personnel | Ma fiche (mon taux inclus) |
+| PUT | `/profiles/:userId/kiosk-code` | responsables | `{code}` 4–6 chiffres, ni répétés ni en suite ; **haché** (argon2), jamais renvoyé (`kioskCodeSet`) ; 409 sans fiche |
+| DELETE | `/profiles/:userId/kiosk-code` · POST `/profiles/:userId/kiosk-unlock` | responsables | Retirer le code · lever le verrouillage |
+
+## Planning (responsables) et « mon planning »
+| Méthode | Route | Rôle | Description |
+|---|---|---|---|
+| GET | `/planning?week=` | responsables | `{weekStart, weekEnd, days[7], timezone, shifts[], absences[] (en attente ou validées), staff[], draftCount, missingProfiles}` ; `week` = n'importe quel jour de la semaine |
+| GET | `/planning/mine?week=` | personnel | Mes créneaux **publiés** et mes absences |
+| POST · PATCH · DELETE | `/shifts` · `/shifts/:id` | responsables | `{staffId, startsAt, endsAt, position?, notes?}` (16 h au plus, fin > début). **409** `SHIFT_OVERLAP` (autre créneau de la personne ; bout à bout accepté), **409** `ABSENCE_CONFLICT` (absence validée), 404 autre restaurant. Verrou consultatif par personne : deux créneaux simultanés → un seul passe |
+| POST | `/planning/copy` | responsables | `{fromWeek, toWeek}` → `{copied, skipped, week}` : copie en **brouillon** (même heure murale, changement d'heure compris) ; ce qui chevauche un créneau/absence est ignoré |
+| POST | `/planning/publish` | responsables | `{week}` → `{published, people, notified, week}` : passe les brouillons en publiés et prévient **chaque personne concernée** (ses créneaux seulement) |
+
+Notification X1 `staff.planning-published` (catégorie `reminder`, événement `staffPlanning` désactivable) : email, et SMS si numéro + canal actif.
+
+## Pointage
+| Méthode | Route | Rôle | Description |
+|---|---|---|---|
+| GET | `/me/attendance` | personnel | `{hasProfile, state: OFF\|CLOCKED_IN\|ON_BREAK, open, today[], shift}` |
+| POST | `/me/punch` | personnel | `{action: IN\|OUT\|BREAK_START\|BREAK_END}` → pointage. `IN` se rattache au créneau **publié** le plus proche non déjà pris (de 2 h avant son début à sa fin). 409 : déjà pointé, pas de pointage ouvert, pause en cours / absente ; 409 sans fiche. Sérialisé par personne (deux appareils simultanés : un seul pointage ouvert) |
+| GET | `/kiosk` | personnel (compte de la tablette) | Personnes ayant un code : `[{staffId, name, position, state}]` |
+| POST | `/kiosk/punch` | personnel (compte de la tablette) | `{staffId, code, action}` → pointage + `name`, `source: KIOSK`. Code faux : **400 `KIOSK_CODE_INVALID`** (essais restants dans le message) ; après `security.maxFailedAttempts` échecs : **423 `KIOSK_LOCKED`** pendant `security.lockoutMinutes` (le bon code est alors refusé aussi) ; levée par un responsable. Audité |
+| GET | `/attendance?from=&to=&staffId?` · `/attendance/present` | responsables | Pointages d'une période (500 max) · pointages ouverts |
+| POST | `/attendance` | responsables | Saisie manuelle `{staffId, clockIn, clockOut, breakMinutes?, note}` (`source: MANUAL`, motif obligatoire) ; 409 si chevauchement |
+| PATCH | `/attendance/:id` | responsables | Correction `{clockIn?, clockOut?, breakMinutes?, note}` (motif obligatoire) ; audit `staff.attendance.correct` avec avant / après |
+
+## Absences et congés
+| Méthode | Route | Rôle | Description |
+|---|---|---|---|
+| GET | `/absences?status=&mine=` | personnel | Responsables : toutes ; autres : les leurs |
+| POST | `/absences` | personnel | `{type: PAID_LEAVE\|SICK\|UNPAID\|OTHER, from, to (inclus), reason?, staffId?}` → `PENDING`. `staffId` (responsables seulement, sinon 403) : saisie pour quelqu'un, **validée d'office**. 409 : chevauche une absence ; **solde de congés insuffisant** |
+| POST | `/absences/:id/decision` | responsables | `{decision: APPROVED\|REJECTED, note?}` ; 409 si déjà traitée ; **jamais sa propre demande** (403) |
+| DELETE | `/absences/:id` | personnel | La personne retire sa demande **en attente** ; un responsable supprime toute absence |
+| GET | `/absences/balance?userId?&year?` | personnel | `{year, allowance, taken, pending, remaining}` (jours calendaires de congés payés, année civile) ; `userId` réservé aux responsables |
+
+## Performances et paie
+| Méthode | Route | Rôle | Description |
+|---|---|---|---|
+| GET | `/performance?from=&to=` | responsables | Par serveur : `{rank, name, orders, revenue, tips, cancellations, averageTicket}` + `totals` + `unassigned`. Mêmes définitions que le tableau de bord : commandes non annulées créées sur la période, encaissé = paiements `PAID` (date de paiement), ticket moyen = total des commandes ÷ nombre. Pourboires par serveur, **sans répartition**. Période ≤ 93 jours |
+| GET | `/payroll?from=&to=` | **administrateur** | Par personne : `normalMinutes`, `overtimeMinutes`, `gross` (FCFA entiers) ; `thresholdHours` |
+| GET | `/payroll/export?from=&to=` | **administrateur** | CSV (`;`, virgule décimale, BOM, protégé contre l'injection de formule) |
+
+Règles d'heures (`@restaurant/utils` `computeHours`, testées) : heures = pointage − pause ; un pointage à cheval sur deux semaines est **coupé à la frontière de semaine locale**
+(pause au prorata) ; au-delà du seuil hebdomadaire, les minutes les plus récentes de la semaine sont supplémentaires ; un morceau est compté dans la période où il commence
+(les pointages de la semaine précédant la période servent au cumul) ; pointages ouverts ignorés ; brut = normales × taux + sup. × taux × majoration, arrondi à l'entier.
+
+## Messagerie (tout le personnel, tous plans) — `/tenant/messaging`
+Canaux communs créés à la demande : **Tous** (tout le personnel), **Salle** (administrateur, gérant, serveur), **Cuisine** (administrateur, gérant, cuisine), membres alignés sur le rôle.
+Messages directs privés (clé `dm:<idA>:<idB>`, sans doublon même en concurrence ; invisibles pour tout autre, responsables compris).
+| Méthode | Route | Description |
+|---|---|---|
+| GET | `/channels` | Mes canaux : `{id, kind: ALL\|FLOOR\|KITCHEN\|DIRECT, name, members[], unread, unreadMentions, lastMessage}` (un message direct vide n'apparaît pas chez l'autre) |
+| GET | `/unread` · `/people` | Total des non-lus · personnes joignables |
+| POST | `/direct` | `{userId}` → canal direct (400 soi-même, 404 autre restaurant) |
+| GET | `/channels/:id/messages?before=&limit=` | Historique paginé `{messages[], hasMore}` — **404 si je ne suis pas membre** |
+| POST | `/channels/:id/messages` | `{body (≤ 2000), mentions[]}` (mentions limitées aux membres, jamais soi-même) ; 404 si non membre |
+| POST | `/channels/:id/read` | Marque lu |
+
+## Temps réel (privé)
+`message.created` (`{id, channelId, senderId, senderName, body, mentions, createdAt}`) est émis **uniquement aux appareils des membres du canal** (salle `tenant:<id>:user:<userId>`,
+`RealtimeService.emitToUsers`) ; `planning.published` `{week}` aux personnes dont des créneaux viennent d'être publiés.

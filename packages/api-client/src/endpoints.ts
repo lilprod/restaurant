@@ -6,6 +6,8 @@ import type {
   StockAdjustInput, StockCountLinesInput, SupplierInput, SupplierUpdate, WasteInput,
   CancelReservationInput, ClosureInput, ConvertWaitlistInput, CreateReservationInput, OpeningHoursInput, PublicReservationInput,
   PublicUpdateReservationInput, ReservationsSettingsInput, UpdateReservationInput, WaitlistInput,
+  AbsenceDecisionInput, AbsenceInput, AttendanceCorrectionInput, AttendanceCreateInput, CopyWeekInput, KioskCodeInput, KioskPunchInput, PublishWeekInput,
+  ShiftInput, ShiftUpdate, StaffProfileInput, StaffSettingsInput,
 } from "@restaurant/validation";
 import type { ApiClient } from "./client";
 import type {
@@ -20,6 +22,8 @@ import type {
   Formula, Promotion,
   Availability, CancelledReservation, ClosureCreated, ClosureDay, OpeningRange, PublicAvailability, PublicReservation,
   PublicReservationCreated, Reservation, ReservationsQuery, WaitlistEntry, WaitlistStatus,
+  Attendance, ChatChannel, ChatMessage, KioskPerson, LeaveBalance, MyAttendance, Payroll, Performance, PlanningAbsence, Planning, Shift, StaffFile,
+  AbsenceStatus, PunchAction,
 } from "./types";
 
 const enc = encodeURIComponent;
@@ -86,6 +90,7 @@ type SettingsSectionMap = {
   security: Section<TenantSecurityInput>;
   notifications: Section<NotificationsSettingsInput>;
   reservations: Section<ReservationsSettingsInput>;
+  staff: Section<StaffSettingsInput>;
 };
 type PlatformSectionMap = {
   branding: Section<BrandingSettings>;
@@ -343,6 +348,50 @@ export function tenantApi(c: ApiClient) {
       list: (q: { from?: string; to?: string } = {}) => c.get<ClosureDay[]>("/tenant/closures", { query: { ...q } }),
       create: (body: ClosureInput) => c.post<ClosureCreated>("/tenant/closures", body),
       remove: (id: string) => c.delete<void>(`/tenant/closures/${enc(id)}`),
+    },
+    // ── P4 : personnel (module `staff` du plan, sauf la messagerie) ──
+    staffHr: {
+      profiles: () => c.get<StaffFile[]>("/tenant/staff/profiles"),
+      saveProfile: (userId: string, body: StaffProfileInput) => c.put<StaffFile>(`/tenant/staff/profiles/${enc(userId)}`, body),
+      setKioskCode: (userId: string, body: KioskCodeInput) => c.put<{ ok: true }>(`/tenant/staff/profiles/${enc(userId)}/kiosk-code`, body),
+      removeKioskCode: (userId: string) => c.delete<{ ok: true }>(`/tenant/staff/profiles/${enc(userId)}/kiosk-code`),
+      unlockKiosk: (userId: string) => c.post<{ ok: true }>(`/tenant/staff/profiles/${enc(userId)}/kiosk-unlock`),
+      me: () => c.get<StaffFile>("/tenant/staff/me"),
+      planning: (week?: string) => c.get<Planning>("/tenant/staff/planning", { query: { week } }),
+      myPlanning: (week?: string) => c.get<Planning>("/tenant/staff/planning/mine", { query: { week } }),
+      createShift: (body: ShiftInput) => c.post<Shift>("/tenant/staff/shifts", body),
+      updateShift: (id: string, body: ShiftUpdate) => c.patch<Shift>(`/tenant/staff/shifts/${enc(id)}`, body),
+      removeShift: (id: string) => c.delete<{ ok: true }>(`/tenant/staff/shifts/${enc(id)}`),
+      copyWeek: (body: CopyWeekInput) => c.post<{ copied: number; skipped: number; week: string }>("/tenant/staff/planning/copy", body),
+      publish: (body: PublishWeekInput) => c.post<{ published: number; people: number; notified: number; week: string }>("/tenant/staff/planning/publish", body),
+      myAttendance: () => c.get<MyAttendance>("/tenant/staff/me/attendance"),
+      punch: (action: PunchAction) => c.post<Attendance>("/tenant/staff/me/punch", { action }),
+      kiosk: () => c.get<KioskPerson[]>("/tenant/staff/kiosk"),
+      kioskPunch: (body: KioskPunchInput) => c.post<Attendance & { name: string }>("/tenant/staff/kiosk/punch", body),
+      attendance: (q: { from: string; to: string; staffId?: string }) => c.get<Attendance[]>("/tenant/staff/attendance", { query: { ...q } }),
+      present: () => c.get<Attendance[]>("/tenant/staff/attendance/present"),
+      createAttendance: (body: AttendanceCreateInput) => c.post<Attendance>("/tenant/staff/attendance", body),
+      correctAttendance: (id: string, body: AttendanceCorrectionInput) => c.patch<Attendance>(`/tenant/staff/attendance/${enc(id)}`, body),
+      absences: (q: { status?: AbsenceStatus; mine?: boolean } = {}) => c.get<PlanningAbsence[]>("/tenant/staff/absences", { query: { status: q.status, mine: q.mine === undefined ? undefined : String(q.mine) } }),
+      balance: (q: { userId?: string; year?: number } = {}) => c.get<LeaveBalance>("/tenant/staff/absences/balance", { query: { ...q } }),
+      requestAbsence: (body: AbsenceInput) => c.post<PlanningAbsence>("/tenant/staff/absences", body),
+      decideAbsence: (id: string, body: AbsenceDecisionInput) => c.post<PlanningAbsence>(`/tenant/staff/absences/${enc(id)}/decision`, body),
+      cancelAbsence: (id: string) => c.delete<{ ok: true }>(`/tenant/staff/absences/${enc(id)}`),
+      performance: (q: { from: string; to: string }) => c.get<Performance>("/tenant/staff/performance", { query: { ...q } }),
+      payroll: (q: { from: string; to: string }) => c.get<Payroll>("/tenant/staff/payroll", { query: { ...q } }),
+      /** Contenu du CSV (texte) : à enregistrer côté navigateur. */
+      payrollCsv: (q: { from: string; to: string }) => c.get<string>("/tenant/staff/payroll/export", { query: { ...q } }),
+    },
+    // ── P4 : messagerie interne (ouverte à tous les plans) ──
+    messaging: {
+      channels: () => c.get<ChatChannel[]>("/tenant/messaging/channels"),
+      unread: () => c.get<{ unread: number; mentions: number }>("/tenant/messaging/unread"),
+      people: () => c.get<{ id: string; name: string; role: StaffRole }[]>("/tenant/messaging/people"),
+      direct: (userId: string) => c.post<ChatChannel>("/tenant/messaging/direct", { userId }),
+      messages: (channelId: string, q: { before?: string; limit?: number } = {}) =>
+        c.get<{ messages: ChatMessage[]; hasMore: boolean }>(`/tenant/messaging/channels/${enc(channelId)}/messages`, { query: { ...q } }),
+      send: (channelId: string, body: { body: string; mentions?: string[] }) => c.post<ChatMessage>(`/tenant/messaging/channels/${enc(channelId)}/messages`, body),
+      read: (channelId: string) => c.post<{ ok: true }>(`/tenant/messaging/channels/${enc(channelId)}/read`),
     },
     waitlist: {
       list: (q: { date?: string; status?: WaitlistStatus } = {}) => c.get<WaitlistEntry[]>("/tenant/waitlist", { query: { ...q } }),

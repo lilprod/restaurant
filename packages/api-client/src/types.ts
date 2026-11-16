@@ -908,3 +908,158 @@ export interface PublicReservationCreated {
   manageUrl: string;
   reservation: PublicReservation;
 }
+
+// ───────── P4 : personnel ─────────
+export type ContractType = "CDI" | "CDD" | "EXTRA" | "INTERN" | "OTHER";
+export type PresenceState = "OFF" | "CLOCKED_IN" | "ON_BREAK";
+export type PunchAction = "IN" | "OUT" | "BREAK_START" | "BREAK_END";
+export type AbsenceType = "PAID_LEAVE" | "SICK" | "UNPAID" | "OTHER";
+export type AbsenceStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+export interface StaffProfile {
+  id: string;
+  position: string;
+  contractType: ContractType;
+  contractEndsAt: string | null;
+  hiredAt: string;
+  emergencyContact: string | null;
+  notes: string | null;
+  /** `null` pour un responsable qui n'est pas administrateur. */
+  hourlyRate: number | null;
+  overtimeMultiplier: number | null;
+  kioskCodeSet: boolean;
+  kioskLockedUntil: ISODate | null;
+}
+export interface StaffFile {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  role: StaffRole;
+  isActive: boolean;
+  profile: StaffProfile | null;
+}
+export interface Shift {
+  id: string;
+  staffId: string;
+  userId: string;
+  staffName: string;
+  startsAt: ISODate;
+  endsAt: ISODate;
+  position: string | null;
+  notes: string | null;
+  publishedAt: ISODate | null;
+}
+export interface PlanningAbsence {
+  id: string;
+  staffId: string;
+  staffName: string;
+  type: AbsenceType;
+  status: AbsenceStatus;
+  fromDay: string;
+  toDay: string;
+  days: number;
+  reason: string | null;
+  decisionNote: string | null;
+  decidedAt: ISODate | null;
+  createdAt: ISODate;
+}
+export interface PlanningStaff { staffId: string; userId: string; name: string; role: StaffRole; position: string }
+export interface Planning {
+  weekStart: string;
+  weekEnd: string;
+  days: string[];
+  timezone: string;
+  shifts: Shift[];
+  absences: PlanningAbsence[];
+  staff: PlanningStaff[];
+  draftCount: number;
+  missingProfiles: number;
+}
+export interface Attendance {
+  id: string;
+  staffId: string;
+  staffName: string;
+  position: string;
+  shiftId: string | null;
+  clockIn: ISODate;
+  clockOut: ISODate | null;
+  breakMinutes: number;
+  breakStartedAt: ISODate | null;
+  source: "SELF" | "KIOSK" | "MANUAL";
+  note: string | null;
+  correctedAt: ISODate | null;
+  workedMinutes: number;
+  state: PresenceState;
+}
+export interface MyAttendance {
+  hasProfile: boolean;
+  state: PresenceState;
+  open: Attendance | null;
+  today: Attendance[];
+  shift: Shift | null;
+}
+export interface KioskPerson { staffId: string; name: string; position: string; state: PresenceState }
+export interface LeaveBalance { year: number; allowance: number; taken: number; pending: number; remaining: number }
+export interface PerformanceRow {
+  rank: number;
+  userId: string;
+  name: string;
+  role: StaffRole | null;
+  orders: number;
+  revenue: number;
+  tips: number;
+  cancellations: number;
+  averageTicket: number;
+}
+export interface PerformanceTotals { orders: number; revenue: number; tips: number; cancellations: number; averageTicket: number }
+export interface Performance {
+  from: string;
+  to: string;
+  rows: PerformanceRow[];
+  unassigned: Omit<PerformanceTotals, never> | null;
+  totals: PerformanceTotals;
+}
+export interface PayrollRow {
+  staffId: string;
+  name: string;
+  position: string;
+  hourlyRate: number;
+  overtimeMultiplier: number;
+  normalMinutes: number;
+  overtimeMinutes: number;
+  totalMinutes: number;
+  gross: number;
+  openAttendances: number;
+}
+export interface Payroll {
+  from: string;
+  to: string;
+  thresholdHours: number;
+  rows: PayrollRow[];
+  totals: { normalMinutes: number; overtimeMinutes: number; gross: number };
+}
+
+export type ChannelKind = "ALL" | "FLOOR" | "KITCHEN" | "DIRECT";
+export interface ChatMember { id: string; name: string; role: StaffRole }
+export interface ChatChannel {
+  id: string;
+  kind: ChannelKind;
+  name: string;
+  isDirect: boolean;
+  members: ChatMember[];
+  unread: number;
+  unreadMentions: number;
+  lastMessage: { body: string; senderName: string; createdAt: ISODate } | null;
+}
+export interface ChatMessage {
+  id: string;
+  channelId: string;
+  senderId: string;
+  senderName: string;
+  body: string;
+  mentions: string[];
+  createdAt: ISODate;
+}

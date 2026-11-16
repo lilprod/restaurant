@@ -1,7 +1,7 @@
 import { DEFAULT_PASSWORD_POLICY, DEFAULT_THEME } from "@restaurant/utils";
 import type {
   LocalizationInput, NotificationsSettingsInput, OperationsInput, PaymentInstructionsInput, PlatformSecurityInput, ReservationsSettingsInput,
-  TenantSecurityInput,
+  StaffSettingsInput, TenantSecurityInput,
 } from "@restaurant/validation";
 
 export const DEFAULT_TENANT_SECURITY: TenantSecurityInput = {
@@ -60,3 +60,5 @@ export const DEFAULT_RESERVATIONS: ReservationsSettingsInput = {
   noShowGraceMinutes: 20,
   bufferMinutes: 0,
 };
+
+export const DEFAULT_STAFF: StaffSettingsInput = { overtimeThresholdHours: 40, leaveDaysPerYear: 24 };
