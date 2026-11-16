@@ -8,6 +8,7 @@ import { WaiterHome } from "./waiter-home";
 export function TenantHomePage() {
   const t = useTenant();
   const to = useSpacePath();
+  if (t.isDriver) return <Navigate to={to("/mes-livraisons")} replace />;
   if (t.role === "KITCHEN") return <Navigate to={to("/cuisine")} replace />;
   if (t.isManager) return <TenantDashboardPage />;
   return <WaiterHome />;

@@ -1,10 +1,11 @@
-import type { ChatMessage, Order, Reservation, WaitlistEntry } from "@restaurant/api-client";
+import type { ChatMessage, Delivery, Order, Reservation, WaitlistEntry } from "@restaurant/api-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { API_BASE, getTenantSpace } from "@/app/spaces";
 import { RealtimeConnection, realtimeOrigin, type RealtimeStatus } from "@/lib/realtime/connection";
 import { applyMenuEvent, applyTableEvent, type MenuEvent, type TableEvent } from "@/lib/realtime/catalog-cache";
 import { applyOrderEvent, resyncServiceQueries } from "@/lib/realtime/order-cache";
+import { applyDeliveryEvent } from "@/lib/realtime/delivery-cache";
 import { applyMessageEvent } from "@/lib/realtime/messaging-cache";
 import { applyReservationEvent, applyWaitlistEvent } from "@/lib/realtime/reservation-cache";
 import { applyStockEvent, type StockUpdatedEvent } from "@/lib/realtime/stock-cache";
@@ -41,7 +42,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const localization = useQuery({
     queryKey: tenantKeys.settings(root, "localization"),
     queryFn: () => getTenantSpace(session.slug!).api.settings.get("localization"),
-    enabled,
+    enabled: enabled && session.user?.role !== "DRIVER",
     staleTime: 5 * 60_000,
   });
   const roleRef = React.useRef<string | undefined>(undefined);
@@ -65,6 +66,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         onResync: () => {
           resyncServiceQueries(qc, root);
           void qc.invalidateQueries({ queryKey: tenantKeys.reservations(root) });
+          void qc.invalidateQueries({ queryKey: tenantKeys.deliveryAll(root) });
           void qc.invalidateQueries({ queryKey: [...root, "chat"] });
         },
         onOther: (event, payload) => {
@@ -84,6 +86,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
               toast.info(`Nouvelle réservation en ligne : ${r.guestName}`, { description: `${r.partySize} pers. à ${hhmm}`, id: `resa-${r.id}` });
             }
           }
+          else if (event === "delivery.updated") applyDeliveryEvent(qc, root, payload as Delivery, meRef.current);
           else if (event === "waitlist.updated") applyWaitlistEvent(qc, root, payload as WaitlistEntry);
           else if (event === "message.created") {
             // Événement privé : seuls les membres du canal le reçoivent.

@@ -62,7 +62,7 @@ export class DocumentsService {
     const body = await this.pdf.invoice({
       brand, number, date: dateTimeFr(o.createdAt, t.timezone), orderNumber: o.number, type: TYPE_LABEL[o.type] ?? o.type,
       table: o.table?.label ?? "", waiter: o.waiter ? `${o.waiter.firstName} ${o.waiter.lastName}`.trim() : "", customer: o.customerName ?? "",
-      lines, subtotal: o.subtotal, discounts: o.discountTotal, serviceCharge: o.serviceCharge, total: o.total, tip: o.tip,
+      lines, subtotal: o.subtotal, discounts: o.discountTotal, serviceCharge: o.serviceCharge, deliveryFee: o.deliveryFee, total: o.total, tip: o.tip,
       vat: r.vatBreakdown, payments: paid.map((p) => ({ label: `${METHOD_LABEL[p.method] ?? p.method}${p.paidAt ? ` (${dayFr(p.paidAt.toISOString().slice(0, 10))})` : ""}`, amount: p.amount })),
       remaining: Math.max(o.total - o.paidAmount, 0), mentions,
     });

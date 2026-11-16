@@ -104,11 +104,12 @@ export function cartReducer(lines: CartLine[], action: CartAction): CartLine[] {
 }
 
 /** Totaux affichés en direct : même calcul que l'API (prix TTC, service, TVA incluse par taux). */
-export function cartTotals(lines: CartLine[], ops: { serviceChargePercent: number; defaultVatRate: number }): Totals {
+export function cartTotals(lines: CartLine[], ops: { serviceChargePercent: number; defaultVatRate: number }, deliveryFee = 0): Totals {
   return computeTotals({
     items: lines.map((l) => ({ lineTotal: cartLineTotal(l), vatRate: l.vatRate, status: "PENDING" as const })),
     serviceChargePercent: ops.serviceChargePercent,
     defaultVatRate: ops.defaultVatRate,
+    deliveryFee: lines.length ? deliveryFee : 0,
   });
 }
 

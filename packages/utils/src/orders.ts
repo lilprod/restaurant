@@ -21,14 +21,18 @@ export function vatIncluded(amountTtc: number, ratePercent: number): number {
 export interface TotalsInput {
   items: { lineTotal: number; vatRate: number; status: ItemStatus }[];
   serviceChargePercent: number;
-  /** Taux appliqué au service (taux par défaut du restaurant). */
+  /** Taux appliqué au service et aux frais de livraison (taux par défaut du restaurant). */
   defaultVatRate: number;
+  /** X2 : frais de livraison TTC, figés à la commande (hors service : le service ne porte que sur les plats). */
+  deliveryFee?: number;
 }
 
 export interface Totals {
   /** Somme TTC des lignes non annulées. */
   subtotal: number;
   serviceCharge: number;
+  /** Frais de livraison (0 hors livraison). */
+  deliveryFee: number;
   /** Montant dû (hors pourboire). */
   total: number;
   /** TVA contenue dans le total. */
@@ -37,14 +41,15 @@ export interface Totals {
   vatBreakdown: { rate: number; base: number; vat: number }[];
 }
 
-export function computeTotals({ items, serviceChargePercent, defaultVatRate }: TotalsInput): Totals {
+export function computeTotals({ items, serviceChargePercent, defaultVatRate, deliveryFee = 0 }: TotalsInput): Totals {
   const live = items.filter((i) => i.status !== "CANCELLED");
   const subtotal = live.reduce((n, i) => n + i.lineTotal, 0);
   const serviceCharge = Math.round((subtotal * serviceChargePercent) / 100);
 
   const byRate = new Map<number, number>();
   for (const i of live) byRate.set(i.vatRate, (byRate.get(i.vatRate) ?? 0) + i.lineTotal);
-  if (serviceCharge > 0) byRate.set(defaultVatRate, (byRate.get(defaultVatRate) ?? 0) + serviceCharge);
+  const fee = Math.max(0, deliveryFee);
+  if (serviceCharge + fee > 0) byRate.set(defaultVatRate, (byRate.get(defaultVatRate) ?? 0) + serviceCharge + fee);
 
   const vatBreakdown = [...byRate.entries()]
     .sort(([a], [b]) => a - b)
@@ -52,7 +57,7 @@ export function computeTotals({ items, serviceChargePercent, defaultVatRate }: T
       const vat = vatIncluded(ttc, rate);
       return { rate, base: ttc - vat, vat };
     });
-  return { subtotal, serviceCharge, total: subtotal + serviceCharge, vat: vatBreakdown.reduce((n, r) => n + r.vat, 0), vatBreakdown };
+  return { subtotal, serviceCharge, deliveryFee: fee, total: subtotal + serviceCharge + fee, vat: vatBreakdown.reduce((n, r) => n + r.vat, 0), vatBreakdown };
 }
 
 /** Partage égal d'un montant entre n personnes, sans perdre de franc (les premiers paient l'arrondi). */
@@ -92,4 +97,37 @@ const NEXT: Record<ItemStatus, ItemStatus[]> = {
 
 export function canTransition(from: ItemStatus, to: ItemStatus): boolean {
   return NEXT[from].includes(to);
+}
+
+/**
+ * X2 : règles d'une zone de livraison (frais et minimum). Le minimum porte sur le sous-total TTC des plats (hors service et frais).
+ * Renvoie le message d'erreur à afficher, ou `null` si la commande peut être livrée.
+ */
+export function deliveryMinimumError(subtotal: number, zone: { name: string; minOrder: number }): string | null {
+  if (zone.minOrder > 0 && subtotal < zone.minOrder) {
+    return `Minimum de commande pour la zone « ${zone.name} » : ${zone.minOrder.toLocaleString("fr-FR").replace(/\u202f|\u00a0/g, " ")} FCFA (il manque ${(zone.minOrder - subtotal).toLocaleString("fr-FR").replace(/\u202f|\u00a0/g, " ")} FCFA)`;
+  }
+  return null;
+}
+
+export type DeliveryStatus = "PENDING" | "ASSIGNED" | "ON_THE_WAY" | "DELIVERED" | "FAILED";
+export type DeliveryPhase = "preparing" | "ready" | "on_the_way" | "delivered" | "failed";
+
+/** Colonne du tableau de dispatch : à préparer, prête, en cours, livrée, à reprendre (échec). */
+export function deliveryPhase(status: DeliveryStatus, orderStatus: OrderStatus): DeliveryPhase {
+  if (status === "DELIVERED") return "delivered";
+  if (status === "FAILED") return "failed";
+  if (status === "ON_THE_WAY") return "on_the_way";
+  return orderStatus === "READY" || orderStatus === "DELIVERED" ? "ready" : "preparing";
+}
+
+const DELIVERY_NEXT: Record<DeliveryStatus, DeliveryStatus[]> = {
+  PENDING: ["ASSIGNED"],
+  ASSIGNED: ["ASSIGNED", "ON_THE_WAY", "FAILED"],
+  ON_THE_WAY: ["DELIVERED", "FAILED"],
+  DELIVERED: [],
+  FAILED: ["ASSIGNED"],
+};
+export function canDeliveryTransition(from: DeliveryStatus, to: DeliveryStatus): boolean {
+  return DELIVERY_NEXT[from].includes(to);
 }

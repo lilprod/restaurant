@@ -9,6 +9,17 @@ const LABELS: Record<string, string> = { inventory: "Stock", staff: "Personnel",
 /** Réserve un contrôleur / une route aux plans dont `features[feature] === true` (à placer après `TenantAuthGuard`). */
 export const PlanFeature = (feature: string) => SetMetadata(KEY, feature);
 
+/** Lève `403 {code: "PLAN_FEATURE"}` si le plan souscrit n'inclut pas le module (aussi utilisé par les services, hors garde). */
+export async function assertPlanFeature(prisma: PrismaService, tenantId: string, feature: string): Promise<void> {
+  const sub = await prisma.subscription.findFirst({ where: { tenantId }, orderBy: { createdAt: "desc" }, include: { plan: true } });
+  const features = (sub?.plan.features ?? {}) as Record<string, unknown>;
+  if (features[feature] === true) return;
+  throw new ForbiddenException({
+    statusCode: 403, code: "PLAN_FEATURE", feature,
+    message: `Le module ${LABELS[feature] ?? feature} n'est pas inclus dans votre plan${sub ? ` ${sub.plan.name}` : ""}. Passez à un plan supérieur pour l'activer.`,
+  });
+}
+
 /** Refuse avec `403 {code: "PLAN_FEATURE"}` si le plan souscrit n'inclut pas le module. */
 @Injectable()
 export class PlanFeatureGuard implements CanActivate {
@@ -19,12 +30,7 @@ export class PlanFeatureGuard implements CanActivate {
     if (!feature) return true;
     const acc = ctx.switchToHttp().getRequest<{ account?: Account }>().account;
     if (!acc?.tenantId) return false;
-    const sub = await this.prisma.subscription.findFirst({ where: { tenantId: acc.tenantId }, orderBy: { createdAt: "desc" }, include: { plan: true } });
-    const features = (sub?.plan.features ?? {}) as Record<string, unknown>;
-    if (features[feature] === true) return true;
-    throw new ForbiddenException({
-      statusCode: 403, code: "PLAN_FEATURE", feature,
-      message: `Le module ${LABELS[feature] ?? feature} n'est pas inclus dans votre plan${sub ? ` ${sub.plan.name}` : ""}. Passez à un plan supérieur pour l'activer.`,
-    });
+    await assertPlanFeature(this.prisma, acc.tenantId, feature);
+    return true;
   }
 }

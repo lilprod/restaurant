@@ -24,6 +24,7 @@ import { formatDateTime, formatFcfa, formatTime } from "@/lib/format";
 import { courseLabel, ORDER_TYPE_LABEL } from "@/lib/labels";
 import { tenantKeys } from "@/lib/tenant-keys";
 import { useSpacePath } from "@/providers/space";
+import { DeliveryAddress, DeliveryMeta, DeliveryStatusBadge } from "../delivery/delivery-bits";
 import { elapsedLabel, useApplyOrder, useNow, useOperations, useTenant } from "../hooks";
 import { ItemEditDialog } from "./item-edit-dialog";
 import {
@@ -140,6 +141,18 @@ export function OrderDetailPage() {
         </Card>
 
         <div className="flex flex-col gap-6 lg:sticky lg:top-6">
+          {o.delivery && (
+            <Card className="flex flex-col gap-3 p-5" data-testid="delivery-card">
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-[15px] font-semibold tracking-tight">Livraison</h2>
+                <DeliveryStatusBadge status={o.delivery.status} />
+              </div>
+              <DeliveryAddress d={o.delivery} />
+              <DeliveryMeta d={o.delivery} />
+              {o.delivery.failReason && o.delivery.status === "FAILED" && <Callout tone="danger" title="Livraison en échec">{o.delivery.failReason}</Callout>}
+              {t.isFloor && <Button asChild variant="secondary" size="sm" className="w-fit"><Link to={to("/livraisons")}>Ouvrir le dispatch</Link></Button>}
+            </Card>
+          )}
           <Card className="p-5">
             <h2 className="mb-4 text-[15px] font-semibold tracking-tight">Addition</h2>
             <BillSummary order={o} serviceChargePercent={ops.serviceChargePercent} defaultVatRate={ops.defaultVatRate} />

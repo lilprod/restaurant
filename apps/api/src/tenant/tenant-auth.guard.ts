@@ -7,7 +7,7 @@ import { SecurityPolicyService } from "../security/security-policy.service";
 import { SessionService } from "../security/session.service";
 import { Roles, SpaceAuthGuard } from "../security/space-auth.guard";
 
-export type TenantRole = "ADMIN" | "MANAGER" | "WAITER" | "KITCHEN" | "CUSTOMER";
+export type TenantRole = "ADMIN" | "MANAGER" | "WAITER" | "KITCHEN" | "DRIVER" | "CUSTOMER";
 /** Restreint une route à certains rôles d'un restaurant. */
 export const TenantRoles = (...roles: TenantRole[]) => Roles(...roles);
 

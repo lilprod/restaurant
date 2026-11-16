@@ -1,4 +1,4 @@
-import { canTransition, computeTotals, deriveOrderStatus, lineTotal, paymentStatusFor, splitEqually, vatIncluded } from "@restaurant/utils";
+import { canDeliveryTransition, canTransition, computeTotals, deliveryMinimumError, deliveryPhase, deriveOrderStatus, lineTotal, paymentStatusFor, splitEqually, vatIncluded } from "@restaurant/utils";
 
 describe("calculs des commandes", () => {
   it("calcule une ligne avec suppléments", () => {
@@ -59,5 +59,51 @@ describe("calculs des commandes", () => {
     expect(canTransition("IN_PROGRESS", "PENDING")).toBe(true);
     expect(canTransition("SERVED", "PENDING")).toBe(false);
     expect(canTransition("CANCELLED", "PENDING")).toBe(false);
+  });
+});
+
+describe("livraison (X2)", () => {
+  const items = [{ lineTotal: 7000, vatRate: 10, status: "PENDING" as const }, { lineTotal: 1000, vatRate: 18, status: "PENDING" as const }];
+
+  it("ajoute les frais au total, hors service, et leur TVA au taux par défaut", () => {
+    const t = computeTotals({ items, serviceChargePercent: 10, defaultVatRate: 18, deliveryFee: 1000 });
+    expect(t).toMatchObject({ subtotal: 8000, serviceCharge: 800, deliveryFee: 1000, total: 9800 });
+    // 18 % : (1000 + 800 + 1000) TTC → TVA 427 ; 10 % : 7000 TTC → TVA 636
+    expect(t.vatBreakdown).toEqual([{ rate: 10, base: 6364, vat: 636 }, { rate: 18, base: 2373, vat: 427 }]);
+    expect(t.vat).toBe(1063);
+  });
+
+  it("sans frais : comportement inchangé", () => {
+    const a = computeTotals({ items, serviceChargePercent: 0, defaultVatRate: 18 });
+    expect(a).toMatchObject({ deliveryFee: 0, total: 8000 });
+    expect(computeTotals({ items, serviceChargePercent: 0, defaultVatRate: 18, deliveryFee: 0 })).toEqual(a);
+  });
+
+  it("des frais seuls portent leur TVA (aucun plat)", () => {
+    const t = computeTotals({ items: [], serviceChargePercent: 10, defaultVatRate: 18, deliveryFee: 1180 });
+    expect(t).toMatchObject({ subtotal: 0, total: 1180, vat: 180 });
+  });
+
+  it("minimum de commande : message en français avec le manque", () => {
+    expect(deliveryMinimumError(5000, { name: "Centre", minOrder: 5000 })).toBeNull();
+    expect(deliveryMinimumError(0, { name: "Centre", minOrder: 0 })).toBeNull();
+    expect(deliveryMinimumError(2000, { name: "Centre", minOrder: 5000 })).toBe("Minimum de commande pour la zone « Centre » : 5 000 FCFA (il manque 3 000 FCFA)");
+  });
+
+  it("colonne du tableau selon le statut de la livraison et de la commande", () => {
+    expect(deliveryPhase("PENDING", "IN_PROGRESS")).toBe("preparing");
+    expect(deliveryPhase("ASSIGNED", "READY")).toBe("ready");
+    expect(deliveryPhase("ON_THE_WAY", "READY")).toBe("on_the_way");
+    expect(deliveryPhase("DELIVERED", "DELIVERED")).toBe("delivered");
+    expect(deliveryPhase("FAILED", "READY")).toBe("failed");
+  });
+
+  it("transitions autorisées", () => {
+    expect(canDeliveryTransition("PENDING", "ASSIGNED")).toBe(true);
+    expect(canDeliveryTransition("PENDING", "ON_THE_WAY")).toBe(false);
+    expect(canDeliveryTransition("ASSIGNED", "ON_THE_WAY")).toBe(true);
+    expect(canDeliveryTransition("ON_THE_WAY", "ASSIGNED")).toBe(false);
+    expect(canDeliveryTransition("DELIVERED", "FAILED")).toBe(false);
+    expect(canDeliveryTransition("FAILED", "ASSIGNED")).toBe(true);
   });
 });

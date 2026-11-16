@@ -20,6 +20,7 @@ export const NOTIFICATION_EVENTS = [
   { key: "staffPlanning", label: "Planning du personnel", description: "Message au personnel quand son planning est publié." },
   { key: "dailyReport", label: "Rapport quotidien", description: "Récapitulatif des ventes de la veille envoyé aux responsables (activé dans la page Rapports)." },
   { key: "orderReady", label: "Commande prête (à emporter)", description: "SMS au client quand sa commande à emporter est prête." },
+  { key: "deliveryUpdates", label: "Livraison", description: "SMS au client quand sa commande part en livraison (avec le numéro du livreur) puis quand elle est livrée." },
   { key: "waitlist", label: "Liste d'attente", description: "Message au client quand une place se libère." },
 ] as const;
 

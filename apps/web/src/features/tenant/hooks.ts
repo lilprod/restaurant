@@ -12,6 +12,7 @@ export const ROLE_GROUPS = {
   floor: ["ADMIN", "MANAGER", "WAITER"],
   kitchen: ["ADMIN", "MANAGER", "KITCHEN"],
   managers: ["ADMIN", "MANAGER"],
+  driver: ["DRIVER"],
 } as const;
 
 /** API du restaurant courant + clés de requête préfixées par ["tenant", slug] + droits du rôle. */
@@ -31,6 +32,7 @@ export function useTenant() {
     isManager: has("managers"),
     isFloor: has("floor"),
     isKitchen: has("kitchen"),
+    isDriver: role === "DRIVER",
     canSeeLicense: role === "ADMIN" || role === "MANAGER",
   };
 }
@@ -48,12 +50,12 @@ export const SETTINGS_READ: Record<string, string[]> = {
   reports: ["ADMIN", "MANAGER"],
 };
 
-const DEFAULT_OPS = { serviceChargePercent: 0, defaultVatRate: 18, tipsEnabled: true, tipPresets: [5, 10, 15], takeawayEnabled: true };
+const DEFAULT_OPS = { serviceChargePercent: 0, defaultVatRate: 18, tipsEnabled: true, tipPresets: [5, 10, 15], takeawayEnabled: true, deliveryEnabled: false };
 
 /** Réglages d'exploitation (TVA, service, pourboires, vente à emporter), lisibles par tout le personnel. */
 export function useOperations() {
   const t = useTenant();
-  const q = useQuery({ queryKey: tenantKeys.settings(t.root, "operations"), queryFn: () => t.api.settings.get("operations"), staleTime: 5 * 60_000 });
+  const q = useQuery({ queryKey: tenantKeys.settings(t.root, "operations"), queryFn: () => t.api.settings.get("operations"), staleTime: 5 * 60_000, enabled: !t.isDriver });
   return { ...DEFAULT_OPS, ...(q.data ?? {}), isLoading: q.isLoading };
 }
 

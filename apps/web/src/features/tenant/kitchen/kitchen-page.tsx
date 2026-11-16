@@ -246,7 +246,7 @@ function TicketCard({ order, now, fresh, onUpdated }: { order: Order; now: numbe
             <span className="font-mono text-4xl font-bold leading-none tracking-tight tabular-nums">{order.number}</span>
             {fresh && <span className="rounded-md bg-brand px-2 py-1 text-sm font-semibold text-brand-foreground">Nouveau</span>}
           </div>
-          <span className="mt-1.5 truncate text-xl font-semibold">{order.table ? `Table ${order.table.label}` : `À emporter${order.customerName ? ` · ${order.customerName}` : ""}`}</span>
+          <span className="mt-1.5 truncate text-xl font-semibold">{order.table ? `Table ${order.table.label}` : `${order.type === "DELIVERY" ? "Livraison" : "À emporter"}${order.customerName ? ` · ${order.customerName}` : ""}`}</span>
           {order.waiter && <span className="text-sm text-muted-foreground">{order.waiter.firstName}</span>}
         </div>
         <div className="flex shrink-0 flex-col items-end">

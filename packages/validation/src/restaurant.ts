@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { normalizePhone } from "@restaurant/utils";
+import { orderDeliveryInputSchema } from "./delivery";
 
 /** Schémas de la phase 1 : équipe, tables, menu, commandes, encaissement, caisse. */
 
@@ -12,7 +13,7 @@ const optDay = z.union([day, z.literal("").transform(() => null), z.null()]).opt
 const optText = (max: number) => z.string().trim().max(max).optional().or(z.literal("").transform(() => undefined));
 
 // ── Équipe du restaurant ──
-export const staffRoleSchema = z.enum(["ADMIN", "MANAGER", "WAITER", "KITCHEN"]);
+export const staffRoleSchema = z.enum(["ADMIN", "MANAGER", "WAITER", "KITCHEN", "DRIVER"]);
 export const createStaffSchema = z.object({
   email: z.string().trim().email(),
   firstName: z.string().trim().min(1).max(60),
@@ -137,7 +138,7 @@ export const promotionInputSchema = z
 export const promotionActiveSchema = z.object({ isActive: z.boolean() });
 
 // ── Commandes ──
-export const orderTypeSchema = z.enum(["DINE_IN", "TAKEAWAY"]);
+export const orderTypeSchema = z.enum(["DINE_IN", "TAKEAWAY", "DELIVERY"]);
 export const orderItemInputSchema = z
   .object({
     /** Un plat… */
@@ -161,9 +162,14 @@ export const createOrderSchema = z
     /** À emporter : téléphone pour le SMS « commande prête ». */
     customerPhone: z.string().trim().max(25).refine((v) => v === "" || !!normalizePhone(v), "Numéro de téléphone invalide").optional().transform((v) => (v ? v : undefined)),
     notes: optText(300),
+    /** X2 : livraison (type DELIVERY) — zone, quartier, adresse et repère. Le nom et le téléphone du client sont obligatoires. */
+    delivery: orderDeliveryInputSchema.optional(),
     items: z.array(orderItemInputSchema).min(1).max(100),
   })
-  .refine((o) => o.type !== "DINE_IN" || !!o.tableId, { message: "Choisissez une table", path: ["tableId"] });
+  .refine((o) => o.type !== "DINE_IN" || !!o.tableId, { message: "Choisissez une table", path: ["tableId"] })
+  .refine((o) => o.type !== "DELIVERY" || !!o.delivery, { message: "Renseignez l'adresse de livraison", path: ["delivery"] })
+  .refine((o) => o.type !== "DELIVERY" || !!o.customerName, { message: "Indiquez le nom du client", path: ["customerName"] })
+  .refine((o) => o.type !== "DELIVERY" || !!o.customerPhone, { message: "Indiquez le téléphone du client", path: ["customerPhone"] });
 export const addItemsSchema = z.object({ items: z.array(orderItemInputSchema).min(1).max(100) });
 export const updateOrderItemSchema = z.object({
   quantity: z.number().int().min(1).max(99).optional(),

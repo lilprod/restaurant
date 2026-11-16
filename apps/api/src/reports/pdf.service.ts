@@ -227,6 +227,7 @@ export class PdfService {
     row("Sous-total TTC", fmtMoney(d.subtotal));
     if (d.discounts) row("Dont remises appliquées", fmtMoney(d.discounts));
     if (d.serviceCharge) row("Service", fmtMoney(d.serviceCharge));
+    if (d.deliveryFee) row("Frais de livraison", fmtMoney(d.deliveryFee));
     doc.save().rect(tx, y, tw, 0.8).fill(INK).restore(); y += 5;
     row("TOTAL TTC", fmtMoney(d.total), true);
     for (const v of d.vat) row(`Dont TVA ${fmtDec(v.rate, 1).replace(",0", "")} % (base ${fmtInt(v.base)})`, fmtMoney(v.vat));
@@ -302,6 +303,7 @@ export interface InvoiceData {
   subtotal: number;
   discounts: number;
   serviceCharge: number;
+  deliveryFee: number;
   total: number;
   tip: number;
   vat: { rate: number; base: number; vat: number }[];

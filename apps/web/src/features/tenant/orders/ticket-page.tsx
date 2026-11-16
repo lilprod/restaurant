@@ -49,6 +49,13 @@ export function TicketPage() {
           <Rule />
           <div className="flex justify-between"><span className="font-bold">Commande n°{r.order.number}</span><span>{formatDateShort(r.order.createdAt)} {formatTime(r.order.createdAt)}</span></div>
           <p>{r.order.table ? `Table ${r.order.table.label}` : ORDER_TYPE_LABEL[r.order.type]}{r.order.customerName ? ` · ${r.order.customerName}` : ""}</p>
+          {r.order.delivery && (
+            <div className="mt-0.5 text-[11px]" data-testid="ticket-delivery">
+              <p>{r.order.delivery.neighborhood} · {r.order.delivery.address}</p>
+              <p>Repère : {r.order.delivery.landmark}</p>
+              <p>Tél. client : {r.order.delivery.phone}</p>
+            </div>
+          )}
           {r.order.waiter && <p>Serveur : {r.order.waiter.firstName}</p>}
           <Rule />
           <ul className="flex flex-col gap-1">
@@ -68,6 +75,7 @@ export function TicketPage() {
           <Row label="Sous-total" value={n(r.order.subtotal)} />
           {r.order.discountTotal > 0 && <Row label="  dont remises" value={`− ${n(r.order.discountTotal)}`} />}
           {r.order.serviceCharge > 0 && <Row label="Service" value={n(r.order.serviceCharge)} />}
+          {r.order.deliveryFee > 0 && <Row label="Livraison" value={n(r.order.deliveryFee)} />}
           <div className="my-1 flex justify-between text-[15px] font-bold"><span>TOTAL TTC</span><span className="tabular-nums">{formatFcfa(r.order.total)}</span></div>
           {r.vatBreakdown.length > 0 && (
             <table className="mt-1 w-full text-[11px]">

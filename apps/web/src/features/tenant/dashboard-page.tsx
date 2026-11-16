@@ -52,7 +52,7 @@ export function TenantDashboardPage() {
 
   const kpis = [
     { label: "Encaissé", value: d?.revenue ?? 0, fmt: formatFcfa, hint: d?.tips ? `+ ${formatFcfa(d.tips)} de pourboires` : "Paiements encaissés ce jour" },
-    { label: "Commandes", value: d?.ordersCount ?? 0, fmt: formatNumber, hint: d ? `${d.byType.DINE_IN} sur place · ${d.byType.TAKEAWAY} à emporter` : "—" },
+    { label: "Commandes", value: d?.ordersCount ?? 0, fmt: formatNumber, hint: d ? `${d.byType.DINE_IN} sur place · ${d.byType.TAKEAWAY} à emporter${d.byType.DELIVERY ? ` · ${d.byType.DELIVERY} en livraison` : ""}` : "—" },
     { label: "Ticket moyen", value: d?.averageTicket ?? 0, fmt: formatFcfa, hint: "Total moyen par commande" },
     { label: "Commandes ouvertes", value: d?.openOrders ?? 0, fmt: formatNumber, hint: "En cours de service", to: to("/commandes") },
   ];

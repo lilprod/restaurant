@@ -54,11 +54,24 @@ async function main() {
 
     // Équipe
     const hash = await argon2.hash(password);
-    for (const [role, first] of [["ADMIN", "Admin"], ["MANAGER", "Gérant"], ["WAITER", "Serveur"], ["KITCHEN", "Cuisine"]] as const) {
+    for (const [role, first] of [["ADMIN", "Admin"], ["MANAGER", "Gérant"], ["WAITER", "Serveur"], ["KITCHEN", "Cuisine"], ["DRIVER", "Livreur"]] as const) {
       const email = `${role.toLowerCase()}@${slug}.demo`;
       await tx.user.upsert({
         where: { tenantId_email: { tenantId, email } }, update: {},
         create: { tenantId, email, role, firstName: first, lastName: "Démo", passwordHash: hash, passwordChangedAt: new Date() },
+      });
+    }
+
+    // Livraison (X2) : réglage activé (plan PREMIUM requis) et deux zones par quartier
+    if (!(await tx.setting.findUnique({ where: { tenantId_key: { tenantId, key: "operations" } } }))) {
+      await tx.setting.create({ data: { tenantId, key: "operations", value: { deliveryEnabled: true } } });
+    }
+    if (!(await tx.deliveryZone.count({ where: { tenantId } }))) {
+      await tx.deliveryZone.createMany({
+        data: [
+          { tenantId, name: "Centre", neighborhoods: ["Tokoin", "Nyékonakpoè", "Amoutivé", "Kodjoviakopé"], landmarks: ["Pharmacie du Marché", "Station Total"], fee: 1000, minOrder: 5000, etaMinutes: 30 },
+          { tenantId, name: "Périphérie", neighborhoods: ["Adidogomé", "Agoè", "Baguida", "Bè"], landmarks: ["Carrefour principal"], fee: 2000, minOrder: 8000, etaMinutes: 50 },
+        ],
       });
     }
 
@@ -101,12 +114,12 @@ async function main() {
       }
     }
   });
-  console.log(`Démo prête pour « ${slug} » : 8 tables, ${MENU.reduce((n, c) => n + c.items.length, 0)} plats, comptes admin|manager|waiter|kitchen@${slug}.demo`);
+  console.log(`Démo prête pour « ${slug} » : 8 tables, ${MENU.reduce((n, c) => n + c.items.length, 0)} plats, comptes admin|manager|waiter|kitchen|driver@${slug}.demo`);
 }
 
-/** Restaurant de démonstration en essai sur le plan PRO (lancer `pnpm db:seed` avant pour avoir les plans). */
+/** Restaurant de démonstration en essai sur le plan PREMIUM, livraison comprise (lancer `pnpm db:seed` avant pour avoir les plans). */
 async function createTenant(slug: string, password: string) {
-  const plan = (await prisma.plan.findUnique({ where: { code: "PRO" } })) ?? (await prisma.plan.findFirst({ where: { isActive: true } }));
+  const plan = (await prisma.plan.findUnique({ where: { code: "PREMIUM" } })) ?? (await prisma.plan.findFirst({ where: { isActive: true } }));
   if (!plan) throw new Error("Aucun plan : lancez d'abord `pnpm db:seed`");
   const now = new Date();
   const trialEnd = new Date(now.getTime() + plan.trialDays * 86_400_000);

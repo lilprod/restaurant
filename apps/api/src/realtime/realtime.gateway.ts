@@ -43,7 +43,8 @@ export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection {
       if (!acc?.isActive || acc.role === "CUSTOMER") throw new Error("Accès refusé");
       await this.gate.assertAccess(claims.tid);
       client.data = { tenantId: claims.tid, userId: acc.id, role: acc.role, sid: claims.sid };
-      await client.join(`tenant:${claims.tid}`);
+      // X2 : le livreur ne rejoint pas la salle du restaurant (commandes, clients, caisse) : seulement ses événements privés.
+      if (acc.role !== "DRIVER") await client.join(`tenant:${claims.tid}`);
       await client.join(`tenant:${claims.tid}:user:${acc.id}`); // événements privés (messagerie, planning personnel)
       client.emit("ready", { tenantId: claims.tid, role: acc.role });
     } catch (e) {

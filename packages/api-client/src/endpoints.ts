@@ -8,6 +8,7 @@ import type {
   PublicUpdateReservationInput, ReservationsSettingsInput, UpdateReservationInput, WaitlistInput,
   AbsenceDecisionInput, AbsenceInput, AttendanceCorrectionInput, AttendanceCreateInput, CopyWeekInput, KioskCodeInput, KioskPunchInput, PublishWeekInput,
   ShiftInput, ShiftUpdate, StaffProfileInput, StaffSettingsInput,
+  CompleteDeliveryInput, DeliveryZoneInput, DeliveryZoneUpdate,
   CustomerProfileInput, CustomerSignupInput, ListReviewsQuery, NotificationPrefs, ReviewInput,
 } from "@restaurant/validation";
 import type { ApiClient } from "./client";
@@ -27,6 +28,7 @@ import type {
   Attendance, ChatChannel, ChatMessage, KioskPerson, LeaveBalance, MyAttendance, Payroll, Performance, PlanningAbsence, Planning, Shift, StaffFile,
   AbsenceStatus, PunchAction,
   LicensesReport, MarginsReport, PeakHoursReport, RegisterReport, ReportKind, ReportsSettings, ReviewsReport, SalesReport, VatReport, WasteReport,
+  Delivery, DeliveryBoard, DeliveryDriver, DeliverySettleResult, DeliverySettlements, DeliveryZone,
   CustomerExport, CustomerOrder, CustomerProfile, CustomerReservation, OrderTracking, PublicReviews, Review, ReviewStats,
 } from "./types";
 
@@ -324,6 +326,24 @@ export function tenantApi(c: ApiClient) {
       refund: (id: string, paymentId: string, reason: string) => c.post<Order>(`/tenant/orders/${enc(id)}/payments/${enc(paymentId)}/refund`, { reason }),
       /** P2C : lien de suivi à imprimer sur le ticket (stable). */
       trackingLink: (id: string) => c.get<{ token: string; url: string }>(`/tenant/orders/${enc(id)}/tracking-link`),
+    },
+    /** X2 : livraison (plan avec `delivery`). Zones (lecture salle, écriture responsables), dispatch, rapprochement ; `mine*` : livreur (rôle DRIVER). */
+    delivery: {
+      zones: () => c.get<DeliveryZone[]>("/tenant/delivery/zones"),
+      createZone: (body: DeliveryZoneInput) => c.post<DeliveryZone>("/tenant/delivery/zones", body),
+      updateZone: (id: string, body: DeliveryZoneUpdate) => c.patch<DeliveryZone>(`/tenant/delivery/zones/${enc(id)}`, body),
+      deleteZone: (id: string) => c.delete<{ id: string; deleted: true }>(`/tenant/delivery/zones/${enc(id)}`),
+      drivers: () => c.get<DeliveryDriver[]>("/tenant/delivery/drivers"),
+      board: (date?: string) => c.get<DeliveryBoard>("/tenant/delivery", { query: date ? { date } : {} }),
+      get: (id: string) => c.get<Delivery>(`/tenant/delivery/${enc(id)}`),
+      assign: (id: string, driverId: string) => c.post<Delivery>(`/tenant/delivery/${enc(id)}/assign`, { driverId }),
+      settlements: () => c.get<DeliverySettlements>("/tenant/delivery/settlements"),
+      settle: (driverId: string) => c.post<DeliverySettleResult>("/tenant/delivery/settlements", { driverId }),
+      mine: () => c.get<DeliveryBoard>("/tenant/delivery/mine"),
+      mineGet: (id: string) => c.get<Delivery>(`/tenant/delivery/mine/${enc(id)}`),
+      pickup: (id: string) => c.post<Delivery>(`/tenant/delivery/mine/${enc(id)}/pickup`),
+      deliver: (id: string, body: CompleteDeliveryInput) => c.post<Delivery>(`/tenant/delivery/mine/${enc(id)}/deliver`, body),
+      fail: (id: string, reason: string) => c.post<Delivery>(`/tenant/delivery/mine/${enc(id)}/fail`, { reason }),
     },
     /** P2C : avis des clients (responsables). */
     reviews: {

@@ -119,6 +119,7 @@ const MANAGERS = ["ADMIN", "MANAGER"];
 const FLOOR = ["ADMIN", "MANAGER", "WAITER"];
 const KITCHEN = ["ADMIN", "MANAGER", "KITCHEN"];
 const STAFF = ["ADMIN", "MANAGER", "WAITER", "KITCHEN"];
+const DRIVER = ["DRIVER"];
 const gate = (roles: string[], el: React.ReactNode) => <RoleGate allow={roles}>{el}</RoleGate>;
 
 /** Écrans plein écran (cuisine, prise de commande) : hors de la coquille, chargés à la demande. */
@@ -173,6 +174,8 @@ const tenantChildren: RouteObject[] = [
           { path: "mon-planning", element: lazyPage(() => import("@/features/tenant/staff-hr/my-schedule-page"), "MySchedulePage") },
           { path: "messagerie", element: lazyPage(() => import("@/features/tenant/messaging/messaging-page"), "MessagingPage") },
           { path: "equipe", element: gate(MANAGERS, lazyPage(() => import("@/features/tenant/staff/staff-page"), "StaffPage")) },
+          { path: "livraisons", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/delivery/delivery-page"), "DeliveryPage")) },
+          { path: "mes-livraisons", element: gate(DRIVER, lazyPage(() => import("@/features/tenant/delivery/my-deliveries-page"), "MyDeliveriesPage")) },
           { path: "caisse", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/register/register-page"), "RegisterPage")) },
           { path: "notifications", element: gate(["ADMIN"], lazyPage(() => import("@/features/tenant/notifications-page"), "TenantNotificationsPage")) },
           { path: "parametres", element: lazyPage(() => import("@/features/tenant/settings-page"), "TenantSettingsPage") },

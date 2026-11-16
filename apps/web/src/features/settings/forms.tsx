@@ -262,7 +262,7 @@ export function OperationsForm({ adapter }: { adapter: SettingsAdapter }) {
       <SettingsSection title="Vente à emporter et livraison">
         <div className="divide-y divide-border">
           <S form={form} name="takeawayEnabled" label="Vente à emporter" />
-          <S form={form} name="deliveryEnabled" label="Livraison" description="Zones et frais de livraison arrivent avec le module commandes." />
+          <S form={form} name="deliveryEnabled" label="Livraison" description="Commandes livrées par vos livreurs (plan avec le module Livraison). Zones et frais : page Livraisons." />
         </div>
       </SettingsSection>
       <SettingsSection title="Avis des clients">
@@ -398,7 +398,7 @@ export function SecurityPolicyForm({ adapter, space }: { adapter: SettingsAdapte
             const v: string[] = field.value ?? [];
             return (
               <div className="grid gap-2 sm:grid-cols-4" role="group" aria-label="Rôles soumis à la 2FA">
-                {["ADMIN", "MANAGER", "WAITER", "KITCHEN"].map((r) => (
+                {["ADMIN", "MANAGER", "WAITER", "KITCHEN", "DRIVER"].map((r) => (
                   <label key={r} className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 text-sm has-[:checked]:border-brand-ink has-[:checked]:bg-brand-tint">
                     <input type="checkbox" className="size-4 accent-[var(--color-primary)]" checked={v.includes(r)} onChange={(e) => field.onChange(e.target.checked ? [...v, r] : v.filter((x) => x !== r))} />
                     {TENANT_ROLE_LABEL[r]}

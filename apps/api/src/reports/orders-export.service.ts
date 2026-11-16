@@ -23,7 +23,7 @@ export class OrdersExportService {
 
     async function* rows() {
       yield CSV_BOM + csvLine([
-        "N°", "Date", "Type", "Statut", "Table", "Serveur", "Client", "Sous-total TTC (FCFA)", "Service (FCFA)", "Dont TVA (FCFA)", "Total TTC (FCFA)",
+        "N°", "Date", "Type", "Statut", "Table", "Serveur", "Client", "Sous-total TTC (FCFA)", "Service (FCFA)", "Livraison (FCFA)", "Dont TVA (FCFA)", "Total TTC (FCFA)",
         "Pourboire (FCFA)", "Encaissé (FCFA)", "Paiement", "Annulée le", "Motif d'annulation",
       ]);
       let cursor: string | undefined;
@@ -32,7 +32,7 @@ export class OrdersExportService {
           where: { tenantId, createdAt: { gte: start, lt: end } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: BATCH,
           ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
           select: {
-            id: true, number: true, createdAt: true, type: true, status: true, customerName: true, subtotal: true, serviceCharge: true, vat: true, total: true,
+            id: true, number: true, createdAt: true, type: true, status: true, customerName: true, subtotal: true, serviceCharge: true, deliveryFee: true, vat: true, total: true,
             tip: true, paidAmount: true, paymentStatus: true, cancelledAt: true, cancelReason: true,
             table: { select: { label: true } }, waiter: { select: { firstName: true, lastName: true } },
           },
@@ -41,7 +41,7 @@ export class OrdersExportService {
         yield batch.map((o) => csvLine([
           o.number, when(o.createdAt), TYPE_LABEL[o.type] ?? o.type, STATUS_LABEL[o.status] ?? o.status, o.table?.label ?? "",
           o.waiter ? `${o.waiter.firstName} ${o.waiter.lastName}`.trim() : "", o.customerName ?? "",
-          o.subtotal, o.serviceCharge, o.vat, o.total, o.tip, o.paidAmount,
+          o.subtotal, o.serviceCharge, o.deliveryFee, o.vat, o.total, o.tip, o.paidAmount,
           o.paymentStatus === "PAID" ? "Payée" : o.paymentStatus === "PARTIAL" ? "Partielle" : "Non payée", when(o.cancelledAt), o.cancelReason ?? "",
         ])).join("");
         cursor = batch[batch.length - 1].id;

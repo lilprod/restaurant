@@ -39,7 +39,7 @@ export function order(p: Partial<Order> = {}): Order {
   const subtotal = items.filter((i) => i.status !== "CANCELLED").reduce((n, i) => n + i.lineTotal, 0);
   return {
     id: "order-1", number: 12, type: "DINE_IN", status: "PENDING", paymentStatus: "UNPAID", table: { id: "table-1", label: "T1" },
-    customerName: null, notes: null, waiter: { id: "w1", firstName: "Awa", lastName: "K." }, discountTotal: 0, subtotal, serviceCharge: 0, vat: 0, total: subtotal,
+    customerName: null, notes: null, waiter: { id: "w1", firstName: "Awa", lastName: "K." }, discountTotal: 0, subtotal, serviceCharge: 0, deliveryFee: 0, delivery: null, vat: 0, total: subtotal,
     tip: 0, paidAmount: 0, remaining: subtotal, createdAt: "2026-10-12T12:00:00.000Z", updatedAt: "2026-10-12T12:00:00.000Z",
     closedAt: null, cancelledAt: null, cancelReason: null, items, payments: [], ...p,
   };

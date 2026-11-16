@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { Prisma } from "@prisma/client";
 import {
   ItemStatus, availabilityAt, bestPromotion, canTransition, computeTotals, deriveOrderStatus, formulaChoiceError, formulaStatus, hoursLabel,
-  lineTotal, paymentStatusFor, vatIncluded, zonedDayRange,
+  deliveryMinimumError, lineTotal, normalizePhone, paymentStatusFor, vatIncluded, zonedDayRange,
 } from "@restaurant/utils";
 import type { CreateOrderInput, ListOrdersQuery, OrderItemInput, OrderPaymentInput } from "@restaurant/validation";
 import { StockEffects, StockService } from "../inventory/stock.service";
@@ -16,6 +16,8 @@ import { FLOOR, KITCHEN, isManager } from "./common";
 import { isOverlapError } from "../reservations/reservations.service";
 import { reservationInclude, reservationView as reservationViewOf } from "../reservations/reservations.views";
 import { TablesService } from "./tables.service";
+import { deliveryInclude, deliveryInfo, deliveryView } from "../delivery/delivery.views";
+import { assertPlanFeature } from "../tenant/plan-feature.guard";
 
 export const orderInclude = {
   table: { select: { id: true, label: true } },
@@ -29,10 +31,11 @@ export const orderInclude = {
     },
   },
   payments: { orderBy: { createdAt: "asc" } },
+  delivery: { include: deliveryInclude },
 } satisfies Prisma.OrderInclude;
 
 type OrderRow = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
-type Ops = { serviceChargePercent: number; defaultVatRate: number; takeawayEnabled: boolean };
+type Ops = { serviceChargePercent: number; defaultVatRate: number; takeawayEnabled: boolean; deliveryEnabled: boolean };
 
 /** Forme publique d'une commande (API et événements temps réel). */
 export function orderView(o: OrderRow) {
@@ -40,7 +43,7 @@ export function orderView(o: OrderRow) {
     id: o.id, number: o.number, type: o.type, status: o.status, paymentStatus: o.paymentStatus,
     table: o.table, reservationId: o.reservationId, customerName: o.customerName, notes: o.notes, waiter: o.waiter,
     discountTotal: o.items.filter((i) => i.status !== "CANCELLED").reduce((n, i) => n + i.discount, 0),
-    subtotal: o.subtotal, serviceCharge: o.serviceCharge, vat: o.vat, total: o.total, tip: o.tip,
+    subtotal: o.subtotal, serviceCharge: o.serviceCharge, deliveryFee: o.deliveryFee, vat: o.vat, total: o.total, tip: o.tip,
     paidAmount: o.paidAmount, remaining: o.total - o.paidAmount,
     createdAt: o.createdAt, updatedAt: o.updatedAt, closedAt: o.closedAt, cancelledAt: o.cancelledAt, cancelReason: o.cancelReason,
     items: o.items.map((i) => ({
@@ -52,6 +55,7 @@ export function orderView(o: OrderRow) {
       servedAt: i.servedAt, cancelReason: i.cancelReason,
       paidQuantity: i.allocations.filter((a) => a.payment.status === "PAID").reduce((n, a) => n + a.quantity, 0),
     })),
+    delivery: o.delivery ? deliveryInfo(o.delivery, o.status) : null,
     payments: o.payments.map((p) => ({
       id: p.id, method: p.method, status: p.status, amount: p.amount, tip: p.tip, tendered: p.tendered, change: p.change,
       reference: p.reference, paidAt: p.paidAt, refundedAt: p.refundedAt, refundReason: p.refundReason,
@@ -128,7 +132,13 @@ export class OrdersService {
     const tenantId = acc.tenantId!;
     const ops = await this.ops(tenantId);
     if (input.type === "TAKEAWAY" && !ops.takeawayEnabled) throw new ConflictException("La vente à emporter est désactivée dans les paramètres");
+    if (input.type === "DELIVERY") {
+      // X2 : fonctionnalité du plan (403 PLAN_FEATURE) puis réglage du restaurant (409)
+      await assertPlanFeature(this.prisma, tenantId, "delivery");
+      if (!ops.deliveryEnabled) throw new ConflictException("La livraison est désactivée dans les paramètres");
+    }
     let tableChanged = false;
+    let created = null as OrderRow | null;
     const view = await this.prisma.asTenant(tenantId, async (tx) => {
       if (input.tableId) {
         const table = await tx.restaurantTable.findFirst({ where: { id: input.tableId, tenantId, isActive: true } });
@@ -144,20 +154,47 @@ export class OrdersService {
           throw new ConflictException("Choisissez l'une des tables de la réservation");
         }
       }
+      let zone: { id: string; name: string; fee: number; minOrder: number; etaMinutes: number; neighborhoods: string[] } | null = null;
+      if (input.type === "DELIVERY") {
+        const d = input.delivery!;
+        const z = await tx.deliveryZone.findFirst({ where: { id: d.zoneId, tenantId, isActive: true } });
+        if (!z) throw new NotFoundException("Zone de livraison introuvable");
+        if (!z.neighborhoods.some((n) => n.toLowerCase() === d.neighborhood.toLowerCase())) {
+          throw new BadRequestException(`Le quartier « ${d.neighborhood} » n'est pas desservi par la zone « ${z.name} »`);
+        }
+        zone = z;
+      }
       const lines = await this.buildLines(tx, tenantId, input.items, ops);
       const counter = await tx.tenant.update({ where: { id: tenantId }, data: { nextOrderNumber: { increment: 1 } }, select: { nextOrderNumber: true } });
       const order = await tx.order.create({
         data: {
           tenantId, number: counter.nextOrderNumber - 1, type: input.type, tableId: input.type === "DINE_IN" ? input.tableId : null,
-          customerName: input.customerName, customerPhone: input.type === "TAKEAWAY" ? input.customerPhone : undefined, notes: input.notes, waiterId: acc.id, reservationId: input.reservationId ?? null,
+          customerName: input.customerName, customerPhone: input.type !== "DINE_IN" ? input.customerPhone : undefined, notes: input.notes, waiterId: acc.id, reservationId: input.reservationId ?? null,
         },
       });
       await this.insertLines(tx, tenantId, order.id, lines);
+      if (zone) {
+        const d = input.delivery!;
+        // Frais et délai figés à la commande (la zone peut changer ensuite) ; créés avant le calcul : les frais entrent dans le total.
+        await tx.delivery.create({
+          data: {
+            tenantId, orderId: order.id, zoneId: zone.id, neighborhood: zone.neighborhoods.find((n) => n.toLowerCase() === d.neighborhood.toLowerCase())!,
+            address: d.address, landmark: d.landmark, phone: normalizePhone(input.customerPhone!) ?? input.customerPhone!, fee: zone.fee,
+            eta: new Date(this.clock.now().getTime() + zone.etaMinutes * 60_000),
+          },
+        });
+      }
       await this.recompute(tx, order.id, ops);
+      if (zone) {
+        const minimum = deliveryMinimumError((await tx.order.findUniqueOrThrow({ where: { id: order.id }, select: { subtotal: true } })).subtotal, zone);
+        if (minimum) throw new ConflictException({ statusCode: 409, code: "DELIVERY_MINIMUM", message: minimum });
+      }
       tableChanged = await this.tables.syncStatus(tx, order.tableId);
-      return orderView(await this.load(tx, tenantId, order.id));
+      created = await this.load(tx, tenantId, order.id);
+      return orderView(created);
     });
     this.realtime.emit(tenantId, "order.created", view);
+    if (created) this.emitDelivery(tenantId, created);
     if (tableChanged) await this.tables.broadcast(tenantId, view.table!.id);
     return view;
   }
@@ -305,6 +342,10 @@ export class OrdersService {
       const now = new Date();
       await tx.orderItem.updateMany({ where: { orderId: o.id, status: { not: "CANCELLED" } }, data: { status: "CANCELLED", cancelReason: reason } });
       await tx.order.update({ where: { id: o.id }, data: { cancelledAt: now, cancelReason: reason, closedAt: now } });
+      // X2 : une livraison non terminée est interrompue avec la commande
+      if (o.delivery && o.delivery.status !== "DELIVERED") {
+        await tx.delivery.update({ where: { id: o.delivery.id }, data: { status: "FAILED", failReason: "Commande annulée", failedAt: now } });
+      }
       await tx.auditLog.create({ data: { tenantId: o.tenantId, userId: acc.id, action: "order.cancel", entity: "Order", entityId: o.id, metadata: { number: o.number, reason } } });
       const live = this.forStock(o.items.filter((i) => i.status !== "CANCELLED"));
       return this.stock.onItemTransitions(tx, tenantId, acc.id, o.number, live.map((item) => ({ item, from: item.status as ItemStatus, to: "CANCELLED" as const })), reason);
@@ -316,36 +357,44 @@ export class OrdersService {
   async pay(acc: Account, orderId: string, input: OrderPaymentInput) {
     let created: { id: string; change: number | null } | null = null;
     const order = await this.mutate(acc, orderId, async (tx, o, tenantId) => {
-      if (o.cancelledAt) throw new ConflictException("Cette commande est annulée");
-      const remaining = o.total - o.paidAmount;
-      if (remaining <= 0) throw new ConflictException("Cette commande est déjà réglée");
-      if (input.amount > remaining) throw new ConflictException(`Le montant dépasse le reste à payer (${remaining} FCFA)`);
-
-      for (const a of input.allocations ?? []) {
-        const item = o.items.find((i) => i.id === a.orderItemId);
-        if (!item || item.status === "CANCELLED") throw new BadRequestException("Article à encaisser introuvable dans cette commande");
-        if (item.parentItemId) throw new BadRequestException("Un plat de formule ne s'encaisse pas séparément : sélectionnez la formule");
-        const already = item.allocations.filter((x) => x.payment.status === "PAID").reduce((n, x) => n + x.quantity, 0);
-        if (already + a.quantity > item.quantity) throw new ConflictException(`« ${item.name} » : quantité déjà encaissée`);
-      }
-      const session = await tx.registerSession.findFirst({ where: { tenantId, closedAt: null } });
-      const change = input.method === "CASH" && input.tendered !== undefined ? input.tendered - input.amount - input.tip : null;
-      const p = await tx.payment.create({
-        data: {
-          tenantId, orderId: o.id, method: input.method, status: "PAID", amount: input.amount, tip: input.tip,
-          tendered: input.method === "CASH" ? input.tendered : null, change, reference: input.reference,
-          registerSessionId: session?.id, paidAt: new Date(), recordedById: acc.id,
-          allocations: input.allocations?.length ? {
-            create: input.allocations.map((a) => {
-              const item = o.items.find((i) => i.id === a.orderItemId)!;
-              return { tenantId, orderItemId: a.orderItemId, quantity: a.quantity, amount: (item.unitPrice + item.optionsExtra) * a.quantity };
-            }),
-          } : undefined,
-        },
-      });
-      created = { id: p.id, change };
+      created = await this.recordPayment(tx, acc, o, tenantId, input);
     });
     return { order, paymentId: created!.id, change: created!.change };
+  }
+
+  /**
+   * Enregistre un encaissement sur une commande verrouillée (appelé dans `mutate`). `deferRegister` : le paiement n'est pas rattaché à la caisse ouverte
+   * (X2 : encaissé par un livreur, il n'entre en caisse qu'au rapprochement).
+   */
+  async recordPayment(tx: Tx, acc: Account, o: OrderRow, tenantId: string, input: OrderPaymentInput, opts: { deferRegister?: boolean } = {}) {
+    if (o.cancelledAt) throw new ConflictException("Cette commande est annulée");
+    const remaining = o.total - o.paidAmount;
+    if (remaining <= 0) throw new ConflictException("Cette commande est déjà réglée");
+    if (input.amount > remaining) throw new ConflictException(`Le montant dépasse le reste à payer (${remaining} FCFA)`);
+
+    for (const a of input.allocations ?? []) {
+      const item = o.items.find((i) => i.id === a.orderItemId);
+      if (!item || item.status === "CANCELLED") throw new BadRequestException("Article à encaisser introuvable dans cette commande");
+      if (item.parentItemId) throw new BadRequestException("Un plat de formule ne s'encaisse pas séparément : sélectionnez la formule");
+      const already = item.allocations.filter((x) => x.payment.status === "PAID").reduce((n, x) => n + x.quantity, 0);
+      if (already + a.quantity > item.quantity) throw new ConflictException(`« ${item.name} » : quantité déjà encaissée`);
+    }
+    const session = opts.deferRegister ? null : await tx.registerSession.findFirst({ where: { tenantId, closedAt: null } });
+    const change = input.method === "CASH" && input.tendered !== undefined ? input.tendered - input.amount - input.tip : null;
+    const p = await tx.payment.create({
+      data: {
+        tenantId, orderId: o.id, method: input.method, status: "PAID", amount: input.amount, tip: input.tip,
+        tendered: input.method === "CASH" ? input.tendered : null, change, reference: input.reference,
+        registerSessionId: session?.id, paidAt: new Date(), recordedById: acc.id,
+        allocations: input.allocations?.length ? {
+          create: input.allocations.map((a) => {
+            const item = o.items.find((i) => i.id === a.orderItemId)!;
+            return { tenantId, orderItemId: a.orderItemId, quantity: a.quantity, amount: (item.unitPrice + item.optionsExtra) * a.quantity };
+          }),
+        } : undefined,
+      },
+    });
+    return { id: p.id, change };
   }
 
   async refund(acc: Account, orderId: string, paymentId: string, reason: string) {
@@ -368,7 +417,8 @@ export class OrdersService {
     // TVA par taux : lignes non annulées + service (au taux par défaut), tel qu'enregistré sur la commande.
     const byRate = new Map<number, number>();
     for (const i of order.items) if (i.status !== "CANCELLED" && !i.parentItemId) byRate.set(i.vatRate, (byRate.get(i.vatRate) ?? 0) + i.lineTotal);
-    if (order.serviceCharge) byRate.set(ops.defaultVatRate, (byRate.get(ops.defaultVatRate) ?? 0) + order.serviceCharge);
+    // Service et frais de livraison : taux par défaut, rattachés avant l'arrondi (comme `computeTotals`).
+    if (order.serviceCharge + order.deliveryFee) byRate.set(ops.defaultVatRate, (byRate.get(ops.defaultVatRate) ?? 0) + order.serviceCharge + order.deliveryFee);
     const vatBreakdown = [...byRate.entries()].sort(([a], [b]) => a - b).map(([rate, ttc]) => {
       const vat = vatIncluded(ttc, rate);
       return { rate, base: ttc - vat, vat };
@@ -400,11 +450,12 @@ export class OrdersService {
    * Verrouille la commande (SELECT … FOR UPDATE : deux encaissements simultanés ne peuvent pas dépasser le total),
    * applique la modification, recalcule totaux et statuts, met à jour la table puis diffuse la commande.
    */
-  private async mutate(acc: Account, orderId: string, fn: (tx: Tx, o: OrderRow, tenantId: string) => Promise<void | StockEffects>) {
+  async mutate(acc: Account, orderId: string, fn: (tx: Tx, o: OrderRow, tenantId: string) => Promise<void | StockEffects>) {
     const tenantId = acc.tenantId!;
     const ops = await this.ops(tenantId);
     let tableChanged = false;
     let stock: void | StockEffects = undefined;
+    let freshRow = null as OrderRow | null;
     let ready: { id: string; number: number; customerName: string | null; customerPhone: string | null; customerId: string | null } | null = null;
     const view = await this.prisma.asTenant(tenantId, async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} AND "tenantId" = ${tenantId} FOR UPDATE`;
@@ -418,13 +469,23 @@ export class OrdersService {
       if (fresh.type === "TAKEAWAY" && fresh.status === "READY" && before !== "READY") {
         ready = { id: fresh.id, number: fresh.number, customerName: fresh.customerName, customerPhone: fresh.customerPhone, customerId: fresh.customerId };
       }
+      freshRow = fresh;
       return orderView(fresh);
     });
     this.realtime.emit(tenantId, "order.updated", view);
+    if (freshRow) this.emitDelivery(tenantId, freshRow);
     if (ready) await this.notifyReady(tenantId, ready);
     if (tableChanged && view.table) await this.tables.broadcast(tenantId, view.table.id);
     await this.stock.publish(tenantId, stock);
     return view;
+  }
+
+  /** X2 : événement `delivery.updated` (tableau de dispatch) ; le livreur assigné le reçoit en privé (il ne rejoint jamais la salle du restaurant). */
+  emitDelivery(tenantId: string, o: OrderRow) {
+    if (!o.delivery) return;
+    const payload = deliveryView(o.delivery, o);
+    this.realtime.emit(tenantId, "delivery.updated", payload);
+    if (o.delivery.driver) this.realtime.emitToUsers(tenantId, [o.delivery.driver.user.id], "delivery.updated", payload);
   }
 
   /** SMS « commande prête » : réglage du restaurant (canal SMS, événement `orderReady`) et préférence du client respectés. */
@@ -445,7 +506,7 @@ export class OrdersService {
 
   /** Totaux, statut et état de paiement ; clôture quand tout est servi et réglé (réouverture après remboursement). */
   private async recompute(tx: Tx, orderId: string, ops: Ops) {
-    const o = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true, payments: true } });
+    const o = await tx.order.findUniqueOrThrow({ where: { id: orderId }, include: { items: true, payments: true, delivery: { select: { fee: true } } } });
     // Lignes formule : statut déduit de leurs plats.
     for (const f of o.items.filter((i) => i.formulaId)) {
       const st = formulaStatus(o.items.filter((c) => c.parentItemId === f.id));
@@ -455,6 +516,8 @@ export class OrdersService {
       items: o.items.filter((i) => !i.parentItemId).map((i) => ({ lineTotal: i.lineTotal, vatRate: Number(i.vatRate), status: i.status as ItemStatus })),
       serviceChargePercent: ops.serviceChargePercent,
       defaultVatRate: ops.defaultVatRate,
+      // X2 : frais de la livraison (figés sur la livraison) tant que la commande a des plats et n'est pas annulée
+      deliveryFee: !o.cancelledAt && o.items.some((i) => !i.parentItemId && i.status !== "CANCELLED") ? o.delivery?.fee ?? 0 : 0,
     });
     const paid = o.payments.filter((p) => p.status === "PAID");
     const paidAmount = paid.reduce((n, p) => n + p.amount, 0);
@@ -464,7 +527,7 @@ export class OrdersService {
     await tx.order.update({
       where: { id: orderId },
       data: {
-        subtotal: totals.subtotal, serviceCharge: totals.serviceCharge, vat: totals.vat, total: totals.total,
+        subtotal: totals.subtotal, serviceCharge: totals.serviceCharge, deliveryFee: totals.deliveryFee, vat: totals.vat, total: totals.total,
         tip: paid.reduce((n, p) => n + p.tip, 0), paidAmount, paymentStatus, status, closedAt,
       },
     });

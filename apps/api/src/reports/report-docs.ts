@@ -25,7 +25,7 @@ export async function buildReportDoc(kind: Exclude<import("@restaurant/validatio
             rows: ([
               ["Chiffre d'affaires encaissé (FCFA)", s.revenue, b.revenue], ["Pourboires (FCFA)", s.tips, b.tips], ["Commandes (nombre)", s.ordersCount, b.ordersCount],
               ["Total des commandes (FCFA)", s.ordersTotal, b.ordersTotal], ["Ticket moyen (FCFA)", s.averageTicket, b.averageTicket],
-              ["Service (FCFA)", s.serviceCharge, b.serviceCharge], ["Dont TVA (FCFA)", s.vat, b.vat], ["Remises promotionnelles (FCFA)", s.discounts, b.discounts],
+              ["Service (FCFA)", s.serviceCharge, b.serviceCharge], ["Frais de livraison (FCFA)", s.deliveryFee, b.deliveryFee], ["Dont TVA (FCFA)", s.vat, b.vat], ["Remises promotionnelles (FCFA)", s.discounts, b.discounts],
               ["Commandes annulées (nombre)", s.cancelledOrders.count, b.cancelledOrders.count], ["Commandes annulées (FCFA)", s.cancelledOrders.amount, b.cancelledOrders.amount],
               ["Articles annulés (FCFA)", s.cancelledItems.amount, b.cancelledItems.amount], ["Remboursements (FCFA)", s.refunds.amount, b.refunds.amount],
             ] as [string, number, number][]).map(([l, a, c]) => [l, a, c, delta(a, c)]),

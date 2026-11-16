@@ -1,8 +1,9 @@
 import { ApiError, type DiningTable, type Formula, type MenuItem } from "@restaurant/api-client";
 import { tableStatusTone } from "@restaurant/ui-tokens";
 import { createOrderSchema, addItemsSchema } from "@restaurant/validation";
+import { deliveryMinimumError } from "@restaurant/utils";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Clock, LayoutGrid, Layers, Search, ShoppingBag, ShoppingCart, Star, UtensilsCrossed, X } from "lucide-react";
+import { ArrowLeft, Bike, Clock, MapPin, LayoutGrid, Layers, Search, ShoppingBag, ShoppingCart, Star, UtensilsCrossed, X } from "lucide-react";
 import * as React from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -26,6 +27,8 @@ import { useOrder } from "../orders/order-detail-page";
 import { orderPlace } from "../orders/order-bits";
 import { useDishRules, useFormulas, usePromotions, type DishRules } from "../menu/extras-hooks";
 import { useTables } from "../tables/tables-page";
+import { DeliveryAddressDialog, type DeliveryAddress } from "../delivery/delivery-address-dialog";
+import { useDeliveryAvailable } from "../delivery/delivery-hooks";
 import { cartCount, cartReducer, cartTotals, toOrderItems, type CartLine } from "./cart";
 import { CartPanel } from "./cart-panel";
 import { FormulaSheet } from "./formula-sheet";
@@ -73,7 +76,10 @@ export function PosPage() {
 
   const [lines, setLines] = useDraft(`pos:${t.slug}:${orderId ?? "new"}`);
   const dispatch = React.useCallback((a: Parameters<typeof cartReducer>[1]) => setLines((l) => cartReducer(l, a)), [setLines]);
-  const [type, setType] = React.useState<"DINE_IN" | "TAKEAWAY">(params.get("type") === "TAKEAWAY" ? "TAKEAWAY" : "DINE_IN");
+  const deliveryAvail = useDeliveryAvailable();
+  const [type, setType] = React.useState<"DINE_IN" | "TAKEAWAY" | "DELIVERY">(params.get("type") === "TAKEAWAY" ? "TAKEAWAY" : params.get("type") === "DELIVERY" ? "DELIVERY" : "DINE_IN");
+  const [address, setAddress] = React.useState<DeliveryAddress>({});
+  const [addressOpen, setAddressOpen] = React.useState(false);
   const [tableId, setTableId] = React.useState<string | null>(params.get("table"));
   const [customer, setCustomer] = React.useState("");
   const [customerPhone, setCustomerPhone] = React.useState("");
@@ -102,7 +108,11 @@ export function PosPage() {
     return byId.size && l.menuItemId && !(item && rules.state(item).available) ? [l.menuItemId] : [];
   }));
   const inCart = (id: string) => lines.filter((l) => l.menuItemId === id || l.formulaId === id).reduce((n, l) => n + l.quantity, 0);
-  const totals = cartTotals(lines, ops);
+  const zone = type === "DELIVERY" && !adding ? deliveryAvail.zones.data?.find((z) => z.id === address.zoneId) : undefined;
+  const totals = cartTotals(lines, ops, zone?.fee ?? 0);
+  // Minimum de commande de la zone : calculé sur le sous-total des plats (même règle que l'API).
+  const minimum = zone ? deliveryMinimumError(totals.subtotal, zone) : null;
+  const delivery = zone ? { fee: zone.fee, blocked: minimum } : undefined;
   const table = tables.data?.find((x) => x.id === tableId) ?? null;
 
   const pick = (item: MenuItem) => {
@@ -128,7 +138,7 @@ export function PosPage() {
         return { order: await t.api.orders.addItems(orderId!, body.items), added: cartCount(lines) };
       }
       const parsed = createOrderSchema.safeParse({
-        type, tableId: type === "DINE_IN" ? table?.id : undefined, reservationId: type === "DINE_IN" && table ? params.get("reservation") ?? undefined : undefined, customerName: type === "TAKEAWAY" ? customer : undefined, customerPhone: type === "TAKEAWAY" ? customerPhone : undefined, notes, items,
+        type, tableId: type === "DINE_IN" ? table?.id : undefined, reservationId: type === "DINE_IN" && table ? params.get("reservation") ?? undefined : undefined, customerName: type !== "DINE_IN" ? customer : undefined, customerPhone: type !== "DINE_IN" ? customerPhone : undefined, delivery: type === "DELIVERY" ? address : undefined, notes, items,
       });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Commande incomplète");
       return { order: await t.api.orders.create(parsed.data), added: cartCount(lines) };
@@ -145,6 +155,7 @@ export function PosPage() {
 
   const submit = () => {
     if (!adding && type === "DINE_IN" && !table) { setPickTable(true); toast.message("Choisissez une table", { description: "Ou passez la commande en « À emporter »." }); return; }
+    if (!adding && type === "DELIVERY" && !zone) { setAddressOpen(true); toast.message("Indiquez l'adresse de livraison"); return; }
     send.mutate();
   };
 
@@ -172,6 +183,7 @@ export function PosPage() {
               options={[
                 { value: "DINE_IN", label: "Sur place", icon: <span className="hidden sm:inline-flex"><LayoutGrid /></span> },
                 ...(ops.takeawayEnabled ? [{ value: "TAKEAWAY" as const, label: "À emporter", icon: <span className="hidden sm:inline-flex"><ShoppingBag /></span> }] : []),
+                ...(deliveryAvail.enabled ? [{ value: "DELIVERY" as const, label: "Livraison", icon: <span className="hidden sm:inline-flex"><Bike /></span> }] : []),
               ]} />
             {type === "DINE_IN" ? (
               <Button variant={table ? "secondary" : "primary"} onClick={() => setPickTable(true)} className="min-w-0 shrink-0">
@@ -180,7 +192,12 @@ export function PosPage() {
             ) : (
               <>
               <Input aria-label="Nom du client" placeholder="Nom du client" value={customer} onChange={(e) => setCustomer(e.target.value)} maxLength={60} className="min-w-0 basis-full sm:basis-auto sm:w-48" />
-              <Input aria-label="Téléphone du client (SMS « commande prête »)" placeholder="Téléphone (SMS prête)" type="tel" inputMode="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={25} className="min-w-0 basis-full sm:basis-auto sm:w-48" />
+              <Input aria-label={type === "DELIVERY" ? "Téléphone du client" : "Téléphone du client (SMS « commande prête »)"} placeholder={type === "DELIVERY" ? "Téléphone du client" : "Téléphone (SMS prête)"} type="tel" inputMode="tel" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} maxLength={25} className="min-w-0 basis-full sm:basis-auto sm:w-48" />
+              {type === "DELIVERY" && (
+                <Button variant={zone ? "secondary" : "primary"} onClick={() => setAddressOpen(true)} className="min-w-0 shrink-0 basis-full sm:basis-auto">
+                  <MapPin /> {zone && address.neighborhood ? <span className="truncate">{address.neighborhood} · {zone.name}</span> : "Adresse de livraison"}
+                </Button>
+              )}
               </>
             )}
           </div>
@@ -231,7 +248,7 @@ export function PosPage() {
           {/* Panier (tablette / bureau) */}
           <CartPanel
             className="hidden border-l border-border md:flex"
-            lines={lines} dispatch={dispatch} totals={totals} serviceChargePercent={ops.serviceChargePercent} unavailable={unavailable}
+            lines={lines} dispatch={dispatch} totals={totals} serviceChargePercent={ops.serviceChargePercent} unavailable={unavailable} delivery={delivery}
             notes={adding ? undefined : { value: notes, onChange: setNotes }}
             submitLabel={submitLabel} onSubmit={submit} submitting={send.isPending}
           />
@@ -251,7 +268,7 @@ export function PosPage() {
         <CartPanel
           hideHeader
           className="-mx-5 -my-4 max-h-[75dvh]"
-          lines={lines} dispatch={dispatch} totals={totals} serviceChargePercent={ops.serviceChargePercent} unavailable={unavailable}
+          lines={lines} dispatch={dispatch} totals={totals} serviceChargePercent={ops.serviceChargePercent} unavailable={unavailable} delivery={delivery}
           notes={adding ? undefined : { value: notes, onChange: setNotes }}
           submitLabel={submitLabel} onSubmit={() => { setCartOpen(false); submit(); }} submitting={send.isPending}
         />
@@ -265,6 +282,7 @@ export function PosPage() {
         dispatch({ type: "addFormula", formula, vatRate: ops.defaultVatRate, choices: c.choices, quantity: c.quantity, instructions: c.instructions, course: c.course });
         setFormulaFor(null);
       }} />
+      <DeliveryAddressDialog open={addressOpen} onOpenChange={setAddressOpen} zones={deliveryAvail.zones.data ?? []} value={address} onSave={(v) => { setAddress(v); setAddressOpen(false); }} />
       <TablePicker open={pickTable} onOpenChange={setPickTable} tables={tables.data ?? []} loading={tables.isLoading} error={tables.error}
         value={tableId} onPick={(id) => { setTableId(id); setPickTable(false); }} />
     </div>

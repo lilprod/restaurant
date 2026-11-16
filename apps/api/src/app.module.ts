@@ -17,6 +17,7 @@ import { RestaurantModule } from "./restaurant/restaurant.module";
 import { InventoryModule } from "./inventory/inventory.module";
 import { ReservationsModule } from "./reservations/reservations.module";
 import { StaffModule } from "./staff/staff.module";
+import { DeliveryModule } from "./delivery/delivery.module";
 import { CustomersModule } from "./customers/customers.module";
 import { AuditModule } from "./audit/audit.module";
 import { ReportsModule } from "./reports/reports.module";
@@ -39,6 +40,7 @@ import { HealthModule } from "./health/health.module";
     InventoryModule,
     ReservationsModule,
     StaffModule,
+    DeliveryModule,
     CustomersModule,
     AuditModule,
     ReportsModule,

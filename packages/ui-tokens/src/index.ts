@@ -50,6 +50,10 @@ export const orderStatusTone = (s: string | null | undefined): StatusTone => (s 
 export const tableStatusTone = (s: string | null | undefined): StatusTone => (s ? TABLE_STATUS_TONES[s] ?? "gray" : "gray");
 export const orderPaymentTone = (s: string | null | undefined): StatusTone => (s ? ORDER_PAYMENT_TONES[s] ?? "gray" : "gray");
 
+/** Livraison (X2) : à attribuer = ambre, attribuée / en route = bleu, livrée = vert, échec = rouge. */
+export const DELIVERY_STATUS_TONES: Record<string, StatusTone> = { PENDING: "amber", ASSIGNED: "blue", ON_THE_WAY: "blue", DELIVERED: "green", FAILED: "red" };
+export const deliveryStatusTone = (s: string | null | undefined): StatusTone => (s ? DELIVERY_STATUS_TONES[s] ?? "gray" : "gray");
+
 /** Stock (P3) : état d'un ingrédient (bas = ambre, épuisé / négatif = rouge), commandes fournisseurs, inventaires. */
 export const STOCK_STATE_TONES: Record<string, StatusTone> = { OK: "green", LOW: "amber", OUT: "red", NEGATIVE: "red" };
 export const PURCHASE_STATUS_TONES: Record<string, StatusTone> = { DRAFT: "gray", SENT: "blue", PARTIAL: "amber", RECEIVED: "green", CANCELLED: "red" };

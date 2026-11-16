@@ -10,6 +10,7 @@ import {
   reservationCancelled, reservationConfirmed, reservationPending, reservationReminder, reservationUpdated, waitlistAvailable,
   type ReservationCancelledData, type ReservationData, type WaitlistAvailableData,
 } from "./reservations";
+import { deliveryDelivered, deliveryOnTheWay, type DeliveredData, type DeliveryOnTheWayData } from "./delivery";
 import { dailyReport, type DailyReportData } from "./reports";
 import { planningPublished, type PlanningPublishedData } from "./staff";
 import type { TemplateDef } from "./types";
@@ -36,6 +37,8 @@ export interface TemplateDataMap {
   "staff.planning-published": PlanningPublishedData;
   "customer.verify-email": VerifyEmailData;
   "order.ready": OrderReadyData;
+  "delivery.on_the_way": DeliveryOnTheWayData;
+  "delivery.delivered": DeliveredData;
   "reports.daily": DailyReportData;
 }
 export type TemplateName = keyof TemplateDataMap;
@@ -56,6 +59,8 @@ export const TEMPLATES: { [K in TemplateName]: TemplateDef<TemplateDataMap[K]> }
   "staff.planning-published": planningPublished,
   "customer.verify-email": customerVerifyEmail,
   "order.ready": orderReady,
+  "delivery.on_the_way": deliveryOnTheWay,
+  "delivery.delivered": deliveryDelivered,
   "reports.daily": dailyReport,
 };
 

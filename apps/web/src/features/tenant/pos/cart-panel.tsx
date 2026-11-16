@@ -22,12 +22,14 @@ interface CartPanelProps {
   onSubmit: () => void;
   submitting: boolean;
   className?: string;
+  /** X2 : livraison — frais (déjà dans `totals`) et message bloquant (minimum de commande non atteint). */
+  delivery?: { fee: number; blocked?: string | null };
   /** Masque l'en-tête « Panier » (déjà titré par la boîte de dialogue sur téléphone). */
   hideHeader?: boolean;
 }
 
 /** Panier : quantités, consignes, envoi (1er, 2e…), totaux en direct et envoi en cuisine. */
-export function CartPanel({ lines, dispatch, totals, serviceChargePercent, unavailable, notes, submitLabel, onSubmit, submitting, className, hideHeader }: CartPanelProps) {
+export function CartPanel({ lines, dispatch, totals, serviceChargePercent, unavailable, notes, submitLabel, onSubmit, submitting, className, hideHeader, delivery }: CartPanelProps) {
   const [open, setOpen] = React.useState<string | null>(null);
   const [showNotes, setShowNotes] = React.useState(false);
   const idOf = (l: CartLine) => l.menuItemId ?? l.formulaId ?? "";
@@ -104,10 +106,12 @@ export function CartPanel({ lines, dispatch, totals, serviceChargePercent, unava
           <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Sous-total</dt><dd className="font-mono tabular-nums">{formatFcfa(totals.subtotal)}</dd></div>
           {cartDiscount(lines) > 0 && <div className="flex justify-between gap-2 text-xs text-faint"><dt>dont remise</dt><dd className="font-mono tabular-nums">− {formatFcfa(cartDiscount(lines))}</dd></div>}
           {totals.serviceCharge > 0 && <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Service ({serviceChargePercent} %)</dt><dd className="font-mono tabular-nums">{formatFcfa(totals.serviceCharge)}</dd></div>}
+          {delivery && delivery.fee > 0 && <div className="flex justify-between gap-2"><dt className="text-muted-foreground">Livraison</dt><dd className="font-mono tabular-nums">{formatFcfa(delivery.fee)}</dd></div>}
           <div className="flex justify-between gap-2 text-base font-semibold"><dt>Total</dt><dd className="font-mono tabular-nums">{formatFcfa(totals.total)}</dd></div>
           <div className="flex justify-between gap-2 text-xs text-faint"><dt>dont TVA</dt><dd className="font-mono tabular-nums">{formatFcfa(totals.vat)}</dd></div>
         </dl>
-        <Button variant="primary" size="lg" className="h-14 w-full text-base" disabled={!lines.length || blocked} loading={submitting} onClick={onSubmit}>
+        {delivery?.blocked && <p role="alert" className="mb-2 flex items-start gap-1.5 text-[13px] font-medium text-[var(--tone-amber-fg)]"><TriangleAlert className="mt-0.5 size-3.5 shrink-0" />{delivery.blocked}</p>}
+        <Button variant="primary" size="lg" className="h-14 w-full text-base" disabled={!lines.length || blocked || !!delivery?.blocked} loading={submitting} onClick={onSubmit}>
           <ChefHat className="!size-5" /> {submitLabel}
         </Button>
       </div>

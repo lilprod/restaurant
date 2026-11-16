@@ -10,7 +10,7 @@ export const isPlanFeatureError = (e: unknown) => e instanceof ApiError && e.cod
 /** Mon état de pointage. Sert aussi de sonde du module : `moduleEnabled === false` quand le plan n'inclut pas le personnel. */
 export function useMyAttendance() {
   const t = useTenant();
-  const q = useQuery({ queryKey: tenantKeys.hrMe(t.root), queryFn: () => t.api.staffHr.myAttendance(), staleTime: 30_000, retry: noRetryOn403 });
+  const q = useQuery({ queryKey: tenantKeys.hrMe(t.root), queryFn: () => t.api.staffHr.myAttendance(), staleTime: 30_000, retry: noRetryOn403, enabled: !t.isDriver });
   return { ...q, moduleEnabled: !isPlanFeatureError(q.error) };
 }
 

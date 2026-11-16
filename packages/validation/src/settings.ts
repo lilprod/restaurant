@@ -122,7 +122,7 @@ const securityBase = {
 };
 export const tenantSecuritySchema = z.object({
   ...securityBase,
-  require2faRoles: z.array(z.enum(["ADMIN", "MANAGER", "WAITER", "KITCHEN"])).default([]),
+  require2faRoles: z.array(z.enum(["ADMIN", "MANAGER", "WAITER", "KITCHEN", "DRIVER"])).default([]),
 });
 export const platformSecuritySchema = z.object({
   ...securityBase,

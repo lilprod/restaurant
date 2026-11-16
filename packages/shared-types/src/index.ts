@@ -1,5 +1,5 @@
 /** Rôles propres à un tenant (restaurant). */
-export type Role = "ADMIN" | "MANAGER" | "WAITER" | "KITCHEN" | "CUSTOMER";
+export type Role = "ADMIN" | "MANAGER" | "WAITER" | "KITCHEN" | "DRIVER" | "CUSTOMER";
 /** Rôles de l'espace plateforme (éditeur du SaaS). */
 export type PlatformRole = "SUPER_ADMIN" | "SUPPORT";
 

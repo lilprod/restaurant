@@ -1,5 +1,6 @@
 import { ConflictException, GoneException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { Account } from "../security/accounts.repo";
+import { normalizePhone } from "@restaurant/utils";
 import { createHash, createHmac } from "node:crypto";
 import { APP_ENV, Env } from "../config/env";
 import { PrismaService } from "../prisma/prisma.service";
@@ -12,7 +13,7 @@ const OPEN_TTL = 3 * DAY;
 
 export const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
-export type TrackingStage = "received" | "preparing" | "ready" | "done" | "cancelled";
+export type TrackingStage = "received" | "preparing" | "ready" | "on_the_way" | "done" | "cancelled";
 const STAGE: Record<string, TrackingStage> = { PENDING: "received", IN_PROGRESS: "preparing", READY: "ready", DELIVERED: "done", CANCELLED: "cancelled" };
 
 /** Suivi de commande sans compte : jeton imprimé sur le ticket (dérivé du secret serveur, stocké haché), statut en direct. */
@@ -51,6 +52,7 @@ export class TrackingService {
         tenant: { select: { id: true, name: true, slug: true, phone: true, timezone: true, status: true } },
         table: { select: { label: true } },
         items: { where: { parentItemId: null, status: { not: "CANCELLED" } }, orderBy: { createdAt: "asc" }, select: { name: true, quantity: true } },
+        delivery: { select: { status: true, eta: true, neighborhood: true, pickedUpAt: true, deliveredAt: true, driver: { select: { user: { select: { firstName: true, phone: true } } } } } },
         feedback: { select: { rating: true, comment: true, reply: true, repliedAt: true, hiddenAt: true, createdAt: true } },
       },
     }));
@@ -71,8 +73,14 @@ export class TrackingService {
       number: o.number,
       type: o.type,
       typeLabel: ORDER_TYPES[o.type],
-      stage: STAGE[o.status] ?? "received",
+      // X2 : une livraison en route / livrée l'emporte sur l'état de la préparation
+      stage: o.delivery?.status === "ON_THE_WAY" ? "on_the_way" : o.delivery?.status === "DELIVERED" && !o.cancelledAt ? "done" : STAGE[o.status] ?? "received",
       table: o.table?.label ?? null,
+      // Livraison : étape, estimation et livreur (prénom et téléphone une fois la commande en route) ; jamais l'adresse ni les montants.
+      delivery: o.delivery ? {
+        status: o.delivery.status, eta: o.delivery.eta, neighborhood: o.delivery.neighborhood, pickedUpAt: o.delivery.pickedUpAt, deliveredAt: o.delivery.deliveredAt,
+        driver: o.delivery.status === "ON_THE_WAY" && o.delivery.driver ? { firstName: o.delivery.driver.user.firstName, phone: o.delivery.driver.user.phone ? normalizePhone(o.delivery.driver.user.phone) ?? o.delivery.driver.user.phone : null } : null,
+      } : null,
       items: o.items,
       createdAt: o.createdAt,
       updatedAt: o.updatedAt,

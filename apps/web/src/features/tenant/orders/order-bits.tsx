@@ -2,7 +2,7 @@ import type { Order, OrderItem, OrderPayment } from "@restaurant/api-client";
 import { orderPaymentTone, orderStatusTone } from "@restaurant/ui-tokens";
 import { computeTotals } from "@restaurant/utils";
 import { useMutation } from "@tanstack/react-query";
-import { MessageSquareWarning, RotateCcw, ShoppingBag } from "lucide-react";
+import { Bike, MessageSquareWarning, RotateCcw, ShoppingBag } from "lucide-react";
 import { toast } from "sonner";
 import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,15 +23,17 @@ export const PaymentStatusBadge = ({ status, className }: { status: string; clas
   <StatusBadge status={status} labels={ORDER_PAYMENT_STATUS_LABEL} toneOf={orderPaymentTone} className={className} />;
 
 /** « Table T3 » ou « À emporter · Awa ». */
-export function orderPlace(o: Pick<Order, "type" | "table" | "customerName">): string {
+export function orderPlace(o: Pick<Order, "type" | "table" | "customerName"> & { delivery?: Order["delivery"] }): string {
+  if (o.type === "DELIVERY") return `Livraison${o.delivery?.neighborhood ? ` · ${o.delivery.neighborhood}` : ""}${o.customerName ? ` · ${o.customerName}` : ""}`;
   if (o.table) return `Table ${o.table.label}`;
   if (o.type === "TAKEAWAY") return o.customerName ? `À emporter · ${o.customerName}` : "À emporter";
   return o.customerName ?? "Sans table";
 }
 
-export function OrderPlace({ order, className }: { order: Pick<Order, "type" | "table" | "customerName">; className?: string }) {
+export function OrderPlace({ order, className }: { order: Pick<Order, "type" | "table" | "customerName"> & { delivery?: Order["delivery"] }; className?: string }) {
   return (
     <span className={cn("inline-flex min-w-0 items-center gap-1.5", className)}>
+      {order.type === "DELIVERY" && <Bike className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
       {order.type === "TAKEAWAY" && <ShoppingBag className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
       <span className="truncate">{orderPlace(order)}</span>
     </span>
@@ -72,7 +74,7 @@ export function BillSummary({ order, className, serviceChargePercent, defaultVat
       ...order.items.map((i) => ({ lineTotal: i.lineTotal, vatRate: i.vatRate, status: i.status })),
       { lineTotal: order.serviceCharge, vatRate: defaultVatRate, status: "PENDING" as const },
     ],
-    serviceChargePercent: 0, defaultVatRate,
+    serviceChargePercent: 0, defaultVatRate, deliveryFee: order.deliveryFee,
   });
   const row = "flex items-baseline justify-between gap-4";
   return (
@@ -82,6 +84,7 @@ export function BillSummary({ order, className, serviceChargePercent, defaultVat
       {order.serviceCharge > 0 && (
         <div className={row}><dt className="text-muted-foreground">Service{serviceChargePercent ? ` (${serviceChargePercent} %)` : ""}</dt><dd className="font-mono tabular-nums">{formatFcfa(order.serviceCharge)}</dd></div>
       )}
+      {order.deliveryFee > 0 && <div className={row}><dt className="text-muted-foreground">Livraison</dt><dd className="font-mono tabular-nums">{formatFcfa(order.deliveryFee)}</dd></div>}
       <div className={cn(row, "border-t border-border pt-2 text-base font-semibold")}><dt>Total TTC</dt><dd className="font-mono tabular-nums">{formatFcfa(order.total)}</dd></div>
       {totals.vatBreakdown.map((v) => (
         <div key={v.rate} className={cn(row, "text-[13px] text-faint")}>

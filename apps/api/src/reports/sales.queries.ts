@@ -14,7 +14,7 @@ const big = (v: unknown) => Number(v ?? 0);
 
 export interface Summary {
   revenue: number; tips: number; ordersCount: number; averageTicket: number;
-  ordersTotal: number; subtotal: number; serviceCharge: number; vat: number; discounts: number;
+  ordersTotal: number; subtotal: number; serviceCharge: number; deliveryFee: number; vat: number; discounts: number;
   cancelledOrders: { count: number; amount: number };
   cancelledItems: { count: number; amount: number };
   refunds: { count: number; amount: number };
@@ -46,7 +46,7 @@ export async function summary(tx: Tx, tenantId: string, r: Range): Promise<Summa
     tx.payment.aggregate({ where: { tenantId, status: "PAID", paidAt: { gte: r.start, lt: r.end } }, _sum: { amount: true, tip: true } }),
     tx.order.aggregate({
       where: { tenantId, createdAt: { gte: r.start, lt: r.end }, cancelledAt: null },
-      _count: { _all: true }, _sum: { total: true, subtotal: true, serviceCharge: true, vat: true },
+      _count: { _all: true }, _sum: { total: true, subtotal: true, serviceCharge: true, deliveryFee: true, vat: true },
     }),
     tx.$queryRaw<{ count: bigint; amount: bigint }[]>`
       SELECT COUNT(DISTINCT o.id) AS count, COALESCE(SUM(oi."lineTotal"), 0) AS amount
@@ -64,7 +64,7 @@ export async function summary(tx: Tx, tenantId: string, r: Range): Promise<Summa
   const total = orders._sum.total ?? 0;
   return {
     revenue: pay._sum.amount ?? 0, tips: pay._sum.tip ?? 0, ordersCount: count, averageTicket: count ? Math.round(total / count) : 0,
-    ordersTotal: total, subtotal: orders._sum.subtotal ?? 0, serviceCharge: orders._sum.serviceCharge ?? 0, vat: orders._sum.vat ?? 0,
+    ordersTotal: total, subtotal: orders._sum.subtotal ?? 0, serviceCharge: orders._sum.serviceCharge ?? 0, deliveryFee: orders._sum.deliveryFee ?? 0, vat: orders._sum.vat ?? 0,
     discounts: items.reduce((n, i) => n + i.discount, 0),
     cancelledOrders: { count: big(cancelled[0]?.count), amount: big(cancelled[0]?.amount) },
     cancelledItems: { count: big(cancelledItems[0]?.count), amount: big(cancelledItems[0]?.amount) },
@@ -103,7 +103,7 @@ export async function daily(tx: Tx, tenantId: string, r: Range, tz: string) {
 
 /**
  * TVA collectée par taux : par commande et par taux, TVA incluse dans le TTC des lignes (même arrondi que `computeTotals`,
- * au franc, par commande), service au taux par défaut. Le total égale la somme des `Order.vat`.
+ * au franc, par commande), service et frais de livraison au taux par défaut. Le total égale la somme des `Order.vat`.
  */
 export async function vatByRate(tx: Tx, tenantId: string, r: Range, defaultVatRate: number) {
   // Le service est rattaché au taux par défaut AVANT l'arrondi, avec les lignes de ce taux (comme `computeTotals`).
@@ -115,9 +115,9 @@ export async function vatByRate(tx: Tx, tenantId: string, r: Range, defaultVatRa
                 WHERE oi."tenantId" = ${tenantId} AND o."tenantId" = ${tenantId} AND o."cancelledAt" IS NULL
                   AND o."createdAt" >= ${r.start} AND o."createdAt" < ${r.end} AND oi."parentItemId" IS NULL AND oi.status <> 'CANCELLED'
                 UNION ALL
-                SELECT o.id, ${defaultVatRate}::numeric, o."serviceCharge"::numeric
+                SELECT o.id, ${defaultVatRate}::numeric, (o."serviceCharge" + o."deliveryFee")::numeric
                 FROM "Order" o
-                WHERE o."tenantId" = ${tenantId} AND o."cancelledAt" IS NULL AND o."createdAt" >= ${r.start} AND o."createdAt" < ${r.end} AND o."serviceCharge" > 0) u
+                WHERE o."tenantId" = ${tenantId} AND o."cancelledAt" IS NULL AND o."createdAt" >= ${r.start} AND o."createdAt" < ${r.end} AND o."serviceCharge" + o."deliveryFee" > 0) u
           GROUP BY "orderId", rate) per
     GROUP BY rate`;
   const byRate = new Map<number, { rate: number; ttc: number; vat: number }>();

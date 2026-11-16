@@ -368,7 +368,7 @@ export interface TenantLicense {
 
 // ── Phase 1 : équipe, tables, menu, commandes, cuisine, encaissement, caisse ──
 
-export type StaffRole = "ADMIN" | "MANAGER" | "WAITER" | "KITCHEN";
+export type StaffRole = "ADMIN" | "MANAGER" | "WAITER" | "KITCHEN" | "DRIVER";
 
 export interface StaffMember {
   id: string;
@@ -530,7 +530,7 @@ export interface PublicMenu {
 export type OrderStatus = "PENDING" | "IN_PROGRESS" | "READY" | "DELIVERED" | "CANCELLED";
 export type OrderItemStatus = "PENDING" | "IN_PROGRESS" | "READY" | "SERVED" | "CANCELLED";
 export type OrderPaymentStatus = "UNPAID" | "PARTIAL" | "PAID";
-export type OrderType = "DINE_IN" | "TAKEAWAY";
+export type OrderType = "DINE_IN" | "TAKEAWAY" | "DELIVERY";
 export type OrderPaymentMethod = "CASH" | "CARD" | "FLOOZ" | "TMONEY" | "OTHER";
 
 export interface OrderItem {
@@ -583,7 +583,7 @@ export interface OrderPayment {
 export interface Order {
   id: string;
   number: number;
-  type: OrderType | "DELIVERY";
+  type: OrderType;
   status: OrderStatus;
   paymentStatus: OrderPaymentStatus;
   table: { id: string; label: string } | null;
@@ -596,6 +596,8 @@ export interface Order {
   discountTotal: number;
   subtotal: number;
   serviceCharge: number;
+  /** X2 : frais de livraison TTC (compris dans total). */
+  deliveryFee: number;
   vat: number;
   total: number;
   tip: number;
@@ -608,6 +610,8 @@ export interface Order {
   cancelReason: string | null;
   items: OrderItem[];
   payments: OrderPayment[];
+  /** X2 : livraison de la commande (type DELIVERY). */
+  delivery: DeliveryInfo | null;
 }
 
 export interface OrdersQuery {
@@ -679,7 +683,7 @@ export interface TenantDashboard {
   ordersCount: number;
   averageTicket: number;
   openOrders: number;
-  byType: { DINE_IN: number; TAKEAWAY: number };
+  byType: { DINE_IN: number; TAKEAWAY: number; DELIVERY: number };
   byMethod: { method: OrderPaymentMethod; amount: number }[];
   byHour: { hour: number; orders: number }[];
   topItems: { menuItemId: string | null; name: string; quantity: number; revenue: number }[];
@@ -1104,10 +1108,12 @@ export interface CustomerOrder {
   canReview: boolean;
   review: { rating: number; comment: string | null; reply: string | null; createdAt: ISODate } | null;
 }
-export type TrackingStage = "received" | "preparing" | "ready" | "done" | "cancelled";
+export type TrackingStage = "received" | "preparing" | "ready" | "on_the_way" | "done" | "cancelled";
 export interface OrderTracking {
   number: number; type: OrderType; typeLabel: string; stage: TrackingStage; table: string | null;
   items: { name: string; quantity: number }[];
+  /** X2 : livraison (étape, estimation, livreur une fois en route) ; jamais l'adresse. */
+  delivery: { status: DeliveryStatus; eta: ISODate | null; neighborhood: string; pickedUpAt: ISODate | null; deliveredAt: ISODate | null; driver: { firstName: string; phone: string | null } | null } | null;
   createdAt: ISODate; updatedAt: ISODate; closedAt: ISODate | null; expiresAt: ISODate;
   canReview: boolean;
   review: { rating: number; comment: string | null; reply: string | null; createdAt: ISODate } | null;
@@ -1199,3 +1205,38 @@ export interface LicensesReport {
   totals: { firstPayments: number; renewals: number; cancellations: number; voided: number };
 }
 export type ReportsSettings = { dailyReport: boolean; dailyReportHour: number };
+
+// ── X2 : livraison ──
+export type DeliveryStatus = "PENDING" | "ASSIGNED" | "ON_THE_WAY" | "DELIVERED" | "FAILED";
+/** Colonne du tableau de dispatch. */
+export type DeliveryPhase = "preparing" | "ready" | "on_the_way" | "delivered" | "failed";
+export type DeliveryCollectMethod = "CASH" | "FLOOZ" | "TMONEY";
+
+export interface DeliveryZone {
+  id: string; name: string; neighborhoods: string[]; landmarks: string[]; fee: number; minOrder: number; etaMinutes: number; isActive: boolean;
+}
+export interface DeliveryInfo {
+  id: string; status: DeliveryStatus; phase: DeliveryPhase; zone: { id: string; name: string } | null; neighborhood: string; address: string; landmark: string;
+  phone: string; fee: number; eta: ISODate | null; driver: { id: string; name: string; phone: string | null } | null; failReason: string | null;
+  assignedAt: ISODate | null; pickedUpAt: ISODate | null; deliveredAt: ISODate | null; failedAt: ISODate | null;
+  /** Paiement encaissé par le livreur ; `settledAt` renseigné une fois rapproché en caisse. */
+  collectedPaymentId: string | null; settledAt: ISODate | null; createdAt: ISODate;
+}
+/** Livraison + résumé de la commande (tableau de dispatch, écran du livreur, événement `delivery.updated`). */
+export interface Delivery extends DeliveryInfo {
+  order: {
+    id: string; number: number; status: OrderStatus; paymentStatus: OrderPaymentStatus; customerName: string | null;
+    subtotal: number; serviceCharge: number; deliveryFee: number; total: number; paidAmount: number; remaining: number;
+    createdAt: ISODate; closedAt: ISODate | null; cancelledAt: ISODate | null; items: { name: string; quantity: number }[];
+  };
+}
+export interface DeliveryBoard { items: Delivery[]; day: string }
+export interface DeliveryDriver { id: string; name: string; phone: string | null; assigned: number; onTheWay: number }
+export interface DeliverySettlements {
+  registerOpen: boolean;
+  drivers: {
+    driver: { id: string; name: string; phone: string | null }; count: number; total: number; byMethod: Record<string, number>;
+    deliveries: { id: string; orderNumber: number; amount: number; method: OrderPaymentMethod; deliveredAt: ISODate | null }[];
+  }[];
+}
+export interface DeliverySettleResult { count: number; total: number; byMethod: Record<string, number> }

@@ -83,7 +83,7 @@ export function OrdersPage() {
         <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
           <FilterSelect label="Statut" value={status} onChange={setStatus} options={ORDER_STATUS_LABEL} />
           <FilterSelect label="Paiement" value={payment} onChange={setPayment} options={ORDER_PAYMENT_STATUS_LABEL} />
-          <FilterSelect label="Type" value={type} onChange={setType} options={{ DINE_IN: ORDER_TYPE_LABEL.DINE_IN!, TAKEAWAY: ORDER_TYPE_LABEL.TAKEAWAY! }} />
+          <FilterSelect label="Type" value={type} onChange={setType} options={{ DINE_IN: ORDER_TYPE_LABEL.DINE_IN!, TAKEAWAY: ORDER_TYPE_LABEL.TAKEAWAY!, DELIVERY: ORDER_TYPE_LABEL.DELIVERY! }} />
           <div className="sm:w-44">
             <label htmlFor="orders-date" className="sr-only">Date</label>
             <Input id="orders-date" type="date" value={date} onChange={(e) => setDate(e.target.value || null)} className={cn("font-mono", !date && "text-muted-foreground")} />

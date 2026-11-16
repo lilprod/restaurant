@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
-  BookOpen, CalendarClock, CalendarDays, Package, Truck, ChefHat, ClipboardList, HandPlatter, Landmark, LayoutDashboard, LayoutGrid, Settings, ShieldCheck,
+  Bike, BookOpen, CalendarClock, CalendarDays, Package, Truck, ChefHat, ClipboardList, HandPlatter, Landmark, LayoutDashboard, LayoutGrid, Settings, ShieldCheck,
   ShoppingBag, BarChart3, Star, Map as MapIcon, SquarePlus, Users, WalletCards, Bell, CalendarRange, MessageSquare, UserCog,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -16,6 +16,7 @@ import { useTenant } from "./hooks";
 import { useMyAttendance } from "./staff-hr/hr-hooks";
 import { useUnreadCount } from "./messaging/messaging-hooks";
 import { useStockAlerts } from "./stock/stock-hooks";
+import { useDeliveryAvailable } from "./delivery/delivery-hooks";
 
 /**
  * Navigation selon le rôle (voir le tableau des rôles de docs/API.md) :
@@ -29,7 +30,10 @@ export function useTenantNav(): NavItem[] {
   const stock = useStockAlerts();
   const hr = useMyAttendance();
   const unread = useUnreadCount();
+  const delivery = useDeliveryAvailable();
   return React.useMemo(() => {
+    // X2 : le livreur n'a que « Mes livraisons » (l'API refuse le reste).
+    if (t.isDriver) return [{ to: to("/mes-livraisons"), label: "Mes livraisons", icon: <Bike />, end: true, keywords: ["livrer", "course", "encaisser"], section: "Service" }] as NavItem[];
     const S = "Service", G = "Gestion";
     const items: (NavItem | false)[] = [
       t.role !== "KITCHEN" && { to: to("/"), label: t.isManager ? "Tableau de bord" : "Mon service", icon: t.isManager ? <LayoutDashboard /> : <HandPlatter />, end: true, section: S },
@@ -39,6 +43,7 @@ export function useTenantNav(): NavItem[] {
       t.isFloor && { to: to("/tables"), label: "Tables", icon: <LayoutGrid />, keywords: ["salle", "débarrasser"], section: S },
       t.isFloor && { to: to("/plan-de-salle"), label: "Plan de salle", icon: <MapIcon />, keywords: ["salle", "tables", "plan", "déplacer", "fusionner", "service"], section: S },
       t.isKitchen && { to: to("/cuisine"), label: "Écran cuisine", icon: <ChefHat />, keywords: ["kds", "préparation"], section: S },
+      t.isFloor && delivery.enabled && { to: to("/livraisons"), label: "Livraisons", icon: <Bike />, keywords: ["dispatch", "livreur", "zones", "frais", "rapprochement", "course"], section: S },
       t.isFloor && { to: to("/caisse"), label: "Caisse", icon: <Landmark />, keywords: ["fond de caisse", "clôture", "espèces"], section: S },
       { to: to("/messagerie"), label: "Messagerie", icon: <MessageSquare />, keywords: ["message", "discussion", "équipe", "canal", "mention"], section: S, badge: unread },
       hr.moduleEnabled && { to: to("/mon-planning"), label: "Mon planning", icon: <CalendarRange />, keywords: ["horaires", "pointage", "congés", "absence", "arrivée", "départ"], section: S },
@@ -55,7 +60,7 @@ export function useTenantNav(): NavItem[] {
       t.canSeeLicense && { to: to("/licence"), label: "Licence", icon: <WalletCards />, keywords: ["paiement", "abonnement", "flooz", "tmoney"], section: G },
     ];
     return items.filter(Boolean) as NavItem[];
-  }, [to, t.role, t.isManager, t.isFloor, t.isKitchen, t.isAdmin, t.canSeeLicense, stock.moduleEnabled, hr.moduleEnabled, unread]);
+  }, [to, t.role, t.isDriver, delivery.enabled, t.isManager, t.isFloor, t.isKitchen, t.isAdmin, t.canSeeLicense, stock.moduleEnabled, hr.moduleEnabled, unread]);
 }
 
 export function TenantShell() {

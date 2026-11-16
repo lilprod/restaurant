@@ -33,7 +33,7 @@ export class DashboardService {
         ordersCount: orders.length,
         averageTicket: orders.length ? Math.round(orders.reduce((n, o) => n + o.total, 0) / orders.length) : 0,
         openOrders,
-        byType: { DINE_IN: orders.filter((o) => o.type === "DINE_IN").length, TAKEAWAY: orders.filter((o) => o.type === "TAKEAWAY").length },
+        byType: { DINE_IN: orders.filter((o) => o.type === "DINE_IN").length, TAKEAWAY: orders.filter((o) => o.type === "TAKEAWAY").length, DELIVERY: orders.filter((o) => o.type === "DELIVERY").length },
         byMethod: Object.entries(byMethod).map(([method, amount]) => ({ method, amount })),
         byHour,
         topItems: items.map((i) => ({ menuItemId: i.menuItemId, name: i.name, quantity: i._sum.quantity ?? 0, revenue: i._sum.lineTotal ?? 0 })),

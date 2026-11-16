@@ -189,7 +189,7 @@ directement vers le bucket / son CDN. Les URL déjà enregistrées ne sont pas r
 
 # Phase 1 — Menu, commandes, cuisine, encaissement (`/tenant/...`)
 
-Rôles : **personnel** = ADMIN, MANAGER, WAITER, KITCHEN · **salle** = ADMIN, MANAGER, WAITER ·
+Rôles : **personnel** = ADMIN, MANAGER, WAITER, KITCHEN (le livreur, `DRIVER`, n'est pas du « personnel » : voir X2) · **salle** = ADMIN, MANAGER, WAITER ·
 **cuisine** = ADMIN, MANAGER, KITCHEN · **responsables** = ADMIN, MANAGER. Prix du menu **TTC** en FCFA entiers.
 
 ## Équipe — `/tenant/staff`
@@ -235,7 +235,7 @@ Carte publique : `GET /public/tenants/:slug/menu` (catégories actives, plats no
 | Méthode | Route | Rôle | Description |
 |---|---|---|---|
 | GET | `/` | personnel | Filtres `status`, `paymentStatus`, `type`, `tableId`, `open=true`, `date=AAAA-MM-JJ` (fuseau du restaurant), pagination |
-| POST | `/` | salle | `{type: DINE_IN\|TAKEAWAY, tableId?, customerName?, notes?, items[{menuItemId \| formulaId+choices[], quantity, optionIds[], instructions?, course?}]}` |
+| POST | `/` | salle | `{type: DINE_IN\|TAKEAWAY\|DELIVERY, tableId?, customerName?, notes?, delivery?{zoneId, neighborhood, address, landmark} (X2), items[{menuItemId \| formulaId+choices[], quantity, optionIds[], instructions?, course?}]}` |
 
 | POST | `/` | salle | `{type: DINE_IN\|TAKEAWAY, tableId?, reservationId?, customerName?, notes?, items[{menuItemId, quantity, optionIds[], instructions?, course?}]}` (`reservationId` : voir P2A) |
 | GET | `/:id` · `/:id/receipt` | personnel · salle | Détail · ticket (identité du restaurant, TVA par taux, paiements) |
@@ -685,40 +685,40 @@ Modèle `reports.daily` (événement `dailyReport`, désactivable dans les notif
 ## Performance
 Agrégats par la base (groupBy / SQL groupé), jamais de chargement des commandes en mémoire. `apps/api/scripts/generate-orders.ts <slug> [n] [jours]` génère un gros volume (`--clean` le supprime).
 
-# P5 — Rapports, analyses et exports (PDF/CSV)
+# X2 — Livraison (`/tenant/delivery/...`, commande `type: DELIVERY`)
+Migration `delivery` : rôle `DRIVER` ; `Order.deliveryFee` ; `DeliveryZone` (`postalCodes` → `neighborhoods` + `landmarks`, `etaMinutes`, `isActive`) ; `Delivery` (quartier, repère, horodatages, `failReason`, `codPaymentId`, `settledAt`). Aucune nouvelle table (RLS déjà en place pour `Delivery` et `DeliveryZone`).
+Fonctionnalité **`delivery`** du plan (`PlanFeatureGuard`, `403 {code:"PLAN_FEATURE"}` sur toutes les routes et sur `POST /tenant/orders` de type `DELIVERY`) **et** réglage `operations.deliveryEnabled` (sinon `409`).
 
-Module `src/reports/`. Migration `reports` : index seulement (`OrderItem(orderId)`, `Payment(orderId)`, `Payment(tenantId,status,paidAt)`, `Order(tenantId,cancelledAt)`, `RegisterSession(tenantId,openedAt)`), aucune nouvelle table (donc rien dans `rls.sql`).
-Réglage `reports` (`GET/PATCH /tenant/settings/reports`, lecture responsables, écriture administrateur) : `{ dailyReport: false, dailyReportHour: 8 }`.
+## Commande en livraison — `POST /tenant/orders` (salle)
+`{type: "DELIVERY", customerName, customerPhone, delivery: {zoneId, neighborhood, address, landmark}, items[]}` : nom, téléphone, adresse et **point de repère** obligatoires ; le quartier doit appartenir à la zone (400) ; zone inconnue ou inactive 404.
+- **Frais** : `computeTotals({ …, deliveryFee })` (`@restaurant/utils`) : `total = sous-total + service + frais` ; le **service ne porte que sur les plats** ; la TVA des frais est au **taux par défaut** (rattachés avec le service avant l'arrondi). Frais et délai sont **figés** (`Delivery.fee`, `Order.deliveryFee`) ; une commande annulée (ou sans plat) n'a plus de frais.
+- **Minimum** : sous-total des plats (hors service et frais) ≥ `minOrder` de la zone, sinon `409 {code:"DELIVERY_MINIMUM"}` (rien n'est créé, numérotation intacte).
+- La vue de commande porte `deliveryFee` et `delivery` (statut, phase, zone, quartier, adresse, repère, téléphone, livreur, `eta`, motif d'échec). **Ticket** (`/receipt`, ticket 80 mm), **facture PDF** (« Frais de livraison »), **rapports P5** (`summary.deliveryFee`, TVA par taux, type « Livraison », export CSV des commandes : colonne « Livraison ») les incluent ; un test e2e compare les totaux.
 
-## Rapports du restaurant — `GET /tenant/reports/...` (responsables ; plan avec `reports`, sinon `403 {code:"PLAN_FEATURE"}`)
-Période en jours **du restaurant** : `?from=AAAA-MM-JJ&to=AAAA-MM-JJ` (bornes incluses, 366 jours au plus ; 400 « La fin précède le début »).
-| Route | Contenu |
-|---|---|
-| `sales` | synthèse + **période précédente de même durée** (`previous`), par catégorie, plat, heure, jour de semaine, jour, serveur, moyen de paiement, type (sur place / emporter / livraison), remises, annulations, articles annulés, remboursements |
-| `vat` | TVA collectée **par taux** (base HT, TVA, TTC) ; commandes non annulées créées dans la période ; service rattaché au taux par défaut avant arrondi (comme `computeTotals`) ; remboursements non déduits |
-| `register` | sessions de caisse ouvertes dans la période : fond, encaissé, attendu, compté, écart ; totaux et sessions avec écart |
-| `margins` | marge par plat vendu = `dishMargin(ventes TTC, taux, coût unitaire actuel × quantité)` (fiche technique P3) ; ventes sans fiche signalées (`uncosted`) |
-| `waste` | pertes valorisées (P3) par ingrédient et par motif |
-| `staff` | performances du personnel : **même réponse que** `GET /tenant/staff/performance` (P4) |
-| `reviews` | avis (P2C) : moyenne, répartition, période précédente, masqués, derniers avis |
-| `peak-hours` | carte de chaleur jour de semaine (1 = lundi) × heure locale, 5 créneaux les plus chargés |
-| `export/:kind?format=csv\|pdf` | `kind` ∈ `sales, vat, register, margins, waste, staff, reviews, peak-hours` ; `orders` (CSV seulement : détail des commandes **en flux**, lecture par lots de 1 000). Journalisé (audit `report.export`) |
+## Routes (`/tenant/delivery`)
+| Méthode | Route | Rôles | Description |
+|---|---|---|---|
+| GET | `/zones` | salle | Zones : `{id, name, neighborhoods[], landmarks[], fee, minOrder, etaMinutes, isActive}` |
+| POST · PATCH · DELETE | `/zones` · `/zones/:id` | responsables | Créer / modifier / supprimer (409 si la zone a déjà servi : la désactiver) ; nom unique (409) ; audit `delivery.zone.*` |
+| GET | `/drivers` | salle | Livreurs actifs `{id, name, phone, assigned, onTheWay}` |
+| GET | `/` `?date=` | salle | Tableau de dispatch `{items: Delivery[], day}` : en cours, en échec, livrées du jour ou non rapprochées. Chaque élément : livraison + `order` (numéro, totaux, `remaining`, articles) et `phase` ∈ `preparing, ready, on_the_way, delivered, failed` (à préparer, prêtes, en cours, livrées, à reprendre) |
+| GET | `/:id` | salle | Une livraison |
+| POST | `/:id/assign` | salle | `{driverId}` (compte actif au rôle DRIVER) : `PENDING|ASSIGNED|FAILED → ASSIGNED` ; 409 si déjà en route/livrée ; fiche de personnel « Livreur » créée si absente ; audit `delivery.assign` |
+| GET | `/settlements` | responsables | Encaissements des livreurs à rapprocher, par livreur (`count`, `total`, `byMethod`, `deliveries[]`), `registerOpen` |
+| POST | `/settlements` | responsables | `{driverId}` : rattache ses paiements à la **caisse ouverte** (espèces « attendues » dans le tiroir) ; 409 sans caisse ouverte ou rien à rapprocher ; audit `delivery.settle` |
+| GET | `/mine` · `/mine/:id` | **DRIVER** | Mes livraisons (attribuées, en route, terminées du jour) ; celle d'un autre livreur : **404** |
+| POST | `/mine/:id/pickup` | DRIVER | `ASSIGNED → ON_THE_WAY` ; 409 tant que la commande n'est pas `READY` ; **SMS « en route »** au client avec le nom et le numéro du livreur |
+| POST | `/mine/:id/deliver` | DRIVER | `{method?: CASH\|FLOOZ\|TMONEY, reference?, tendered?}` : s'il reste à payer, **encaisse la totalité** (moyen obligatoire, référence Flooz/TMoney, somme remise ≥ montant) ; articles servis, commande réglée et clôturée ; `ON_THE_WAY → DELIVERED` ; **SMS « livrée »** ; verrou de commande (deux remises simultanées : une seule aboutit) ; audit `delivery.complete` |
+| POST | `/mine/:id/fail` | DRIVER | `{reason}` : `ASSIGNED|ON_THE_WAY → FAILED` ; la salle réattribue (`assign`) ou annule la commande (annulation → livraison `FAILED` « Commande annulée », hors tableau) |
 
-**Définitions (identiques au tableau de bord)** : encaissé = paiements `PAID` par date de paiement ; commandes = non annulées, par date de création ; ticket moyen = total des commandes ÷ nombre ; heure/jour dans le fuseau du restaurant.
-Les lignes (catégories, plats, TVA, marges) sont rattachées à la **date de la commande** (leur somme égale le sous-total des commandes ; le « top plats » du tableau de bord, lui, utilise la date de la ligne).
-Un test e2e compare rapport, tableau de bord et sommes en base, jour par jour, dans un fuseau UTC+5:30.
+Rôle **DRIVER** : n'atteint que `/tenant/delivery/mine/*`, `/tenant/auth/*`, `/tenant/account/*` (toutes les autres routes `/tenant/*` répondent 403 ; le test `idor` le vérifie). Sa socket ne rejoint **pas** la salle du restaurant : il ne reçoit ni commandes ni caisse, seulement ses `delivery.updated` (événement privé).
+**Paiement à la livraison** : le paiement est créé sur la commande avec `recordedById` = livreur mais **sans caisse** (`registerSessionId` nul) ; il n'entre en caisse qu'au rapprochement (`settle`). Rapports (encaissé par date de paiement) et tableau de bord le comptent dès la remise.
 
-## Exports
-- **CSV** : séparateur « ; », virgule décimale, BOM UTF-8, CRLF. Tout texte commençant par `= + - @`, tabulation ou retour chariot (après espaces éventuels) est préfixé d'une apostrophe (pas d'injection de formule) ; les nombres restent des nombres.
-- **PDF** (pdfkit, polices Lato embarquées dans `src/reports/fonts`, copiées dans `dist` par `nest-cli.json`) : en-tête à la marque du restaurant (nom, couleur, logo PNG/JPEG, coordonnées, NIF/RCCM des paramètres), tableaux paginés (300 lignes au plus par tableau, renvoi vers le CSV), pied « Page x / y ».
-- `GET /tenant/orders/:id/invoice.pdf` (salle, **tous plans**) : facture n° `F-000123` (numéro de commande), lignes, TVA par taux, paiements, reste à payer, mentions du restaurant. 409 si la commande est annulée.
-- `GET /tenant/license/payments/:id/receipt.pdf` (administrateur) et `GET /platform/payments/:id/receipt.pdf` (tout rôle plateforme) : reçu de licence (n° `REC-…`, plan, période, moyen, référence, mentions légales de la société), « PAIEMENT ANNULÉ » le cas échéant. Autre restaurant : 404.
+## SMS clients (X1)
+Modèles `delivery.on_the_way` et `delivery.delivered` (événement désactivable `deliveryUpdates`, canal SMS actif requis, préférence « SMS de commande » du compte respectée, `dedupeKey` par livraison). Jamais de lien ni de secret.
 
-## Plateforme — `GET /platform/reports/licenses?from=&to=` et `/export?format=csv|pdf` (SuperAdmin)
-Revenus de licences par mois (UTC) et par moyen, premiers paiements / renouvellements, résiliations (`Subscription.cancelledAt`), paiements annulés, restaurants par statut (état du jour). Période de 5 ans au plus.
+## Suivi sans compte (P2C)
+`GET /public/tracking/:token` : `stage` peut valoir `on_the_way` ; `delivery: {status, eta, neighborhood, pickedUpAt, deliveredAt, driver: {firstName, phone} \| null}` (livreur visible une fois en route) ; jamais l'adresse, le téléphone du client ni les montants.
 
-## Rapport quotidien par email (X1)
-Modèle `reports.daily` (événement `dailyReport`, désactivable dans les notifications). `DailyReportService` (cron `7 * * * *`, coupé par `DISABLE_CRON`) : pour chaque restaurant actif dont le plan inclut `reports` et qui l'a activé, à partir de `dailyReportHour` (heure locale), envoie la veille aux administrateurs et gérants actifs. Une fois par jour et destinataire (`dedupeKey report:daily:<tenant>:<jour>:<user>`) ; rien les jours sans commande ni encaissement.
-
-## Performance
-Agrégats par la base (groupBy / SQL groupé), jamais de chargement des commandes en mémoire. `apps/api/scripts/generate-orders.ts <slug> [n] [jours]` génère un gros volume (`--clean` le supprime).
+## Temps réel
+**`delivery.updated`** (charge utile = livraison + commande, même forme que `GET /tenant/delivery`) : création, attribution, avancement de la cuisine (`order.updated`), départ, remise, échec, rapprochement. Émis à la salle (restaurant) et, en privé, au livreur concerné (et à l'ancien en cas de réattribution).
