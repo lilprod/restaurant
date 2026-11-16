@@ -10,7 +10,8 @@ const dish = (p: Partial<MenuItem> = {}): MenuItem => ({
   isAvailable: true, availableFrom: null, availableTo: null, isDishOfDay: false, sortOrder: 0, archived: false, allergens: [], optionGroups: [], ...p,
 });
 const cat = (id: string, items: MenuItem[]): MenuCategory => ({ id, name: id, description: null, sortOrder: 0, isActive: true, items });
-const table = (p: Partial<DiningTable> = {}): DiningTable => ({ id: "t1", tenantId: "t", label: "T1", capacity: 4, status: "FREE", isActive: true, openOrders: [], ...p });
+const table = (p: Partial<DiningTable> = {}): DiningTable => ({ id: "t1", tenantId: "t", label: "T1", capacity: 4, status: "FREE", isActive: true, openOrders: [],
+  minCapacity: 1, floorPlanId: "plan-1", posX: 0, posY: 0, width: 90, height: 90, shape: "round", rotation: 0, mergedIntoId: null, mergedTables: [], ...p });
 
 describe("menu.updated", () => {
   const setup = () => {

@@ -17,6 +17,7 @@ export const tenantKeys = {
   receipt: (root: Root, id: string) => [...root, "orders", "receipt", id] as const,
   kitchen: (root: Root) => [...root, "kitchen"] as const,
   tables: (root: Root) => [...root, "tables"] as const,
+  floorPlans: (root: Root) => [...root, "floor-plans"] as const,
   menu: (root: Root) => [...root, "menu"] as const,
   formulas: (root: Root) => [...root, "menu", "formulas"] as const,
   promotions: (root: Root) => [...root, "menu", "promotions"] as const,

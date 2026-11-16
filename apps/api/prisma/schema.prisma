@@ -223,6 +223,8 @@ model FloorPlan {
   name     String
   width    Int
   height   Int
+  // Ordre des onglets : ordre de création.
+  createdAt DateTime         @default(now())
   tables   RestaurantTable[]
 
   @@index([tenantId])
@@ -238,6 +240,8 @@ model RestaurantTable {
   minCapacity  Int         @default(1)
   posX         Float
   posY         Float
+  width        Int         @default(90)
+  height       Int         @default(90)
   shape        String      @default("rect")
   rotation     Int         @default(0)
   status       TableStatus @default(FREE)

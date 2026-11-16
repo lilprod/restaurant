@@ -75,6 +75,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
             void qc.invalidateQueries({ queryKey: tenantKeys.promotions(root) });
           }
           else if (event === "table.updated") applyTableEvent(qc, root, payload as TableEvent);
+          else if (event === "floorplan.updated") void qc.invalidateQueries({ queryKey: tenantKeys.floorPlans(root) });
           else if (event === "reservation.created" || event === "reservation.updated") {
             const r = payload as Reservation;
             applyReservationEvent(qc, root, r, { timeZone: tzRef.current });

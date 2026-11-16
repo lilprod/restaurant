@@ -5,10 +5,10 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import { ApiBearerAuth, ApiConsumes, ApiTags } from "@nestjs/swagger";
 import { z } from "zod";
 import {
-  CategoryInput, CreateOrderInput, FormulaInput, FormulaUpdateInput, PromotionInput, CreateStaffInput, ListOrdersQuery, MenuItemInput, OrderItemInput, OrderPaymentInput, TableInput,
+  CategoryInput, CreateOrderInput, FormulaInput, FormulaUpdateInput, PromotionInput, CreateStaffInput, ListOrdersQuery, MenuItemInput, OrderItemInput, OrderPaymentInput, TableInput, TableCreateInput,
   addItemsSchema, availabilitySchema, categoryInputSchema, categoryUpdateSchema, closeRegisterSchema, createOrderSchema,
   createStaffSchema, itemStatusSchema, listOrdersQuerySchema, menuItemInputSchema, menuItemUpdateSchema, openRegisterSchema,
-  orderPaymentSchema, reasonSchema, reorderSchema, tableInputSchema, tableStatusSchema, tableUpdateSchema, updateOrderItemSchema,
+  orderPaymentSchema, reasonSchema, reorderSchema, tableCreateSchema, tableStatusSchema, tableUpdateSchema, updateOrderItemSchema,
   updateStaffSchema, formulaInputSchema, formulaUpdateSchema, promotionActiveSchema, promotionInputSchema,
 } from "@restaurant/validation";
 import type { ItemStatus } from "@restaurant/utils";
@@ -58,7 +58,7 @@ export class TablesController {
   @Get() list(@CurrentAccount() a: Account, @Query("all") all?: string) { return this.tables.list(t(a), all === "true"); }
 
   @Post() @TenantRoles(...MANAGERS)
-  create(@CurrentAccount() a: Account, @Body(new ZodPipe(tableInputSchema)) body: TableInput) { return this.tables.create(t(a), body); }
+  create(@CurrentAccount() a: Account, @Body(new ZodPipe(tableCreateSchema)) body: TableCreateInput) { return this.tables.create(t(a), body); }
 
   @Patch(":id") @TenantRoles(...MANAGERS)
   update(@CurrentAccount() a: Account, @Param("id", UUID) id: string, @Body(new ZodPipe(tableUpdateSchema)) body: Partial<TableInput>) {

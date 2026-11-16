@@ -7,7 +7,8 @@ import { applyOrderEvent, kitchenView, matchesOrderQuery } from "../order-cache"
 
 const root = ["tenant", "chez-kofi"] as const;
 const page = (items: Order[], extra: Partial<Paginated<Order>> = {}): Paginated<Order> => ({ total: items.length, page: 1, pageSize: 30, items, ...extra });
-const table = (p: Partial<DiningTable> = {}): DiningTable => ({ id: "table-1", tenantId: "t", label: "T1", capacity: 4, status: "FREE", isActive: true, openOrders: [], ...p });
+const table = (p: Partial<DiningTable> = {}): DiningTable => ({ id: "table-1", tenantId: "t", label: "T1", capacity: 4, status: "FREE", isActive: true, openOrders: [],
+  minCapacity: 1, floorPlanId: "plan-1", posX: 0, posY: 0, width: 90, height: 90, shape: "round", rotation: 0, mergedIntoId: null, mergedTables: [], ...p });
 const later = (o: Order, patch: Partial<Order>, minutes = 1): Order => ({ ...o, ...patch, updatedAt: new Date(new Date(o.updatedAt).getTime() + minutes * 60_000).toISOString() });
 
 function setup() {

@@ -125,8 +125,9 @@ export class ReservationsService {
   /** Tables actives et occupations existantes (tampon compris) qui touchent [from, to). */
   private async occupancy(tx: Tx, tenantId: string, from: Date, to: Date, excludeReservationId?: string) {
     const tables: AvailabilityTable[] = await tx.restaurantTable.findMany({
-      where: { tenantId, isActive: true }, select: { id: true, label: true, capacity: true, minCapacity: true },
-    });
+      where: { tenantId, isActive: true, mergedIntoId: null },   // les tables fusionnées comptent pour une seule, de capacité cumulée
+      select: { id: true, label: true, capacity: true, minCapacity: true, mergedTables: { select: { capacity: true } } },
+    }).then((rows) => rows.map(({ mergedTables, ...t }) => ({ ...t, capacity: t.capacity + mergedTables.reduce((n, m) => n + m.capacity, 0) })));
     const rows = await tx.reservationTable.findMany({
       where: { tenantId, active: true, startsAt: { lt: to }, endsAt: { gt: from }, ...(excludeReservationId ? { reservationId: { not: excludeReservationId } } : {}) },
       select: { tableId: true, startsAt: true, endsAt: true },
@@ -344,6 +345,8 @@ export class ReservationsService {
         throw new ConflictException(`Trop tôt pour installer cette réservation : possible ${SEAT_EARLY_MINUTES} minutes avant l'heure prévue`);
       }
       tableIds = r.tables.map((t) => t.tableId);
+      const merged = await tx.restaurantTable.findFirst({ where: { id: { in: tableIds }, tenantId, mergedIntoId: { not: null } }, select: { label: true } });
+      if (merged) throw new ConflictException(`La table ${merged.label} est fusionnée avec une autre : séparez les tables avant d'installer cette réservation`);
       const busyOrder = await tx.order.findFirst({
         where: { tenantId, tableId: { in: tableIds }, closedAt: null, cancelledAt: null, OR: [{ reservationId: null }, { reservationId: { not: r.id } }] },
         include: { table: { select: { label: true } } },

@@ -12,6 +12,8 @@ import { RealtimeService } from "../realtime/realtime.service";
 import type { Account } from "../security/accounts.repo";
 import { TenantSettingsService } from "../settings/tenant-settings.service";
 import { FLOOR, KITCHEN, isManager } from "./common";
+import { isOverlapError } from "../reservations/reservations.service";
+import { reservationInclude, reservationView as reservationViewOf } from "../reservations/reservations.views";
 import { TablesService } from "./tables.service";
 
 export const orderInclude = {
@@ -129,6 +131,7 @@ export class OrdersService {
       if (input.tableId) {
         const table = await tx.restaurantTable.findFirst({ where: { id: input.tableId, tenantId, isActive: true } });
         if (!table) throw new NotFoundException("Table introuvable");
+        if (table.mergedIntoId) throw new ConflictException(`La table ${table.label} est fusionnée avec une autre : ouvrez la commande sur la table principale`);
       }
       if (input.reservationId) {
         // P2A : commande ouverte depuis une réservation installée, sur l'une de ses tables
@@ -154,6 +157,64 @@ export class OrdersService {
     });
     this.realtime.emit(tenantId, "order.created", view);
     if (tableChanged) await this.tables.broadcast(tenantId, view.table!.id);
+    return view;
+  }
+
+  /**
+   * Transfert d'une commande ouverte vers une table libre : statuts des deux tables mis à jour ; si la commande vient d'une
+   * réservation installée, la réservation suit (la contrainte d'exclusion refuse une table réservée au même moment).
+   */
+  async move(acc: Account, orderId: string, tableId: string) {
+    const tenantId = acc.tenantId!;
+    let fromId: string | null = null;
+    let reservationView: ReturnType<typeof reservationViewOf> | null = null;
+    let view: OrderView;
+    try {
+      view = await this.prisma.asTenant(tenantId, async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+        const o = await this.load(tx, tenantId, orderId);
+        if (o.closedAt || o.cancelledAt) throw new ConflictException("Cette commande est terminée : elle ne peut plus changer de table");
+        if (o.type !== "DINE_IN" || !o.tableId) throw new ConflictException("Seule une commande sur place peut changer de table");
+        if (o.tableId === tableId) throw new ConflictException("La commande est déjà sur cette table");
+        fromId = o.tableId;
+        const pair = [o.tableId, tableId].sort();
+        await tx.$queryRaw`SELECT id FROM "RestaurantTable" WHERE "tenantId" = ${tenantId} AND id IN (${pair[0]}, ${pair[1]}) ORDER BY id FOR UPDATE`;
+        const target = await tx.restaurantTable.findFirst({ where: { id: tableId, tenantId, isActive: true } });
+        if (!target) throw new NotFoundException("Table introuvable");
+        if (target.mergedIntoId) throw new ConflictException(`La table ${target.label} est fusionnée avec une autre : choisissez la table principale`);
+        const busy = await tx.order.findFirst({ where: { tenantId, tableId, closedAt: null, cancelledAt: null, id: { not: o.id } }, select: { number: true } });
+        if (busy) throw new ConflictException(`La table ${target.label} est occupée (commande n°${busy.number})`);
+        const seated = await tx.reservationTable.findFirst({
+          where: { tenantId, tableId, active: true, reservation: { status: "SEATED", ...(o.reservationId ? { id: { not: o.reservationId } } : {}) } },
+        });
+        if (seated) throw new ConflictException(`La table ${target.label} est occupée par une réservation installée`);
+
+        if (o.reservationId) {
+          const rt = await tx.reservationTable.findMany({ where: { tenantId, reservationId: o.reservationId } });
+          const here = rt.find((x) => x.tableId === o.tableId);
+          const res = await tx.reservation.findFirst({ where: { id: o.reservationId, tenantId } });
+          if (here && res?.status === "SEATED") {
+            await tx.reservationTable.delete({ where: { reservationId_tableId: { reservationId: here.reservationId, tableId: here.tableId } } });
+            if (!rt.some((x) => x.tableId === tableId)) {
+              await tx.reservationTable.create({ data: { tenantId, reservationId: here.reservationId, tableId, startsAt: here.startsAt, endsAt: here.endsAt } });
+            }
+            reservationView = reservationViewOf(await tx.reservation.findFirstOrThrow({ where: { id: o.reservationId, tenantId }, include: reservationInclude }));
+          }
+        }
+        await tx.order.update({ where: { id: o.id }, data: { tableId } });
+        await this.tables.syncStatus(tx, fromId);
+        await this.tables.syncStatus(tx, tableId);
+        await tx.auditLog.create({ data: { tenantId, userId: acc.id, action: "order.move", entity: "Order", entityId: o.id, metadata: { number: o.number, from: o.table?.label, to: target.label } } });
+        return orderView(await this.load(tx, tenantId, o.id));
+      });
+    } catch (e) {
+      if (isOverlapError(e)) throw new ConflictException("Cette table est réservée prochainement : le transfert de la réservation est impossible");
+      throw e;
+    }
+    this.realtime.emit(tenantId, "order.updated", view);
+    if (reservationView) this.realtime.emit(tenantId, "reservation.updated", reservationView);
+    await this.tables.broadcast(tenantId, fromId!);
+    await this.tables.broadcast(tenantId, tableId);
     return view;
   }
 

@@ -396,15 +396,34 @@ export interface TableOpenOrder {
   createdAt: ISODate;
 }
 
+export type TableShape = "round" | "square" | "rect";
+
 export interface DiningTable {
   id: string;
   tenantId: string;
   label: string;
+  /** Capacité cumulée quand des tables sont fusionnées (la sienne + `mergedTables`). */
   capacity: number;
+  minCapacity: number;
   status: TableStatus;
   isActive: boolean;
   openOrders: TableOpenOrder[];
+  // ── Plan de salle (P2B) : unités du plan, origine en haut à gauche, rotation en degrés ──
+  floorPlanId: string;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  shape: TableShape;
+  rotation: number;
+  /** Table principale d'un groupe quand celle-ci est absorbée par une fusion. */
+  mergedIntoId: string | null;
+  /** Tables absorbées par cette table (fusion). */
+  mergedTables: { id: string; label: string; capacity: number }[];
 }
+
+export interface FloorPlan { id: string; name: string; width: number; height: number; tableCount: number }
+export interface TableLayoutEntry { id: string; posX: number; posY: number; width: number; height: number; shape: TableShape; rotation: number }
 
 export interface Allergen { code: string; name: string }
 

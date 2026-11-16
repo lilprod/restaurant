@@ -1,16 +1,17 @@
 import { ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
-import type { TableInput } from "@restaurant/validation";
+import type { TableCreateInput, TableInput } from "@restaurant/validation";
 import { PrismaService, Tx } from "../prisma/prisma.service";
 import { RealtimeService } from "../realtime/realtime.service";
 import { PlanLimitsService } from "./plan-limits.service";
 
-/** Tables de la salle. Le plan de salle visuel (positions, fusion) viendra avec les réservations. */
+/** Tables de la salle (la mise en page, la fusion et le transfert de commande sont dans `FloorService`). */
 @Injectable()
 export class TablesService {
   constructor(private readonly prisma: PrismaService, private readonly limits: PlanLimitsService, private readonly realtime: RealtimeService) {}
 
   private static readonly withOrders = {
+    mergedTables: { select: { id: true, label: true, capacity: true }, orderBy: { label: "asc" } },
     orders: {
       where: { closedAt: null, cancelledAt: null },
       orderBy: { createdAt: "asc" },
@@ -18,8 +19,21 @@ export class TablesService {
     },
   } satisfies Prisma.RestaurantTableInclude;
 
-  private static view = ({ orders, posX, posY, shape, rotation, mergedIntoId, minCapacity, floorPlanId, ...t }: Prisma.RestaurantTableGetPayload<{ include: typeof TablesService.withOrders }>) =>
-    ({ ...t, openOrders: orders });
+  /**
+   * Forme publique d'une table (API et `table.updated`). `capacity` est la capacité **cumulée** d'une table fusionnée
+   * (la sienne + celles des tables absorbées, listées dans `mergedTables`) ; une table absorbée a `mergedIntoId`.
+   */
+  static view = ({ orders, mergedTables, minCapacity, ...t }: Prisma.RestaurantTableGetPayload<{ include: typeof TablesService.withOrders }>) =>
+    ({ ...t, capacity: t.capacity + mergedTables.reduce((n, m) => n + m.capacity, 0), minCapacity, mergedTables, openOrders: orders });
+
+  static readonly includeForView = TablesService.withOrders;
+
+  /** Une table (même forme que `GET /tenant/tables`). */
+  async get(tenantId: string, id: string) {
+    const row = await this.prisma.asTenant(tenantId, (tx) => tx.restaurantTable.findFirst({ where: { id, tenantId }, include: TablesService.withOrders }));
+    if (!row) throw new NotFoundException("Table introuvable");
+    return TablesService.view(row);
+  }
 
   /** Diffuse `table.updated` (même forme qu'un élément de `GET /tenant/tables`) ; à appeler après la transaction. */
   async broadcast(tenantId: string, id: string) {
@@ -29,7 +43,7 @@ export class TablesService {
 
   /** Chaque restaurant a au moins une salle ; elle est créée à la première table. */
   private async floorPlan(tx: Tx, tenantId: string) {
-    return (await tx.floorPlan.findFirst({ where: { tenantId }, orderBy: { name: "asc" } }))
+    return (await tx.floorPlan.findFirst({ where: { tenantId }, orderBy: [{ createdAt: "asc" }, { name: "asc" }] }))
       ?? tx.floorPlan.create({ data: { tenantId, name: "Salle principale", width: 1000, height: 700 } });
   }
 
@@ -45,14 +59,22 @@ export class TablesService {
     });
   }
 
-  async create(tenantId: string, input: TableInput) {
+  async create(tenantId: string, input: TableCreateInput) {
     const created = await this.prisma.asTenant(tenantId, async (tx) => {
       await this.limits.assertCanAdd(tenantId, "tables", await tx.restaurantTable.count({ where: { tenantId, isActive: true } }));
-      const plan = await this.floorPlan(tx, tenantId);
+      const plan = input.floorPlanId
+        ? await tx.floorPlan.findFirst({ where: { id: input.floorPlanId, tenantId } })
+        : await this.floorPlan(tx, tenantId);
+      if (!plan) throw new NotFoundException("Salle introuvable");
       if (await tx.restaurantTable.findFirst({ where: { floorPlanId: plan.id, label: input.label } })) throw new ConflictException(`La table « ${input.label} » existe déjà`);
       const n = await tx.restaurantTable.count({ where: { floorPlanId: plan.id } });
       return tx.restaurantTable.create({
-        data: { tenantId, floorPlanId: plan.id, label: input.label, capacity: input.capacity, isActive: input.isActive, posX: 40 + (n % 8) * 110, posY: 40 + Math.floor(n / 8) * 110 },
+        data: {
+          tenantId, floorPlanId: plan.id, label: input.label, capacity: input.capacity, isActive: input.isActive,
+          posX: input.posX ?? 40 + (n % 8) * 110, posY: input.posY ?? 40 + Math.floor(n / 8) * 110,
+          ...(input.width ? { width: input.width } : {}), ...(input.height ? { height: input.height } : {}),
+          ...(input.shape ? { shape: input.shape } : {}), ...(input.rotation !== undefined ? { rotation: input.rotation } : {}),
+        },
       });
     });
     await this.broadcast(tenantId, created.id);
@@ -61,8 +83,13 @@ export class TablesService {
 
   async update(tenantId: string, id: string, patch: Partial<TableInput> & { status?: string }) {
     const updated = await this.prisma.asTenant(tenantId, async (tx) => {
-      const t = await tx.restaurantTable.findFirst({ where: { id, tenantId } });
+      const t = await tx.restaurantTable.findFirst({ where: { id, tenantId }, include: { mergedTables: { select: { capacity: true } } } });
       if (!t) throw new NotFoundException("Table introuvable");
+      const effective = t.capacity + t.mergedTables.reduce((n, m) => n + m.capacity, 0);
+      if (patch.capacity === effective) delete patch.capacity;   // le formulaire renvoie la capacité cumulée : rien à changer
+      if ((t.mergedIntoId || t.mergedTables.length) && (patch.capacity !== undefined || patch.isActive === false)) {
+        throw new ConflictException("Cette table est fusionnée : séparez d'abord les tables");
+      }
       if (patch.isActive === true && !t.isActive) {
         await this.limits.assertCanAdd(tenantId, "tables", await tx.restaurantTable.count({ where: { tenantId, isActive: true } }));
       }
@@ -82,8 +109,9 @@ export class TablesService {
   /** Une table qui a déjà servi est désactivée (historique des commandes), sinon supprimée. */
   async remove(tenantId: string, id: string) {
     const res = await this.prisma.asTenant(tenantId, async (tx) => {
-      const t = await tx.restaurantTable.findFirst({ where: { id, tenantId }, include: { _count: { select: { orders: true } } } });
+      const t = await tx.restaurantTable.findFirst({ where: { id, tenantId }, include: { _count: { select: { orders: true, mergedTables: true } } } });
       if (!t) throw new NotFoundException("Table introuvable");
+      if (t.mergedIntoId || t._count.mergedTables) throw new ConflictException("Cette table est fusionnée : séparez d'abord les tables");
       if (t._count.orders > 0) {
         const open = await tx.order.count({ where: { tableId: id, closedAt: null, cancelledAt: null } });
         if (open) throw new ConflictException("Une commande est encore ouverte sur cette table");

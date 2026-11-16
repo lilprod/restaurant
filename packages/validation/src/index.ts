@@ -120,5 +120,6 @@ export * from "./settings";
 export * from "./restaurant";
 export * from "./stock";
 export * from "./reservations";
+export * from "./floor";
 export * from "./zod-fr";
 export * from "./staff";

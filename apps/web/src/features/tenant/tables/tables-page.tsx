@@ -38,9 +38,18 @@ import { elapsedLabel, useNow, useTenant } from "../hooks";
 import { OrderStatusBadge } from "../orders/order-bits";
 
 /** Tables du restaurant (cache partagé, mis à jour par le temps réel). Les responsables voient aussi les tables désactivées. */
-export function useTables() {
+export function useAllTables() {
   const t = useTenant();
   return useQuery({ queryKey: tenantKeys.tables(t.root), queryFn: () => t.api.tables.list({ all: t.isManager }), refetchInterval: 120_000 });
+}
+
+/** Tables utilisables pour une commande ou une réservation : les tables absorbées par une fusion ne sont pas listées. */
+export function useTables() {
+  const t = useTenant();
+  return useQuery({
+    queryKey: tenantKeys.tables(t.root), queryFn: () => t.api.tables.list({ all: t.isManager }), refetchInterval: 120_000,
+    select: (rows) => rows.filter((x) => !x.mergedIntoId),
+  });
 }
 
 type Filter = "all" | "FREE" | "OCCUPIED" | "CLEANING";

@@ -149,6 +149,9 @@ Limite `maxUsers` du plan → `409 {code: "PLAN_LIMIT"}`.
 ## Tables — `/tenant/tables`
 `GET` (personnel ; `openOrders` = commandes ouvertes) · `POST`/`PATCH /:id`/`DELETE /:id` (responsables ; une table déjà utilisée est désactivée)
 · `PATCH /:id/status` (salle : `FREE`, `CLEANING`…). Statut `OCCUPIED`/`FREE` mis à jour automatiquement par les commandes. Limite `maxTables`.
+Forme d'une table : `{ id, label, capacity, minCapacity, status, isActive, openOrders[], floorPlanId, posX, posY, width, height, shape, rotation, mergedIntoId, mergedTables[] }`
+(`capacity` = capacité **cumulée** d'une table fusionnée). `POST` accepte en plus `floorPlanId?`, `posX?`, `posY?`, `width?`, `height?`, `shape?`, `rotation?` (voir « P2B — Plan de salle »).
+Les tables absorbées par une fusion (`mergedIntoId`) ne reçoivent ni commande ni réservation (409).
 
 ## Menu — `/tenant/menu`
 `GET` (carte complète) · `GET allergens` · catégories `POST|PATCH|DELETE categories[/:id]`, `POST categories/reorder` ·
@@ -211,6 +214,7 @@ Socket.io, espace de noms **`/realtime`** (chemin `/socket.io`, hors préfixe `/
 - **`menu.extras.updated`** `{ kind: "formula" | "promotion" }` : formule ou promotion créée, modifiée ou supprimée (les écrans rechargent `GET formulas|promotions`).
 - **`table.updated`** : table au format de `GET /tenant/tables` (création, modification, statut — y compris le passage `OCCUPIED`/`FREE` dû aux commandes —,
   désactivation) ; `{ id, deleted: true }` pour une table supprimée.
+- **`floorplan.updated`** : salle `{ id, name, width, height, tableCount }` (création, modification) ; `{ id, deleted: true }` si supprimée.
 - **`stock.updated`** `{ ingredients: StockLight[] }` et **`stock.low`** (`StockLight`, une fois par franchissement de seuil) : voir « Stock ».
 - **`reservation.created`**, **`reservation.updated`**, **`waitlist.updated`** : voir « P2A — Réservations ».
 Les contrôles sont ceux de l'API (jeton, session, compte actif, licence).
@@ -514,3 +518,32 @@ Messages directs privés (clé `dm:<idA>:<idB>`, sans doublon même en concurren
 ## Temps réel (privé)
 `message.created` (`{id, channelId, senderId, senderName, body, mentions, createdAt}`) est émis **uniquement aux appareils des membres du canal** (salle `tenant:<id>:user:<userId>`,
 `RealtimeService.emitToUsers`) ; `planning.published` `{week}` aux personnes dont des créneaux viennent d'être publiés.
+
+---
+
+# P2B — Plan de salle
+
+Salles, mise en page des tables, fusion/séparation, transfert de commande. Lecture : personnel ; mise en page : responsables ; fusion, séparation, transfert : salle (ADMIN, MANAGER, WAITER).
+Unités du plan : entiers, origine en haut à gauche, rotation en degrés (0–359) ; la salle par défaut fait 1000 × 700 ; table 40–400 de côté ; formes `round`, `square`, `rect`.
+
+## Salles — `/tenant/floor-plans`
+| Méthode | Route | Rôles | Rôle de la route |
+|---|---|---|---|
+| GET | `/` | personnel | `[{ id, name, width, height, tableCount }]` dans l'ordre de création |
+| POST | `/` | responsables | `{ name, width?, height? }` → 201 ; 409 si le nom existe déjà (sans tenir compte de la casse) |
+| PATCH | `/:id` | responsables | Nom, dimensions ; 409 si une table dépasserait de la nouvelle salle |
+| DELETE | `/:id` | responsables | 409 si c'est la dernière salle ou si elle contient encore des tables (même désactivées) |
+| PUT | `/:id/layout` | responsables | `{ tables: [{ id, posX, posY, width, height, shape, rotation }] }` en lot (une transaction) → tables de la salle. 404 si une table n'est pas de cette salle ; 400 si elle sort de la salle ou apparaît deux fois. Audit `floorplan.layout` ; `table.updated` pour chaque table modifiée |
+
+## Fusion et séparation — `/tenant/tables`
+- `POST /merge {tableIds}` (2 à 6 tables, même salle, actives, non absorbées) → table principale. La principale est celle qui porte la commande ouverte,
+  sinon celle qui est déjà fusionnée, sinon la première citée ; **capacité cumulée**, commande unique. Verrou de ligne : deux fusions simultanées d'une même table, une seule aboutit.
+  409 : commandes ouvertes sur plusieurs tables, table absorbée occupée, réservation en cours ou dans les 2 h sur une table absorbée.
+  Les disponibilités de réservation traitent le groupe comme **une** table de capacité cumulée ; une table absorbée n'est plus proposée.
+- `POST /:id/split` (principale ou absorbée) : 409 tant que la table est occupée (commande ouverte ou réservation installée) ; les tables absorbées redeviennent indépendantes et libres.
+- Audit `table.merge`, `table.split` ; `table.updated` pour chaque table du groupe.
+
+## Transfert — `POST /tenant/orders/:id/move {tableId}` (salle)
+Commande ouverte **sur place** vers une table active, non absorbée, **sans commande ouverte ni réservation installée** (409 sinon ; 404 table inconnue). Verrou sur la commande et les deux tables
+(deux transferts simultanés vers la même table : un seul aboutit). Statuts des deux tables recalculés ; si la commande vient d'une réservation **installée**, la réservation change de table
+(409 si la contrainte d'exclusion refuse, p. ex. table réservée au même moment). Audit `order.move` ; `order.updated`, `reservation.updated`, `table.updated` × 2.

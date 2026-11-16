@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   BookOpen, CalendarClock, CalendarDays, Package, Truck, ChefHat, ClipboardList, HandPlatter, Landmark, LayoutDashboard, LayoutGrid, Settings, ShieldCheck,
-  ShoppingBag, SquarePlus, Users, WalletCards, Bell, CalendarRange, MessageSquare, UserCog,
+  ShoppingBag, Map as MapIcon, SquarePlus, Users, WalletCards, Bell, CalendarRange, MessageSquare, UserCog,
 } from "lucide-react";
 import { motion } from "motion/react";
 import * as React from "react";
@@ -37,6 +37,7 @@ export function useTenantNav(): NavItem[] {
       { to: to("/commandes"), label: "Commandes", icon: <ClipboardList />, keywords: ["addition", "encaisser", "ticket"], section: S },
       { to: to("/reservations"), label: "Réservations", icon: <CalendarDays />, keywords: ["planning", "liste d'attente", "table", "réserver", "horaires"], section: S },
       t.isFloor && { to: to("/tables"), label: "Tables", icon: <LayoutGrid />, keywords: ["salle", "débarrasser"], section: S },
+      t.isFloor && { to: to("/plan-de-salle"), label: "Plan de salle", icon: <MapIcon />, keywords: ["salle", "tables", "plan", "déplacer", "fusionner", "service"], section: S },
       t.isKitchen && { to: to("/cuisine"), label: "Écran cuisine", icon: <ChefHat />, keywords: ["kds", "préparation"], section: S },
       t.isFloor && { to: to("/caisse"), label: "Caisse", icon: <Landmark />, keywords: ["fond de caisse", "clôture", "espèces"], section: S },
       { to: to("/messagerie"), label: "Messagerie", icon: <MessageSquare />, keywords: ["message", "discussion", "équipe", "canal", "mention"], section: S, badge: unread },

@@ -11,7 +11,7 @@ import type {
 } from "@restaurant/validation";
 import type { ApiClient } from "./client";
 import type {
-  AccountSummary, Allergen, AssetKind, NotificationList, NotificationsQuery, BrandingSettings, DiningTable, LoginEvent, MenuCategory, MenuItem, Order, OrderItemStatus,
+  AccountSummary, Allergen, AssetKind, NotificationList, NotificationsQuery, BrandingSettings, DiningTable, FloorPlan, TableLayoutEntry, LoginEvent, MenuCategory, MenuItem, Order, OrderItemStatus,
   OrderPaymentResult, OrderReceipt, OrdersQuery, PublicMenu, RegisterCloseResult, RegisterCurrent, RegisterSession, StaffMember,
   StaffRole, TableStatus, TenantDashboard, LoginResponse, LoginResult, LoginSuccess, Paginated, PaymentList,
   Plan, PlatformDashboard, PlatformPublicBranding, PlatformRole, PlatformSettingsAll, PlatformUserView, Profile, PublicPlan, Receipt,
@@ -224,7 +224,9 @@ export function tenantApi(c: ApiClient) {
     },
     tables: {
       list: (q: { all?: boolean } = {}) => c.get<DiningTable[]>("/tenant/tables", { query: { all: q.all ? "true" : undefined } }),
-      create: (body: TableInput) => c.post<DiningTable>("/tenant/tables", body),
+      create: (body: TableInput & Partial<Omit<TableLayoutEntry, "id">> & { floorPlanId?: string }) => c.post<DiningTable>("/tenant/tables", body),
+      merge: (tableIds: string[]) => c.post<DiningTable>("/tenant/tables/merge", { tableIds }),
+      split: (id: string) => c.post<DiningTable>(`/tenant/tables/${enc(id)}/split`),
       update: (id: string, body: Partial<TableInput>) => c.patch<DiningTable>(`/tenant/tables/${enc(id)}`, body),
       setStatus: (id: string, status: TableStatus) => c.patch<DiningTable>(`/tenant/tables/${enc(id)}/status`, { status }),
       remove: (id: string) => c.delete<{ archived?: true; deleted?: true }>(`/tenant/tables/${enc(id)}`),
@@ -253,7 +255,15 @@ export function tenantApi(c: ApiClient) {
       setPromotionActive: (id: string, isActive: boolean) => c.patch<Promotion>(`/tenant/menu/promotions/${enc(id)}`, { isActive }),
       deletePromotion: (id: string) => c.delete<{ deleted: true }>(`/tenant/menu/promotions/${enc(id)}`),
     },
+    floorPlans: {
+      list: () => c.get<FloorPlan[]>("/tenant/floor-plans"),
+      create: (body: { name: string; width?: number; height?: number }) => c.post<FloorPlan>("/tenant/floor-plans", body),
+      update: (id: string, body: { name?: string; width?: number; height?: number }) => c.patch<FloorPlan>(`/tenant/floor-plans/${enc(id)}`, body),
+      remove: (id: string) => c.delete<{ deleted: true }>(`/tenant/floor-plans/${enc(id)}`),
+      saveLayout: (id: string, tables: TableLayoutEntry[]) => c.put<DiningTable[]>(`/tenant/floor-plans/${enc(id)}/layout`, { tables }),
+    },
     orders: {
+      move: (id: string, tableId: string) => c.post<Order>(`/tenant/orders/${enc(id)}/move`, { tableId }),
       list: (q: OrdersQuery = {}) => c.get<Paginated<Order>>("/tenant/orders", { query: { ...q } }),
       get: (id: string) => c.get<Order>(`/tenant/orders/${enc(id)}`),
       receipt: (id: string) => c.get<OrderReceipt>(`/tenant/orders/${enc(id)}/receipt`),
