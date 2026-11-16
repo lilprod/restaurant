@@ -40,6 +40,7 @@ export const SETTINGS_READ: Record<string, string[]> = {
   business: ["ADMIN", "MANAGER"],
   branding: ["ADMIN", "MANAGER"],
   operations: ["ADMIN", "MANAGER", "WAITER", "KITCHEN"],
+  reservations: ["ADMIN", "MANAGER", "WAITER", "KITCHEN"],
   localization: ["ADMIN", "MANAGER", "WAITER", "KITCHEN"],
   security: ["ADMIN"],
   notifications: ["ADMIN"],

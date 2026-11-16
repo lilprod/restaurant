@@ -2,7 +2,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   NOTIFICATION_EVENTS, businessSchema, companySchema, licensingSettingsSchema, localizationSchema, notificationsSettingsSchema, operationsSchema, paymentInstructionsSchema,
-  platformSecuritySchema, tenantSecuritySchema,
+  platformSecuritySchema, reservationsSettingsSchema, tenantSecuritySchema,
 } from "@restaurant/validation";
 import { X } from "lucide-react";
 import * as React from "react";
@@ -264,6 +264,26 @@ export function OperationsForm({ adapter }: { adapter: SettingsAdapter }) {
           <S form={form} name="takeawayEnabled" label="Vente à emporter" />
           <S form={form} name="deliveryEnabled" label="Livraison" description="Zones et frais de livraison arrivent avec le module commandes." />
         </div>
+      </SettingsSection>
+    </SectionShell>
+  );
+}
+
+// ── Réservations (section `reservations`) ──
+export function ReservationsForm({ adapter }: { adapter: SettingsAdapter }) {
+  const { query, save, form, submit } = useSectionForm(adapter, "reservations", reservationsSettingsSchema);
+  return (
+    <SectionShell adapter={adapter} query={query} form={form} save={save} submit={submit}>
+      <SettingsSection title="Réservations en ligne" description="Les réservations en ligne s'activent dans l'onglet Exploitation.">
+        <div className="divide-y divide-border">
+          <S form={form} name="requireConfirmation" label="Confirmation manuelle" description="Les demandes en ligne restent « à confirmer » jusqu'à validation par la salle (sinon elles sont confirmées d'office)." />
+        </div>
+        <FieldGrid>
+          <N form={form} name="bookingWindowDays" label="Réservation possible jusqu'à" suffix="jours" min={1} max={365} hint="Délai maximal entre la demande et le jour réservé." />
+          <N form={form} name="minNoticeMinutes" label="Délai minimal avant le créneau" suffix="min" min={0} max={10080} hint="Pas de réservation en ligne plus tard que ce délai." />
+          <N form={form} name="noShowGraceMinutes" label="Retard toléré avant « absent »" suffix="min" min={0} max={240} hint="Passé ce délai, la salle est invitée à marquer le client absent." />
+          <N form={form} name="bufferMinutes" label="Tampon entre deux réservations" suffix="min" min={0} max={120} hint="Temps de remise en place d'une table." />
+        </FieldGrid>
       </SettingsSection>
     </SectionShell>
   );

@@ -130,6 +130,9 @@ const tenantChildren: RouteObject[] = [
   { path: "mot-de-passe-oublie", element: <ForgotPasswordPage /> },
   // Carte publique : sans connexion, aux couleurs du restaurant.
   { path: "carte", element: fullScreen(() => import("@/features/public-menu/public-menu-page"), "PublicMenuPage") },
+  // Réservation en ligne (sans compte) et gestion par lien.
+  { path: "reserver", element: fullScreen(() => import("@/features/public-reservation/reserve-page"), "ReservePage") },
+  { path: "reservation/:token", element: fullScreen(() => import("@/features/public-reservation/manage-page"), "ManageReservationPage") },
   {
     // Espace connecté : une seule connexion temps réel partagée par la coquille et les écrans plein écran.
     element: (
@@ -149,6 +152,7 @@ const tenantChildren: RouteObject[] = [
           { path: "commandes/:id", element: lazyPage(() => import("@/features/tenant/orders/order-detail-page"), "OrderDetailPage") },
           { path: "commandes/:id/encaisser", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/checkout/checkout-page"), "CheckoutPage")) },
           { path: "commandes/:id/ticket", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/orders/ticket-page"), "TicketPage")) },
+          { path: "reservations", element: lazyPage(() => import("@/features/tenant/reservations/reservations-page"), "ReservationsPage") },
           { path: "tables", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/tables/tables-page"), "TablesPage")) },
           { path: "menu", element: gate([...MANAGERS, "KITCHEN"], lazyPage(() => import("@/features/tenant/menu/menu-page"), "MenuPage")) },
           { path: "stock", element: gate(KITCHEN, lazyPage(() => import("@/features/tenant/stock/stock-page"), "StockPage")) },

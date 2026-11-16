@@ -127,7 +127,7 @@ export function PosPage() {
         return { order: await t.api.orders.addItems(orderId!, body.items), added: cartCount(lines) };
       }
       const parsed = createOrderSchema.safeParse({
-        type, tableId: type === "DINE_IN" ? table?.id : undefined, customerName: type === "TAKEAWAY" ? customer : undefined, notes, items,
+        type, tableId: type === "DINE_IN" ? table?.id : undefined, reservationId: type === "DINE_IN" && table ? params.get("reservation") ?? undefined : undefined, customerName: type === "TAKEAWAY" ? customer : undefined, notes, items,
       });
       if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Commande incomplète");
       return { order: await t.api.orders.create(parsed.data), added: cartCount(lines) };

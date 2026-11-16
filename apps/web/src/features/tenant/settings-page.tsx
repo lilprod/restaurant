@@ -6,13 +6,15 @@ import { useUrlParam } from "@/lib/use-url-state";
 import { brandingKeys } from "@/providers/branding";
 import { BrandingEditor } from "../settings/branding-editor";
 import type { SettingsAdapter } from "../settings/common";
-import { BusinessForm, LocalizationForm, NotificationsForm, OperationsForm, SecurityPolicyForm } from "../settings/forms";
+import { BusinessForm, LocalizationForm, NotificationsForm, OperationsForm, ReservationsForm, SecurityPolicyForm } from "../settings/forms";
+import { ClosuresPanel, OpeningHoursPanel } from "./reservations/hours-panel";
 import { SETTINGS_READ, useTenant } from "./hooks";
 
 const TABS = [
   { v: "informations", s: "business", l: "Informations" },
   { v: "marque", s: "branding", l: "Marque" },
   { v: "exploitation", s: "operations", l: "Exploitation" },
+  { v: "reservations", s: "reservations", l: "Réservations" },
   { v: "localisation", s: "localization", l: "Localisation" },
   { v: "securite", s: "security", l: "Sécurité" },
   { v: "notifications", s: "notifications", l: "Notifications" },
@@ -49,6 +51,13 @@ export function TenantSettingsPage() {
         {visible.some((x) => x.s === "business") && <TabsContent value="informations"><BusinessForm adapter={adapter} /></TabsContent>}
         {visible.some((x) => x.s === "branding") && <TabsContent value="marque"><BrandingEditor adapter={adapter} contextLabel="Espace restaurant" /></TabsContent>}
         <TabsContent value="exploitation"><OperationsForm adapter={adapter} /></TabsContent>
+        <TabsContent value="reservations">
+          <div className="flex flex-col gap-6">
+            <ReservationsForm adapter={adapter} />
+            <OpeningHoursPanel />
+            <ClosuresPanel />
+          </div>
+        </TabsContent>
         <TabsContent value="localisation"><LocalizationForm adapter={adapter} /></TabsContent>
         {visible.some((x) => x.s === "security") && <TabsContent value="securite"><SecurityPolicyForm adapter={adapter} space="tenant" /></TabsContent>}
         {visible.some((x) => x.s === "notifications") && <TabsContent value="notifications"><NotificationsForm adapter={adapter} /></TabsContent>}

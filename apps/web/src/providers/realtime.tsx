@@ -1,10 +1,11 @@
-import type { Order } from "@restaurant/api-client";
+import type { Order, Reservation, WaitlistEntry } from "@restaurant/api-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { API_BASE, getTenantSpace } from "@/app/spaces";
 import { RealtimeConnection, realtimeOrigin, type RealtimeStatus } from "@/lib/realtime/connection";
 import { applyMenuEvent, applyTableEvent, type MenuEvent, type TableEvent } from "@/lib/realtime/catalog-cache";
 import { applyOrderEvent, resyncServiceQueries } from "@/lib/realtime/order-cache";
+import { applyReservationEvent, applyWaitlistEvent } from "@/lib/realtime/reservation-cache";
 import { applyStockEvent, type StockUpdatedEvent } from "@/lib/realtime/stock-cache";
 import { formatQty } from "@/lib/format";
 import type { StockLight } from "@restaurant/api-client";
@@ -58,7 +59,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           applyOrderEvent(qc, root, order, { timeZone: tzRef.current });
           for (const l of [...listeners.current]) l(event, order);
         },
-        onResync: () => resyncServiceQueries(qc, root),
+        onResync: () => { resyncServiceQueries(qc, root); void qc.invalidateQueries({ queryKey: tenantKeys.reservations(root) }); },
         onOther: (event, payload) => {
           if (event === "menu.updated") applyMenuEvent(qc, root, payload as MenuEvent);
           else if (event === "menu.extras.updated") {
@@ -67,6 +68,15 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
             void qc.invalidateQueries({ queryKey: tenantKeys.promotions(root) });
           }
           else if (event === "table.updated") applyTableEvent(qc, root, payload as TableEvent);
+          else if (event === "reservation.created" || event === "reservation.updated") {
+            const r = payload as Reservation;
+            applyReservationEvent(qc, root, r, { timeZone: tzRef.current });
+            if (event === "reservation.created" && r.source === "ONLINE") {
+              const hhmm = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: tzRef.current ?? "Africa/Lome" }).format(new Date(r.startsAt));
+              toast.info(`Nouvelle réservation en ligne : ${r.guestName}`, { description: `${r.partySize} pers. à ${hhmm}`, id: `resa-${r.id}` });
+            }
+          }
+          else if (event === "waitlist.updated") applyWaitlistEvent(qc, root, payload as WaitlistEntry);
           else if (event === "stock.updated") applyStockEvent(qc, root, payload as StockUpdatedEvent);
           else if (event === "stock.low" && roleRef.current !== "WAITER") {
             // Une seule fois par franchissement de seuil (garanti par l'API). Les notifications persistantes : X1.

@@ -24,6 +24,7 @@ import { useSpacePath } from "@/providers/space";
 import { elapsedLabel, useApplyOrder, useNow, useTenant } from "../hooks";
 import { OrderPlace, OrderStatusBadge, PaymentStatusBadge } from "../orders/order-bits";
 import { useTables } from "../tables/tables-page";
+import { ArrivalsCard } from "../reservations/arrivals-card";
 
 export const OPEN_ORDERS_QUERY = { open: true, pageSize: 100 } as const;
 
@@ -83,6 +84,8 @@ export function WaiterHome() {
           )}
         </section>
 
+        <div className="flex flex-col gap-6">
+        <ArrivalsCard />
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-[15px] font-semibold tracking-tight">Tables</h2>
@@ -96,6 +99,7 @@ export function WaiterHome() {
             </Card>
           )}
         </section>
+        </div>
       </div>
     </>
   );

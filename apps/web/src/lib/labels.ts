@@ -17,6 +17,19 @@ export const NOTIFICATION_TEMPLATE_LABEL: Record<string, string> = {
   "registration.approved": "Inscription validée",
   "registration.rejected": "Inscription rejetée",
   "generic.message": "Message libre",
+  "reservation.confirmed": "Réservation confirmée",
+  "reservation.pending": "Réservation en attente",
+  "reservation.updated": "Réservation modifiée",
+  "reservation.cancelled": "Réservation annulée",
+  "reservation.reminder": "Rappel de réservation",
+  "waitlist.available": "Place libérée (liste d'attente)",
+};
+export const RESERVATION_STATUS_LABEL: Record<string, string> = {
+  PENDING: "À confirmer", CONFIRMED: "Confirmée", SEATED: "Installée", COMPLETED: "Terminée", CANCELLED: "Annulée", NO_SHOW: "Absent",
+};
+export const RESERVATION_SOURCE_LABEL: Record<string, string> = { PHONE: "Téléphone", WALK_IN: "Sans réservation", ONLINE: "En ligne" };
+export const WAITLIST_STATUS_LABEL: Record<string, string> = {
+  WAITING: "En attente", NOTIFIED: "Prévenu", CONVERTED: "Réservé", EXPIRED: "Expiré", REMOVED: "Retiré",
 };
 export const PAYMENT_METHODS = ["FLOOZ", "TMONEY", "CARD", "CASH"] as const;
 export const BILLING_CYCLE_LABEL: Record<string, string> = { MONTHLY: "Mensuel", YEARLY: "Annuel" };

@@ -2,6 +2,9 @@ import type { OrdersQuery } from "@restaurant/api-client";
 
 type Root = readonly unknown[];
 
+/** Filtre d'une liste de réservations : journée de service, ou intervalle (arrivées de l'heure). */
+export type ReservationListKey = { date?: string; from?: string; to?: string };
+
 /**
  * Clés TanStack Query de l'espace restaurant, sous la racine de session `["tenant", slug]`.
  * Centralisées ici : le temps réel met à jour ces caches au lieu de tout recharger.
@@ -22,6 +25,15 @@ export const tenantKeys = {
   register: (root: Root) => [...root, "register"] as const,
   dashboard: (root: Root, date?: string) => (date ? [...root, "dashboard", date] as const : [...root, "dashboard"] as const),
   settings: (root: Root, section: string) => [...root, "settings", section] as const,
+  // ── P2A : réservations ──
+  reservations: (root: Root) => [...root, "reservations"] as const,
+  reservationLists: (root: Root) => [...root, "reservations", "list"] as const,
+  reservationList: (root: Root, q: ReservationListKey) => [...root, "reservations", "list", q] as const,
+  reservation: (root: Root, id: string) => [...root, "reservations", "detail", id] as const,
+  waitlistLists: (root: Root) => [...root, "reservations", "waitlist"] as const,
+  waitlist: (root: Root, q: object = {}) => [...root, "reservations", "waitlist", q] as const,
+  openingHours: (root: Root) => [...root, "reservations", "hours"] as const,
+  closures: (root: Root) => [...root, "reservations", "closures"] as const,
   // ── P3 : stock ──
   stock: (root: Root) => [...root, "stock"] as const,
   ingredients: (root: Root, q: object = {}) => [...root, "stock", "ingredients", q] as const,
