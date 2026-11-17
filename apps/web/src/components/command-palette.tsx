@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { Kbd } from "@/components/ui/kbd";
 import { StatusBadge } from "@/components/ui/badge";
 import { TENANT_STATUS_LABEL } from "@/lib/labels";
-import { useSession } from "@/providers/session";
+import { useLogout } from "@/providers/offline";
 import { useTheme } from "@/providers/theme";
 
 export interface CommandEntry {
@@ -37,7 +37,7 @@ export function CommandPalette({ open, onOpenChange, navigation, actions = [], s
   const [tenants, setTenants] = React.useState<TenantSearchResult[]>([]);
   const [searching, setSearching] = React.useState(false);
   const { setPreference } = useTheme();
-  const session = useSession();
+  const logout = useLogout();
 
   React.useEffect(() => { if (!open) { setQuery(""); setTenants([]); } }, [open]);
 
@@ -125,7 +125,7 @@ export function CommandPalette({ open, onOpenChange, navigation, actions = [], s
                       <Command.Item value="thème clair" onSelect={() => run(() => setPreference("light"))} className={item}><Sun /> Thème clair</Command.Item>
                       <Command.Item value="thème sombre" onSelect={() => run(() => setPreference("dark"))} className={item}><Moon /> Thème sombre</Command.Item>
                       <Command.Item value="thème système" onSelect={() => run(() => setPreference("system"))} className={item}><Monitor /> Thème du système</Command.Item>
-                      <Command.Item value="se déconnecter" onSelect={() => run(() => void session.logout())} className={item}><LogOut /> Se déconnecter</Command.Item>
+                      <Command.Item value="se déconnecter" onSelect={() => run(() => logout())} className={item}><LogOut /> Se déconnecter</Command.Item>
                     </Command.Group>
                   </Command.List>
                   <div className="hidden items-center justify-end gap-4 border-t border-border bg-subtle px-4 py-2 text-xs text-muted-foreground sm:flex">

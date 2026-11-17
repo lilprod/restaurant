@@ -19,7 +19,9 @@ import { cn } from "@/lib/cn";
 import { errorMessage } from "@/lib/errors";
 import { formatFcfa } from "@/lib/format";
 import { ORDER_PAYMENT_METHOD_LABEL, ORDER_PAYMENT_METHODS } from "@/lib/labels";
+import { newKey } from "@/lib/offline/queue";
 import { tenantKeys } from "@/lib/tenant-keys";
+import { useOffline } from "@/providers/offline";
 import { useSpacePath } from "@/providers/space";
 import { useApplyOrder, useOperations, useTenant } from "../hooks";
 import { BillSummary, ItemDetails, orderPlace, PaymentsList } from "../orders/order-bits";
@@ -107,6 +109,8 @@ function PaymentPanel({ order, onPaid }: { order: Order; onPaid: (r: OrderPaymen
   const to = useSpacePath();
   const ops = useOperations();
   const apply = useApplyOrder();
+  const { online } = useOffline();
+  const payKey = React.useRef<{ sig: string; key: string } | null>(null);
   const register = useQuery({ queryKey: [...tenantKeys.register(t.root), "current"], queryFn: t.api.register.current, staleTime: 30_000 });
   const [mode, setMode] = React.useState<Mode>("rest");
   const [people, setPeople] = React.useState(2);
@@ -131,8 +135,14 @@ function PaymentPanel({ order, onPaid }: { order: Order; onPaid: (r: OrderPaymen
   React.useEffect(() => { setErrors({}); }, [method, mode]);
 
   const pay = useMutation({
-    mutationFn: (body: Parameters<typeof t.api.orders.pay>[1]) => t.api.orders.pay(order.id, body),
+    // Clé d'idempotence : même encaissement renvoyé après une coupure (réponse perdue) = même clé, donc jamais de double paiement.
+    mutationFn: (body: Parameters<typeof t.api.orders.pay>[1]) => {
+      const sig = JSON.stringify(body);
+      if (payKey.current?.sig !== sig) payKey.current = { sig, key: newKey() };
+      return t.api.orders.pay(order.id, body, { idempotencyKey: payKey.current.key });
+    },
     onSuccess: (r, body) => {
+      payKey.current = null;
       apply(r.order);
       if (mode === "equal") setPaidParts((n) => n + 1);
       setPicked({}); setCustom(null); setReference(""); setTendered(null); setTipPct("0"); setTipCustom(null);
@@ -162,6 +172,11 @@ function PaymentPanel({ order, onPaid }: { order: Order; onPaid: (r: OrderPaymen
   return (
     <Card className="flex flex-col">
       <div className="flex flex-col gap-5 p-4 sm:p-5">
+        {!online && (
+          <Callout tone="danger" title="Encaissement impossible hors ligne">
+            Un paiement ne peut être enregistré qu'avec le réseau. Gardez la commande ouverte : vous pourrez l'encaisser dès son retour.
+          </Callout>
+        )}
         {register.data && !register.data.open && (
           <Callout tone="warning" title="Aucune caisse ouverte">
             Le paiement sera enregistré sans être rattaché à une session de caisse.{t.isManager && <> <Link to={to("/caisse")}>Ouvrir la caisse</Link></>}
@@ -268,7 +283,7 @@ function PaymentPanel({ order, onPaid }: { order: Order; onPaid: (r: OrderPaymen
           <div className="flex justify-between"><dt className="text-muted-foreground">À encaisser</dt><dd className="font-mono tabular-nums">{formatFcfa(amount)}</dd></div>
           {tip > 0 && <div className="flex justify-between"><dt className="text-muted-foreground">Pourboire</dt><dd className="font-mono tabular-nums">{formatFcfa(tip)}</dd></div>}
         </dl>
-        <Button variant="primary" size="lg" className="h-14 text-base" loading={pay.isPending} disabled={amount <= 0} onClick={submit}>
+        <Button variant="primary" size="lg" className="h-14 text-base" loading={pay.isPending} disabled={amount <= 0 || !online} onClick={submit}>
           Encaisser <span className="font-mono tabular-nums">{formatFcfa(due)}</span>{mode === "equal" && parts.length > 0 && <span className="font-normal opacity-80">· part {paidParts + 1}/{people}</span>}
         </Button>
       </div>

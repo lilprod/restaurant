@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
+import { VitePWA } from "vite-plugin-pwa";
 
 const pkg = (name: string) => fileURLToPath(new URL(`../../packages/${name}/src/index.ts`, import.meta.url));
 
@@ -23,7 +24,45 @@ const workspaceAliases = {
 const API_TARGET = process.env.VITE_API_PROXY ?? "http://localhost:3000";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    // X5 : PWA (installation sur tablette, application hors ligne). Service worker écrit à la main (src/sw.ts, `injectManifest`) :
+    // il ne met en cache que des fichiers statiques, jamais l'API. Enregistrement par un script du même domaine (CSP `script-src 'self'`).
+    VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
+      registerType: "prompt",
+      injectRegister: false,
+      manifest: {
+        name: "Gestion Restaurant",
+        short_name: "Restaurant",
+        description: "Prise de commande, cuisine et caisse, même en cas de coupure réseau.",
+        lang: "fr",
+        start_url: "/",
+        scope: "/",
+        display: "standalone",
+        orientation: "any",
+        background_color: "#0a0a0a",
+        theme_color: "#0a0a0a",
+        icons: [
+          { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+          { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+          { src: "/icons/maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+        ],
+      },
+      injectManifest: {
+        // Shell : page, scripts, styles, icônes et polices de base (Geist, latin). Les autres polices de marque et les
+        // images de la carte sont mises en cache à la demande par le service worker.
+        globPatterns: ["index.html", "theme-init.js", "favicon.svg", "icons/*.png", "assets/*.{js,css}", "assets/geist-*latin-wght-normal*.woff2", "assets/geist-mono-*latin-wght-normal*.woff2"],
+        globIgnores: ["**/*.map"],
+        rollupFormat: "iife",
+        maximumFileSizeToCacheInBytes: 2_500_000,
+      },
+      devOptions: { enabled: false },
+    }),
+  ],
   resolve: {
     alias: { ...workspaceAliases, "@": fileURLToPath(new URL("./src", import.meta.url)) },
     dedupe: ["zod", "react", "react-dom"],

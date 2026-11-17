@@ -1,3 +1,4 @@
+import { loadProfile, resetIfOtherUser, saveProfile, wipeCachesKeepQueue, wipeTenantData } from "@/lib/offline/persist";
 import { DEFAULT_POLICY_BY_SPACE } from "@/lib/policy";
 import {
   ApiError, type AccountApi, type ApiClient, type AuthApi, type LicenseSummary, type LoginSuccess, type Profile, type Restriction,
@@ -15,6 +16,8 @@ export interface SessionState {
   license: LicenseSummary | null;
   /** Restaurant bloqué (licence expirée / suspendu) : écran dédié. */
   blocked: ApiError | null;
+  /** X5 : session reprise sans réseau à partir du profil gardé sur l'appareil (à revalider au retour du réseau). */
+  resumedOffline: boolean;
 }
 
 export interface SessionValue extends SessionState {
@@ -49,6 +52,9 @@ function readLicense(key?: string): LicenseSummary | null {
   if (!key) return null;
   try { const v = localStorage.getItem(key); return v ? (JSON.parse(v) as LicenseSummary) : null; } catch { return null; }
 }
+/** Personnel du restaurant : seuls ses profils sont gardés sur l'appareil pour le mode hors ligne (jamais un compte client). */
+const offlineEligible = (space: "platform" | "tenant", slug: string | undefined, u: Profile) => space === "tenant" && !!slug && u.role !== "CUSTOMER";
+
 function writeLicense(key: string | undefined, v: LicenseSummary | null) {
   if (!key) return;
   try { if (v) localStorage.setItem(key, JSON.stringify(v)); else localStorage.removeItem(key); } catch { /* ignore */ }
@@ -63,7 +69,7 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
   const queryKey = React.useMemo(() => (space === "platform" ? ["platform"] : ["tenant", slug ?? ""]) as readonly string[], [space, slug]);
   const [state, setState] = React.useState<SessionState>(() => ({
     status: client.hasRefreshToken() ? "loading" : "anonymous",
-    user: null, restriction: null, license: readLicense(licenseStorageKey), blocked: null,
+    user: null, restriction: null, license: readLicense(licenseStorageKey), blocked: null, resumedOffline: false,
   }));
   const statusRef = React.useRef(state.status);
   statusRef.current = state.status;
@@ -75,19 +81,24 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
     (async () => {
       try {
         const user = await account.me();
-        if (!cancelled) setState((s) => ({ ...s, status: "authenticated", user, restriction: user.restriction }));
+        if (offlineEligible(space, slug, user)) { await resetIfOtherUser(slug!, user.id); void saveProfile(slug!, user); }
+        if (!cancelled) setState((s) => ({ ...s, status: "authenticated", user, restriction: user.restriction, resumedOffline: false }));
       } catch (e) {
         if (cancelled) return;
         const err = e instanceof ApiError ? e : null;
         if (err?.isLicenseBlocked) setState((s) => ({ ...s, status: "anonymous", blocked: err }));
         else if (err?.status === 0) {
+          // X5 : réseau coupé au démarrage. Avec un jeton de session et le profil gardé sur l'appareil, on reprend hors ligne.
+          const cached = space === "tenant" && slug ? await loadProfile(slug) : null;
+          if (cancelled) return;
+          if (cached) { setState((s) => ({ ...s, status: "authenticated", user: cached, restriction: null, resumedOffline: true })); return; }
           toast.error(err.message);
           setState((s) => ({ ...s, status: "anonymous" }));
         } else setState((s) => ({ ...s, status: "anonymous" }));
       }
     })();
     return () => { cancelled = true; };
-  }, [client, account]);
+  }, [client, account, space, slug]);
 
   // Événements globaux du client : fin de session, restriction, licence bloquée
   React.useEffect(() => client.subscribe((ev) => {
@@ -97,14 +108,15 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
     } else if (ev.type === "session-ended") {
       const wasIn = statusRef.current === "authenticated";
       qc.removeQueries({ queryKey: [...queryKey] });
-      setState((s) => ({ ...s, status: "anonymous", user: null, restriction: null }));
+      if (space === "tenant" && slug) void wipeCachesKeepQueue(slug);    // la file de commandes non envoyées reste (voir offline/queue)
+      setState((s) => ({ ...s, status: "anonymous", user: null, restriction: null, resumedOffline: false }));
       if (wasIn && !ev.reason?.isLicenseBlocked) toast.message("Votre session a expiré", { description: "Reconnectez-vous pour continuer." });
     } else if (ev.type === "error") {
       const e = ev.error;
       if (e.isRestricted && e.restriction) setState((s) => ({ ...s, restriction: e.restriction ?? s.restriction }));
       else if (e.isLicenseBlocked && space === "tenant") setState((s) => ({ ...s, blocked: e }));
     }
-  }), [client, qc, queryKey, space, licenseStorageKey]);
+  }), [client, qc, queryKey, space, slug, licenseStorageKey]);
 
   const completeLogin = React.useCallback(async (res: LoginSuccess) => {
     client.setSession(res);
@@ -117,21 +129,24 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
         restriction: res.restriction, passwordPolicy: DEFAULT_POLICY_BY_SPACE[space],
       };
     }
-    setState({ status: "authenticated", user, restriction: res.restriction, license: res.license ?? null, blocked: null });
-  }, [client, account, licenseStorageKey, space]);
+    if (offlineEligible(space, slug, user)) { await resetIfOtherUser(slug!, user.id); void saveProfile(slug!, user); }
+    setState({ status: "authenticated", user, restriction: res.restriction, license: res.license ?? null, blocked: null, resumedOffline: false });
+  }, [client, account, licenseStorageKey, space, slug]);
 
   const logout = React.useCallback(async (opts: { silent?: boolean; message?: string } = {}) => {
     await client.logout();
     writeLicense(licenseStorageKey, null);
     qc.removeQueries({ queryKey: [...queryKey] });
-    setState({ status: "anonymous", user: null, restriction: null, license: null, blocked: null });
+    if (space === "tenant" && slug) await wipeTenantData(slug);          // X5 : plus aucune donnée du restaurant sur l'appareil
+    setState({ status: "anonymous", user: null, restriction: null, license: null, blocked: null, resumedOffline: false });
     if (!opts.silent) toast.success(opts.message ?? "Vous êtes déconnecté");
-  }, [client, qc, queryKey, licenseStorageKey]);
+  }, [client, qc, queryKey, licenseStorageKey, space, slug]);
 
   const reloadProfile = React.useCallback(async () => {
     const user = await account.me();
-    setState((s) => ({ ...s, user }));
-  }, [account]);
+    if (offlineEligible(space, slug, user)) void saveProfile(slug!, user);
+    setState((s) => ({ ...s, user, restriction: s.resumedOffline ? user.restriction : s.restriction, resumedOffline: false }));
+  }, [account, space, slug]);
 
   const setRestriction = React.useCallback((restriction: Restriction | null) => setState((s) => ({ ...s, restriction })), []);
   const setBlocked = React.useCallback((blocked: ApiError | null) => setState((s) => ({ ...s, blocked })), []);

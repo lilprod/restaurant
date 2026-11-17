@@ -51,8 +51,10 @@ export class RetentionService {
       const codes = before(RETENTION_DAYS.oneTimeCodes);
       const passwordResets = await tx.passwordReset.deleteMany({ where: { OR: [{ usedAt: { lt: codes } }, { expiresAt: { lt: codes } }] } });
       const emailVerifications = await tx.emailVerification.deleteMany({ where: { expiresAt: { lt: codes } } });
+      // X5 : clés d'idempotence échues (réponses rejouables 24 h).
+      const idempotencyKeys = await tx.idempotencyKey.deleteMany({ where: { expiresAt: { lt: now } } });
       return {
-        loginEvents: loginEvents.count, notificationLogs: notificationLogs.count, sessions: sessions.count,
+        idempotencyKeys: idempotencyKeys.count, loginEvents: loginEvents.count, notificationLogs: notificationLogs.count, sessions: sessions.count,
         passwordResets: passwordResets.count, emailVerifications: emailVerifications.count,
       };
     });

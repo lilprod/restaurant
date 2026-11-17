@@ -2,6 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { MotionConfig } from "motion/react";
 import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
+import { PrintHost } from "@/components/print-host";
 import { ConfirmProvider } from "@/components/ui/confirm";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider, useTheme } from "@/providers/theme";
@@ -33,6 +34,7 @@ export function App() {
             <ConfirmProvider>
               <RouterProvider router={router} />
               <ThemedToaster />
+              <PrintHost />
             </ConfirmProvider>
           </TooltipProvider>
         </MotionConfig>

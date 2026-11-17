@@ -116,6 +116,10 @@ export function customerApi(c: ApiClient) {
   };
 }
 
+/** Clé d'idempotence d'une requête (en-tête `Idempotency-Key`, X5). */
+export interface IdempotentOptions { idempotencyKey?: string }
+const idem = (o: IdempotentOptions) => (o.idempotencyKey ? { headers: { "Idempotency-Key": o.idempotencyKey } } : undefined);
+
 type Section<T> = T;
 type SettingsSectionMap = {
   business: Section<BusinessInput>;
@@ -313,8 +317,9 @@ export function tenantApi(c: ApiClient) {
       list: (q: OrdersQuery = {}) => c.get<Paginated<Order>>("/tenant/orders", { query: { ...q } }),
       get: (id: string) => c.get<Order>(`/tenant/orders/${enc(id)}`),
       receipt: (id: string) => c.get<OrderReceipt>(`/tenant/orders/${enc(id)}/receipt`),
-      create: (body: CreateOrderInput) => c.post<Order>("/tenant/orders", body),
-      addItems: (id: string, items: OrderItemInput[]) => c.post<Order>(`/tenant/orders/${enc(id)}/items`, { items }),
+      /** `idempotencyKey` (X5) : une requête rejouée avec la même clé ne crée jamais de doublon. */
+      create: (body: CreateOrderInput, opts: IdempotentOptions = {}) => c.post<Order>("/tenant/orders", body, idem(opts)),
+      addItems: (id: string, items: OrderItemInput[], opts: IdempotentOptions = {}) => c.post<Order>(`/tenant/orders/${enc(id)}/items`, { items }, idem(opts)),
       updateItem: (id: string, itemId: string, body: { quantity?: number; instructions?: string }) =>
         c.patch<Order>(`/tenant/orders/${enc(id)}/items/${enc(itemId)}`, body),
       setItemStatus: (id: string, itemId: string, status: Exclude<OrderItemStatus, "CANCELLED">) =>
@@ -322,7 +327,7 @@ export function tenantApi(c: ApiClient) {
       advance: (id: string, status: "IN_PROGRESS" | "READY" | "SERVED") => c.post<Order>(`/tenant/orders/${enc(id)}/advance`, { status }),
       cancelItem: (id: string, itemId: string, reason: string) => c.post<Order>(`/tenant/orders/${enc(id)}/items/${enc(itemId)}/cancel`, { reason }),
       cancel: (id: string, reason: string) => c.post<Order>(`/tenant/orders/${enc(id)}/cancel`, { reason }),
-      pay: (id: string, body: OrderPaymentInput) => c.post<OrderPaymentResult>(`/tenant/orders/${enc(id)}/payments`, body),
+      pay: (id: string, body: OrderPaymentInput, opts: IdempotentOptions = {}) => c.post<OrderPaymentResult>(`/tenant/orders/${enc(id)}/payments`, body, idem(opts)),
       refund: (id: string, paymentId: string, reason: string) => c.post<Order>(`/tenant/orders/${enc(id)}/payments/${enc(paymentId)}/refund`, { reason }),
       /** P2C : lien de suivi à imprimer sur le ticket (stable). */
       trackingLink: (id: string) => c.get<{ token: string; url: string }>(`/tenant/orders/${enc(id)}/tracking-link`),

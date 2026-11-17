@@ -218,3 +218,12 @@
   body { background: white !important; color: black !important; }
   .print-area { box-shadow: none !important; border: none !important; }
 }
+
+/* X5 : impression automatique de tickets (cuisine, caisse). `PrintHost` est invisible à l'écran ; pendant une impression
+   (`body[data-print-job]`) il est la seule chose imprimée, quelle que soit la page affichée. */
+#print-host { display: none; }
+@media print {
+  body[data-print-job] > *:not(#print-host) { display: none !important; }
+  body[data-print-job] #print-host { display: block !important; }
+  body:not([data-print-job]) #print-host { display: none !important; }
+}

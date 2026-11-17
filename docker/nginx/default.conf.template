@@ -61,6 +61,27 @@ server {
     proxy_pass $api_upstream;
   }
 
+  # PWA (X5) : le service worker et le manifeste ne sont jamais gardés en cache durablement, pour que chaque déploiement soit vu
+  # tout de suite. Le service worker est un script du même domaine : la CSP `script-src 'self'` / `worker-src 'self'` l'autorise.
+  location = /sw.js {
+    include /etc/nginx/conf.d/snippets/security-headers.inc;
+    add_header Cache-Control "no-cache" always;
+    default_type application/javascript;
+    try_files $uri =404;
+  }
+  location = /manifest.webmanifest {
+    include /etc/nginx/conf.d/snippets/security-headers.inc;
+    add_header Cache-Control "no-cache" always;
+    types { }
+    default_type application/manifest+json;
+    try_files $uri =404;
+  }
+  location /icons/ {
+    include /etc/nginx/conf.d/snippets/security-headers.inc;
+    add_header Cache-Control "public, max-age=604800" always;
+    try_files $uri =404;
+  }
+
   # Fichiers du build, nommés par empreinte : cache d'un an
   location /assets/ {
     include /etc/nginx/conf.d/snippets/security-headers.inc;

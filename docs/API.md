@@ -162,6 +162,8 @@ Purge planifiée `RetentionService.purge()` chaque nuit à 03:17 UTC (coupée pa
 
 Constantes : `RETENTION_DAYS` (`apps/api/src/security/retention.service.ts`).
 
+- Clés d'idempotence (`IdempotencyKey`, X5) : 24 h (purge nocturne).
+
 ## Secrets et configuration de sécurité (X7)
 - Un secret par usage, tous différents (vérifié au démarrage) : `JWT_ACCESS_SECRET` (jetons d'accès et défis 2FA, ≥ 32 caractères en production),
   `DATA_ENCRYPTION_KEY` (secrets 2FA), `TRACKING_TOKEN_SECRET` (HMAC des liens de suivi imprimés sur les tickets). Les deux derniers sont
@@ -253,6 +255,13 @@ Carte publique : `GET /public/tenants/:slug/menu` (catégories actives, plats no
 - `paymentStatus` : `UNPAID`, `PARTIAL`, `PAID` ; `remaining` = reste à payer. Un encaissement ne peut pas dépasser le reste
   (verrou en base : deux encaissements simultanés ne dépassent jamais le total). Référence obligatoire pour Flooz / TMoney.
 - Clôture automatique quand tout est **servi et réglé** ; la table redevient libre. Service : `serviceChargePercent` des paramètres.
+
+### Idempotence et hors ligne (X5)
+`POST /tenant/orders`, `POST /tenant/orders/:id/items` et `POST /tenant/orders/:id/payments` acceptent l'en-tête **`Idempotency-Key`** (8 à 128 caractères `A-Za-z0-9_.:-`, un UUID convient).
+La première requête est exécutée et sa réponse (code + corps) conservée **24 h** (table `IdempotencyKey`, RLS, purge nocturne). Un rejeu avec la même clé renvoie la même réponse
+avec l'en-tête `Idempotent-Replayed: true`, sans refaire l'opération (jamais de doublon de commande, d'article ou de paiement). La clé est propre au restaurant et au compte :
+même clé avec un autre corps, une autre route ou un autre compte → **422** ; requête identique encore en cours → **409** « déjà en cours » (réessayer) ; une erreur n'est pas mémorisée (la clé est libérée).
+Sans en-tête, comportement inchangé. Le web s'en sert pour la file de commandes hors ligne (clé = identifiant de la requête en file) et pour l'encaissement.
 
 ## Cuisine et temps réel
 `GET /tenant/kitchen` : commandes ouvertes avec des articles en attente, en préparation ou prêts (les plus anciennes d'abord).

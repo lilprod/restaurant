@@ -3,7 +3,7 @@ import type { Order, OrderItem } from "@restaurant/api-client";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import * as React from "react";
 import {
-  ArrowLeft, Ban, FileText, Banknote, ChevronRight, HandPlatter, MoreHorizontal, NotebookPen, Pencil, Plus, Printer, Undo2, XCircle,
+  ArrowLeft, Ban, ChefHat, CloudOff, FileText, Banknote, ChevronRight, HandPlatter, MoreHorizontal, NotebookPen, Pencil, Plus, Printer, Undo2, XCircle,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -25,7 +25,9 @@ import { courseLabel, ORDER_TYPE_LABEL } from "@/lib/labels";
 import { tenantKeys } from "@/lib/tenant-keys";
 import { useSpacePath } from "@/providers/space";
 import { DeliveryAddress, DeliveryMeta, DeliveryStatusBadge } from "../delivery/delivery-bits";
+import { useOffline } from "@/providers/offline";
 import { elapsedLabel, useApplyOrder, useNow, useOperations, useTenant } from "../hooks";
+import { usePrinter } from "../print/use-printer";
 import { ItemEditDialog } from "./item-edit-dialog";
 import {
   BillSummary, ItemDetails, ItemStatusBadge, OrderPlace, OrderStatusBadge, PaymentsList, PaymentStatusBadge, waiterName,
@@ -44,6 +46,8 @@ export function OrderDetailPage() {
   const ops = useOperations();
   const confirm = useConfirm();
   const apply = useApplyOrder();
+  const printer = usePrinter();
+  const { online } = useOffline();
   const now = useNow(15_000);
   const q = useOrder(id);
   const o = q.data;
@@ -95,9 +99,13 @@ export function OrderDetailPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {t.isFloor && open && <Button asChild variant="secondary"><Link to={to(`/commandes/${o.id}/ajouter`)}><Plus /> Ajouter des articles</Link></Button>}
-          {t.isFloor && <Button asChild variant="secondary"><Link to={to(`/commandes/${o.id}/ticket`)}><Printer /> Ticket</Link></Button>}
+          {(t.isFloor || t.isKitchen) && !o.cancelledAt && <Button variant="secondary" onClick={() => void printer.printKitchen(o, { reprint: true })} data-testid="reprint-kitchen"><ChefHat /> Ticket cuisine</Button>}
+          {t.isFloor && <Button asChild variant="secondary"><Link to={to(`/commandes/${o.id}/ticket`)}><Printer /> Ticket caisse</Link></Button>}
           {t.isFloor && !o.cancelledAt && <DownloadButton variant="secondary" fetchFile={() => t.api.invoice(o.id)}><FileText /> Facture PDF</DownloadButton>}
-          {t.isFloor && !o.cancelledAt && o.remaining > 0 && (
+          {t.isFloor && !o.cancelledAt && o.remaining > 0 && !online && (
+            <Button variant="primary" disabled title="Encaissement impossible hors ligne" className="order-first w-full sm:order-none sm:w-auto"><CloudOff /> Encaissement indisponible hors ligne</Button>
+          )}
+          {t.isFloor && !o.cancelledAt && o.remaining > 0 && online && (
             <Button asChild variant="primary" className="order-first w-full sm:order-none sm:w-auto"><Link to={to(`/commandes/${o.id}/encaisser`)}><Banknote /> Encaisser {formatFcfa(o.remaining)}</Link></Button>
           )}
           {t.isManager && !o.cancelledAt && (

@@ -10,7 +10,9 @@ import { formatDateShort, formatFcfa, formatTime } from "@/lib/format";
 import { ORDER_PAYMENT_METHOD_LABEL, ORDER_TYPE_LABEL } from "@/lib/labels";
 import { tenantKeys } from "@/lib/tenant-keys";
 import { useSpacePath } from "@/providers/space";
+import { receiptTicketDoc } from "@/lib/print/ticket-doc";
 import { useTenant } from "../hooks";
+import { usePrinter } from "../print/use-printer";
 
 /** Montant sans l'unité (le ticket est étroit) : 12 500 */
 const n = (v: number) => new Intl.NumberFormat("fr-FR").format(v);
@@ -22,6 +24,7 @@ export function TicketPage() {
   const to = useSpacePath();
   const q = useQuery({ queryKey: tenantKeys.receipt(t.root, id ?? ""), queryFn: () => t.api.orders.receipt(id!), enabled: !!id });
   const r = q.data;
+  const printer = usePrinter();
   // P2C : lien de suivi (stable : réimprimer ne change pas le lien) affiché en QR sur le ticket.
   const link = useQuery({ queryKey: [...tenantKeys.receipt(t.root, id ?? ""), "tracking"], queryFn: () => t.api.orders.trackingLink(id!), enabled: !!id && !!r, staleTime: Infinity });
   const qr = useQuery({ queryKey: ["qr", link.data?.url], queryFn: () => QRCode.toString(link.data!.url, { type: "svg", margin: 0, errorCorrectionLevel: "M" }), enabled: !!link.data, staleTime: Infinity });
@@ -31,7 +34,12 @@ export function TicketPage() {
       <style>{"@media print { @page { size: 80mm auto; margin: 3mm; } html, body { background: #fff !important; } #contenu { padding: 0 !important; max-width: none !important; } }"}</style>
       <div className="no-print flex w-full max-w-md items-center justify-between gap-2">
         <Button asChild variant="ghost"><Link to={to(`/commandes/${id}`)}><ArrowLeft /> Commande</Link></Button>
-        <Button variant="primary" onClick={() => window.print()} disabled={!r}><Printer /> Imprimer</Button>
+        <Button variant="primary" disabled={!r} data-testid="print-receipt"
+          onClick={() => {
+            // Imprimante thermique ESC/POS : même ticket, mêmes montants (tout vient de l'API). Sinon, boîte d'impression du navigateur.
+            if (printer.settings.driver !== "browser" && r) void printer.print(receiptTicketDoc(r, { trackingUrl: link.data?.url }));
+            else window.print();
+          }}><Printer /> Imprimer</Button>
       </div>
       {q.isError ? <ErrorState error={q.error} onRetry={() => q.refetch()} className="w-full max-w-md" /> : !r ? <Skeleton className="h-[520px] w-[302px] rounded-md" /> : (
         <article aria-label="Ticket de caisse"

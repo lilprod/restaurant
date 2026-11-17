@@ -19,7 +19,7 @@ import { toastError } from "@/lib/errors";
 import { courseLabel } from "@/lib/labels";
 import { tenantKeys } from "@/lib/tenant-keys";
 import { useRealtime, useOrderEvents } from "@/providers/realtime";
-import { useSession } from "@/providers/session";
+import { useLogout } from "@/providers/offline";
 import { useSpacePath } from "@/providers/space";
 import { useForcedTheme } from "@/providers/theme";
 import { KitchenStockButton } from "../stock/stock-alerts";
@@ -138,7 +138,7 @@ function KdsHeader({ counts, now, filter, setFilter, sound, toggleSound, openSol
   const t = useTenant();
   const to = useSpacePath();
   const navigate = useNavigate();
-  const session = useSession();
+  const logout = useLogout();
   const [full, setFull] = React.useState(() => typeof document !== "undefined" && !!document.fullscreenElement);
   React.useEffect(() => {
     const on = () => setFull(!!document.fullscreenElement);
@@ -190,7 +190,7 @@ function KdsHeader({ counts, now, filter, setFilter, sound, toggleSound, openSol
             {t.isManager && <DropdownMenuItem onSelect={() => navigate(to("/"))}><ChefHat /> Tableau de bord</DropdownMenuItem>}
             <DropdownMenuItem onSelect={() => navigate(to("/mon-compte"))}><UserRound /> Mon compte</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => void session.logout()}><LogOut /> Se déconnecter</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => logout()}><LogOut /> Se déconnecter</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

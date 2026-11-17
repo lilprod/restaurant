@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dropdown";
 import { Kbd } from "@/components/ui/kbd";
 import { cn } from "@/lib/cn";
+import { useLogout } from "@/providers/offline";
 import { useSession } from "@/providers/session";
 
 export interface NavItem {
@@ -119,6 +120,7 @@ function SidebarContent({ nav, spaceLabel, roleLabel, accountPath, onSearch }: {
   nav: NavItem[]; spaceLabel: string; roleLabel: string; accountPath: string; onSearch: () => void;
 }) {
   const session = useSession();
+  const logout = useLogout();
   const user = session.user;
   const navigate = useNavigate();
   return (
@@ -202,7 +204,7 @@ function SidebarContent({ nav, spaceLabel, roleLabel, accountPath, onSearch }: {
               <ThemeSwitcher />
             </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => void session.logout()}><LogOut /> Se déconnecter</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => logout()}><LogOut /> Se déconnecter</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

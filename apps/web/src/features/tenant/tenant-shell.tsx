@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Bike, BookOpen, CalendarClock, CalendarDays, Package, Truck, ChefHat, ClipboardList, HandPlatter, Landmark, LayoutDashboard, LayoutGrid, Settings, ShieldCheck,
-  ShoppingBag, BarChart3, Star, Map as MapIcon, SquarePlus, Users, WalletCards, Bell, CalendarRange, MessageSquare, UserCog,
+  ShoppingBag, BarChart3, Printer, Star, Map as MapIcon, SquarePlus, Users, WalletCards, Bell, CalendarRange, MessageSquare, UserCog,
 } from "lucide-react";
 import { motion } from "motion/react";
 import * as React from "react";
@@ -46,6 +46,7 @@ export function useTenantNav(): NavItem[] {
       t.isFloor && delivery.enabled && { to: to("/livraisons"), label: "Livraisons", icon: <Bike />, keywords: ["dispatch", "livreur", "zones", "frais", "rapprochement", "course"], section: S },
       t.isFloor && { to: to("/caisse"), label: "Caisse", icon: <Landmark />, keywords: ["fond de caisse", "clôture", "espèces"], section: S },
       { to: to("/messagerie"), label: "Messagerie", icon: <MessageSquare />, keywords: ["message", "discussion", "équipe", "canal", "mention"], section: S, badge: unread },
+      { to: to("/impression"), label: "Impression et hors ligne", icon: <Printer />, keywords: ["imprimante", "ticket", "cuisine", "esc/pos", "thermique", "réseau", "file d'attente", "hors ligne"], section: S },
       hr.moduleEnabled && { to: to("/mon-planning"), label: "Mon planning", icon: <CalendarRange />, keywords: ["horaires", "pointage", "congés", "absence", "arrivée", "départ"], section: S },
       (t.isManager || t.role === "KITCHEN") && { to: to("/menu"), label: t.isManager ? "Menu" : "Disponibilités", icon: <BookOpen />, keywords: ["carte", "plats", "épuisé", "allergènes"], section: G },
       stock.moduleEnabled && { to: to("/stock"), label: "Stock", icon: <Package />, keywords: ["ingrédients", "inventaire", "pertes", "alertes", "recette"], section: G },

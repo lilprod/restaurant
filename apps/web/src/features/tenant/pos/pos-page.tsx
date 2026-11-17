@@ -1,4 +1,4 @@
-import { ApiError, type DiningTable, type Formula, type MenuItem } from "@restaurant/api-client";
+import { ApiError, type DiningTable, type Formula, type MenuItem, type Order } from "@restaurant/api-client";
 import { tableStatusTone } from "@restaurant/ui-tokens";
 import { createOrderSchema, addItemsSchema } from "@restaurant/validation";
 import { deliveryMinimumError } from "@restaurant/utils";
@@ -20,9 +20,13 @@ import { cn } from "@/lib/cn";
 import { errorMessage, toastError } from "@/lib/errors";
 import { formatFcfa } from "@/lib/format";
 import { TABLE_STATUS_LABEL } from "@/lib/labels";
+import { localRefOf, newKey, type QueuedRequest } from "@/lib/offline/queue";
 import { tenantKeys } from "@/lib/tenant-keys";
+import { useOffline } from "@/providers/offline";
+import { useSession } from "@/providers/session";
 import { useSpacePath } from "@/providers/space";
 import { useApplyOrder, useOperations, useTenant } from "../hooks";
+import { usePrinter } from "../print/use-printer";
 import { useOrder } from "../orders/order-detail-page";
 import { orderPlace } from "../orders/order-bits";
 import { useDishRules, useFormulas, usePromotions, type DishRules } from "../menu/extras-hooks";
@@ -30,11 +34,13 @@ import { useTables } from "../tables/tables-page";
 import { DeliveryAddressDialog, type DeliveryAddress } from "../delivery/delivery-address-dialog";
 import { useDeliveryAvailable } from "../delivery/delivery-hooks";
 import { cartCount, cartReducer, cartTotals, toOrderItems, type CartLine } from "./cart";
+import { kitchenInputFromCart } from "./offline-ticket";
 import { CartPanel } from "./cart-panel";
 import { FormulaSheet } from "./formula-sheet";
 import { OptionSheet } from "./option-sheet";
 
 const FORMULAS_TAB = "__formules";
+const ORDER_TYPE_SHORT = { DINE_IN: "Sur place", TAKEAWAY: "À emporter", DELIVERY: "Livraison" } as const;
 
 /** Carte du restaurant (cache partagé : menu, prise de commande, écran cuisine). */
 export function useMenu() {
@@ -73,6 +79,9 @@ export function PosPage() {
   const tables = useTables();
   const existing = useOrder(orderId);
   const adding = !!orderId;
+  const offline = useOffline();
+  const printer = usePrinter();
+  const user = useSession().user;
 
   const [lines, setLines] = useDraft(`pos:${t.slug}:${orderId ?? "new"}`);
   const dispatch = React.useCallback((a: Parameters<typeof cartReducer>[1]) => setLines((l) => cartReducer(l, a)), [setLines]);
@@ -130,24 +139,56 @@ export function PosPage() {
     return false;
   };
 
+  type Sent = { kind: "sent"; order: Order; added: number } | { kind: "queued"; request: QueuedRequest };
   const send = useMutation({
-    mutationFn: async () => {
+    // Hors ligne, l'envoi ne doit pas être mis en pause par TanStack Query : il bascule dans la file locale.
+    networkMode: "always",
+    mutationFn: async (): Promise<Sent> => {
       const items = toOrderItems(lines);
-      if (adding) {
-        const body = addItemsSchema.parse({ items });
-        return { order: await t.api.orders.addItems(orderId!, body.items), added: cartCount(lines) };
-      }
-      const parsed = createOrderSchema.safeParse({
+      const added = cartCount(lines);
+      // Clé d'idempotence de CET envoi : si la réponse se perd en route, la commande mise en file garde la même clé
+      // et le serveur ne la créera qu'une fois.
+      const key = newKey();
+      const body = adding ? addItemsSchema.parse({ items }) : null;
+      const parsed = adding ? null : createOrderSchema.safeParse({
         type, tableId: type === "DINE_IN" ? table?.id : undefined, reservationId: type === "DINE_IN" && table ? params.get("reservation") ?? undefined : undefined, customerName: type !== "DINE_IN" ? customer : undefined, customerPhone: type !== "DINE_IN" ? customerPhone : undefined, delivery: type === "DELIVERY" ? address : undefined, notes, items,
       });
-      if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Commande incomplète");
-      return { order: await t.api.orders.create(parsed.data), added: cartCount(lines) };
+      if (parsed && !parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Commande incomplète");
+      const queue = async (): Promise<Sent> => {
+        const ticket = kitchenInputFromCart(lines, {
+          type: adding ? existing.data?.type ?? "DINE_IN" : type, tableLabel: adding ? existing.data?.table?.label : table?.label, customerName: adding ? existing.data?.customerName : customer,
+          waiterName: user?.firstName, notes: adding ? undefined : notes, localRef: localRefOf(key), stationOf: printer.stationOf, addition: adding, number: adding ? existing.data?.number : undefined,
+        });
+        const label = `${adding ? `Commande n°${existing.data?.number ?? ""}` : table ? `Table ${table.label}` : ORDER_TYPE_SHORT[type]} · ${added} article${added > 1 ? "s" : ""}`;
+        const request = await offline.enqueue(adding ? { kind: "items", key, label, ticket, orderId, items: body!.items } : { kind: "order", key, label, ticket, order: parsed!.data });
+        return { kind: "queued", request };
+      };
+      if (!adding && type === "DELIVERY" && !offline.online) throw new Error("La livraison demande une connexion : choisissez « Sur place » ou « À emporter », ou attendez le retour du réseau.");
+      if (!offline.online) return queue();
+      try {
+        const order = adding ? await t.api.orders.addItems(orderId!, body!.items, { idempotencyKey: key }) : await t.api.orders.create(parsed!.data!, { idempotencyKey: key });
+        return { kind: "sent", order, added };
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 0 && !(!adding && type === "DELIVERY")) { offline.reportNetworkFailure(); return queue(); }
+        throw e;
+      }
     },
-    onSuccess: ({ order, added }) => {
+    onSuccess: async (r) => {
+      if (r.kind === "queued") {
+        setLines([]);
+        if (!adding) { setTableId(null); setNotes(""); setCustomer(""); setCustomerPhone(""); }
+        toast.success(`Commande enregistrée hors ligne (réf. ${r.request.localRef})`, { description: "Elle partira en cuisine dès le retour du réseau. Elle n'est pas encaissable avant." });
+        if (printer.settings.autoKitchen && r.request.ticket) void printer.printKitchenInput(r.request.ticket);
+        if (adding) navigate(to("/"), { replace: true });
+        return;
+      }
+      const { order, added } = r;
+      const before = new Set((existing.data?.items ?? []).map((i) => i.id));
       apply(order);
       setLines([]);
       toast.success(adding ? `${added} article${added > 1 ? "s" : ""} ajouté${added > 1 ? "s" : ""} à la commande n°${order.number}` : `Commande n°${order.number} envoyée en cuisine`,
         { description: orderPlace(order) });
+      void printer.autoPrint(order, adding ? { onlyItemIds: new Set(order.items.filter((i) => !before.has(i.id)).map((i) => i.id)) } : {});
       navigate(to(`/commandes/${order.id}`), { replace: true });
     },
     onError: (e) => { if (!onConflict(e)) toastError(e); },
@@ -166,7 +207,9 @@ export function PosPage() {
   };
   const closedOrder = adding && existing.data && (existing.data.closedAt || existing.data.cancelledAt);
   const count = cartCount(lines);
-  const submitLabel = adding ? `Ajouter · ${formatFcfa(totals.subtotal)}` : `Envoyer en cuisine · ${formatFcfa(totals.total)}`;
+  const submitLabel = offline.online
+    ? (adding ? `Ajouter · ${formatFcfa(totals.subtotal)}` : `Envoyer en cuisine · ${formatFcfa(totals.total)}`)
+    : `Enregistrer hors ligne · ${formatFcfa(adding ? totals.subtotal : totals.total)}`;
 
   return (
     <div className="flex h-dvh flex-col bg-background">
@@ -232,7 +275,7 @@ export function PosPage() {
               )}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3 pb-24 md:pb-3">
-              {menu.isError ? <ErrorState error={menu.error} onRetry={() => menu.refetch()} /> : menu.isLoading ? (
+              {menu.isError && !menu.data ? <ErrorState error={menu.error} onRetry={() => menu.refetch()} /> : menu.isLoading ? (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">{Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-48 rounded-lg" />)}</div>
               ) : shown.length === 0 && shownFormulas.length === 0 ? (
                 <EmptyState icon={<UtensilsCrossed />} title={needle ? "Aucun plat trouvé" : "Aucun plat"} description={needle ? `Aucun plat ne contient « ${search} ».` : "Ajoutez des plats depuis l'écran Menu."} />

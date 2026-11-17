@@ -63,6 +63,8 @@ export interface RequestOptions {
   /** `false` pour les routes publiques (pas d'en-tête Authorization ni de rafraîchissement). */
   auth?: boolean;
   signal?: AbortSignal;
+  /** En-têtes supplémentaires (ex. `Idempotency-Key`). */
+  headers?: Record<string, string>;
 }
 
 export interface SessionTokens {
@@ -261,7 +263,7 @@ export class ApiClient {
 
   /** Appel HTTP brut : aucune logique de rafraîchissement. */
   private async raw<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
-    const headers: Record<string, string> = { Accept: "application/json" };
+    const headers: Record<string, string> = { Accept: "application/json", ...opts.headers };
     const isForm = typeof FormData !== "undefined" && opts.body instanceof FormData;
     if (opts.body !== undefined && !isForm) headers["Content-Type"] = "application/json";
     if (opts.auth !== false && this.accessToken) headers.Authorization = `Bearer ${this.accessToken}`;

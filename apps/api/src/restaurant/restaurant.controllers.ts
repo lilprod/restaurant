@@ -12,6 +12,7 @@ import {
   updateStaffSchema, formulaInputSchema, formulaUpdateSchema, promotionActiveSchema, promotionInputSchema,
 } from "@restaurant/validation";
 import type { ItemStatus } from "@restaurant/utils";
+import { IdempotencyInterceptor } from "../common/idempotency.interceptor";
 import { ZodPipe } from "../common/zod.pipe";
 import { Account } from "../security/accounts.repo";
 import { CurrentAccount } from "../security/space-auth.guard";
@@ -187,7 +188,7 @@ export class OrdersController {
 
   @Get() list(@CurrentAccount() a: Account, @Query(new ZodPipe(listOrdersQuerySchema)) q: ListOrdersQuery) { return this.orders.list(t(a), q); }
 
-  @Post() @TenantRoles(...FLOOR)
+  @Post() @TenantRoles(...FLOOR) @UseInterceptors(IdempotencyInterceptor)
   create(@CurrentAccount() a: Account, @Body(new ZodPipe(createOrderSchema)) body: CreateOrderInput) { return this.orders.create(a, body); }
 
   @Get(":id") get(@CurrentAccount() a: Account, @Param("id", UUID) id: string) { return this.orders.get(t(a), id); }
@@ -195,7 +196,7 @@ export class OrdersController {
   @Get(":id/receipt") @TenantRoles(...FLOOR)
   receipt(@CurrentAccount() a: Account, @Param("id", UUID) id: string) { return this.orders.receipt(t(a), id); }
 
-  @Post(":id/items") @HttpCode(200) @TenantRoles(...FLOOR)
+  @Post(":id/items") @HttpCode(200) @TenantRoles(...FLOOR) @UseInterceptors(IdempotencyInterceptor)
   addItems(@CurrentAccount() a: Account, @Param("id", UUID) id: string, @Body(new ZodPipe(addItemsSchema)) body: { items: OrderItemInput[] }) {
     return this.orders.addItems(a, id, body.items);
   }
@@ -226,7 +227,7 @@ export class OrdersController {
     return this.orders.cancelOrder(a, id, body.reason);
   }
 
-  @Post(":id/payments") @TenantRoles(...FLOOR)
+  @Post(":id/payments") @TenantRoles(...FLOOR) @UseInterceptors(IdempotencyInterceptor)
   pay(@CurrentAccount() a: Account, @Param("id", UUID) id: string, @Body(new ZodPipe(orderPaymentSchema)) body: OrderPaymentInput) {
     return this.orders.pay(a, id, body);
   }

@@ -9,6 +9,7 @@ import { resolveFromWindow, tenantBasePath, type ResolvedSlug } from "@/lib/tena
 import { BrandingProvider, useBranding } from "@/providers/branding";
 import { RealtimeProvider } from "@/providers/realtime";
 import { RoleGate } from "@/features/tenant/role-gate";
+import { OfflineProvider } from "@/providers/offline";
 import { SessionProvider } from "@/providers/session";
 import { SpaceRoutesProvider } from "@/providers/space";
 import { getTenantSpace, platformSpace, STORAGE_KEYS } from "./spaces";
@@ -99,7 +100,7 @@ function TenantRoot({ resolved }: { resolved?: ResolvedSlug }) {
             account={space.account}
             licenseStorageKey={STORAGE_KEYS.tenantLicense(r.slug)}
           >
-            <Outlet />
+            <OfflineProvider><Outlet /></OfflineProvider>
           </SessionProvider>
         </TenantGate>
       </BrandingProvider>
@@ -178,6 +179,7 @@ const tenantChildren: RouteObject[] = [
           { path: "mes-livraisons", element: gate(DRIVER, lazyPage(() => import("@/features/tenant/delivery/my-deliveries-page"), "MyDeliveriesPage")) },
           { path: "caisse", element: gate(FLOOR, lazyPage(() => import("@/features/tenant/register/register-page"), "RegisterPage")) },
           { path: "notifications", element: gate(["ADMIN"], lazyPage(() => import("@/features/tenant/notifications-page"), "TenantNotificationsPage")) },
+          { path: "impression", element: gate(STAFF, lazyPage(() => import("@/features/tenant/print/print-page"), "PrintPage")) },
           { path: "parametres", element: lazyPage(() => import("@/features/tenant/settings-page"), "TenantSettingsPage") },
           { path: "securite", element: lazyPage(() => import("@/features/tenant/security-page"), "TenantSecurityPage") },
           { path: "licence", element: lazyPage(() => import("@/features/tenant/license-page"), "TenantLicensePage") },

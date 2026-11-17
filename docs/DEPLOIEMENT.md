@@ -122,10 +122,18 @@ en production avec un rôle superuser / `BYPASSRLS` (dérogation explicite : `AL
   Mêmes garanties dans les deux modes : type vérifié sur le **contenu** (signature binaire), nom aléatoire, remplacement = suppression de l'ancien fichier.
   Migrer du disque vers S3 : copier `UPLOAD_DIR` dans le bucket (mêmes clés `tenants/…`) ; les URL déjà enregistrées (`PUBLIC_API_URL/uploads/…`) continuent de fonctionner tant que l'API relaie.
 
+## 6 bis. PWA et hors ligne (X5)
+
+Le site est une PWA (manifeste `/manifest.webmanifest`, icônes `/icons/*`, service worker `/sw.js`, tous du même domaine : la CSP `script-src 'self'` / `worker-src 'self'` suffit).
+nginx sert `sw.js` et le manifeste en `Cache-Control: no-cache` (un déploiement est vu tout de suite ; l'utilisateur est invité à recharger, jamais forcé) et `application/manifest+json`.
+**Le service worker ne met en cache que des fichiers statiques** (shell de l'application, polices de base, images de la carte `/uploads/*`) : jamais `/api/*` (donc ni les routes d'authentification
+ni le cookie de rafraîchissement), ni `/socket.io`, ni une requête portant `Authorization`. La carte, les tables et la file de commandes hors ligne vivent dans IndexedDB (une base par restaurant),
+vidée à la déconnexion. Les ports série / USB des imprimantes thermiques exigent un contexte sécurisé (HTTPS) et Chrome ou Edge.
+
 ## 7. En-têtes de sécurité et journaux
 
 nginx (`docker/nginx/`) pose sur le site : `Content-Security-Policy` (`default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: <PUBLIC_API_URL>;
-connect-src 'self' <hôte> wss://<hôte> <PUBLIC_API_URL>; font-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`), `Permissions-Policy: camera=(), microphone=(), geolocation=()`,
+connect-src 'self' <hôte> wss://<hôte> <PUBLIC_API_URL>; font-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`), `Permissions-Policy: camera=(), microphone=(), geolocation=()`,
 `Referrer-Policy: strict-origin-when-cross-origin`, `X-Content-Type-Options`, `X-Frame-Options: DENY`, et **HSTS** quand la requête d'origine était en HTTPS (`X-Forwarded-Proto: https`).
 La CSP a été éprouvée dans un navigateur réel : 22 écrans restaurant, 10 écrans plateforme, ticket avec QR (`data:`), logo servi par `PUBLIC_API_URL`, temps réel WebSocket,
 polices Geist : aucune violation. Le seul changement côté site : le script d'initialisation du thème est un fichier (`/theme-init.js`) et non plus un script en ligne,

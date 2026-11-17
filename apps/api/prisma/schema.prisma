@@ -1300,6 +1300,7 @@ model Tenant {
   emailVerifications EmailVerification[]
   auditLogs          AuditLog[]
   settings           Setting[]
+  idempotencyKeys    IdempotencyKey[]
 }
 
 model TenantRegistration {
@@ -1468,4 +1469,26 @@ model NotificationLog {
 
   @@index([tenantId, createdAt])
   @@index([status])
+}
+
+/// X5 : clé d'idempotence (en-tête `Idempotency-Key`) des créations de commande, ajouts d'articles et paiements.
+/// Une requête rejouée (file hors ligne, double clic, réseau instable) renvoie la réponse déjà produite, sans doublon.
+/// Conservée 24 h (purge nocturne). `statusCode` nul = requête en cours de traitement.
+model IdempotencyKey {
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id          String   @id @default(uuid())
+  key         String
+  method      String
+  path        String
+  /// Empreinte SHA-256 du corps : la même clé avec un autre corps est refusée (422).
+  requestHash String
+  accountId   String
+  statusCode  Int?
+  response    Json?
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([tenantId, key])
+  @@index([expiresAt])
 }
