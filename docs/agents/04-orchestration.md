@@ -10,7 +10,7 @@ Vague 1  ─ X0 dette technique ── X1 notifications ── X4 déploiement (
 Vague 2  ─ P2A réservations ──── P3 stock ────────── P1B compléments du menu
 Vague 3  ─ P2B plan de salle ─── P2C espace client ─ P4 personnel ── X7 sécurité (après X4)
 Vague 4  ─ P5 rapports ───────── X2 livraison ────── X5 hors-ligne & impression
-Vague 5  ─ X3 mobile             (X6 paiement en ligne : dès que le propriétaire a choisi l'agrégateur)
+Vague 5  ─ X3 mobile équipe      (X6 paiement en ligne : dès que le propriétaire a choisi l'agrégateur)
 ```
 
 Pourquoi cet ordre :
@@ -18,7 +18,7 @@ Pourquoi cet ordre :
 - **P3 tôt** : la déduction de stock se branche sur les commandes (phase 1, stable) et alimente les coûts des rapports (P5).
 - **P2C après P2A** : la réservation en ligne du client réutilise toute la logique de disponibilité de P2A.
 - **P5 en fin** : les rapports agrègent stock, personnel, avis.
-- **X3 en dernier** : l'application mobile consomme une API stabilisée.
+- **X3 en dernier** : l'application mobile « Équipe » (personnel seulement : livreur, serveur, cuisine) consomme une API stabilisée ; les clients restent sur le web.
 
 ## 2. Règles de parallélisation
 
