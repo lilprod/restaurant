@@ -100,7 +100,8 @@ bash scripts/dev/wip-push.sh <ID> "point d'étape : <ce qui est fait>"   # ex. X
 Quand : après chaque étape notable (schéma + migration, API qui compile, écrans, tests verts) et **au moins toutes les 30 à 45 minutes** de travail.
 Le script ne touche ni à la branche courante, ni à l'index, ni à l'arbre de travail ; la CI ignore `wip/**`. Jamais de secret dans les fichiers
 (les fichiers ignorés par `.gitignore`, dont `.env`, ne sont pas inclus). Reprise : `git fetch origin wip/<ID>` puis `git diff HEAD origin/wip/<ID>`.
-Indiquez dans le rapport final le dernier instantané poussé.
+Indiquez dans le rapport final le dernier instantané poussé. **Si la commande est refusée par les permissions** (cas des sous-agents en arrière-plan),
+ne la contournez pas et ne la relancez pas : l'orchestrateur pousse alors les instantanés à votre place (même script, même branche).
 
 ## 6. Langue et ton
 
