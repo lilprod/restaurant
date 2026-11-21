@@ -39,6 +39,7 @@ et tout ce dont l'orchestrateur (l'agent principal) a besoin pour découper, lan
 | [`P5`](projets/P5-rapports.md) | Rapports, analyses, exports PDF/CSV | API + web | sonnet | P3, P4, P2C | X2 |
 | [`X2`](projets/X2-livraison.md) | Livraison : zones, frais, livreurs, suivi | API + web | sonnet | phase 1, X1 | P5 |
 | [`X5`](projets/X5-hors-ligne-impression.md) | Hors-ligne (PWA), impression des tickets | web (+ API) | sonnet | phase 1 | P3, P4 |
+| [`X5B`](projets/X5B-push-web.md) | Notifications push web (PWA) pour l'équipe | API + web | sonnet | X1, X2, X5 | — |
 | [`X7`](projets/X7-securite.md) | Durcissement sécurité, RGPD | API + web | opus | X4 | P5, X2 |
 | [`X3`](projets/X3-mobile.md) | Application mobile « Équipe » (livreur, serveur, cuisine) | mobile + API légère | sonnet | X2, X5, X7 | — |
 | [`X6`](projets/X6-paiement-en-ligne.md) | Paiement en ligne (agrégateur) | API + web | opus | **décision du propriétaire** | — |
