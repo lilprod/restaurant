@@ -83,6 +83,7 @@ Ensuite : connectez-vous sur `https://app.monapp.com/admin` avec `SEED_SUPERADMI
 | `SEED_SUPERADMIN_EMAIL`, `SEED_SUPERADMIN_PASSWORD` | Premier compte SuperAdmin (créé si aucun compte plateforme n'existe). |
 | `MAIL_DRIVER`, `SMTP_URL`, `MAIL_FROM` | Email (§5). |
 | `SMS_DRIVER`, `SMS_*`, `TWILIO_*` | SMS : `log` (rien n'est envoyé), `twilio` ou `http` (agrégateur générique). |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Notifications push de l'équipe (§5 ter). Vides = push désactivé. |
 | `STORAGE_DRIVER`, `S3_*` | Fichiers (§6). |
 | `BACKUP_*` | Sauvegardes (§8). |
 | `APP_VERSION` | Étiquette des images (retour arrière, §9). |
@@ -111,6 +112,31 @@ en production avec un rôle superuser / `BYPASSRLS` (dérogation explicite : `AL
   rappels de licence). Dérogation explicite : `ALLOW_MAIL_LOG=on`.
 - **SMS** : `SMS_DRIVER=log` (défaut : journalisé, rien n'est envoyé), `twilio` ou `http` (voir `.env.example`). Le choix du fournisseur reste au propriétaire.
 - La file d'envoi est **BullMQ sur Redis** (`NOTIFICATIONS_QUEUE=bullmq`, imposé par le compose) : 5 tentatives à intervalle croissant, reprises après un redémarrage.
+
+## 5 ter. Notifications push de l'équipe (X5B)
+
+Alerte le personnel (cuisine : nouvelle commande ; serveur : plats prêts ; livreur : livraison attribuée, retirée, commande prête) **téléphone en poche, écran verrouillé**, via la PWA. Sans clés, rien ne change : le push est désactivé
+et l'écran « Notifications sur cet appareil » l'indique.
+
+**Générer les clés VAPID** (une paire par installation, sans dépendance) :
+```bash
+node scripts/ops/gen-vapid-keys.mjs mailto:contact@monapp.com   # affiche VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT
+```
+Recopiez les trois lignes dans le `.env` puis `docker compose up -d api`. `VAPID_SUBJECT` = un contact de l'éditeur (`mailto:` ou `https:`) transmis aux services de push (Google, Mozilla, Apple, Microsoft) qui peuvent vous écrire en cas d'abus.
+Ne commitez jamais la clé privée ; **sauvegardez-la** avec le reste du `.env`.
+
+**Rotation** : une nouvelle paire invalide les abonnements existants (ils sont liés à la clé publique). Générez la paire, remplacez les trois variables, redémarrez l'API. Chaque appareil se **réabonne automatiquement à la prochaine ouverture de l'application**
+(l'ancien abonnement est remplacé s'il ne correspond plus à la clé du serveur) ; tant qu'un appareil n'a pas été rouvert, ses alertes échouent (visibles au journal des notifications, statut « Échec »), puis l'ancien abonnement est purgé (déconnexion, réponse 404 / 410 du service de push, ou 60 jours d'inactivité).
+Faites la rotation en dehors du service et prévenez l'équipe de rouvrir l'application. Seul un appareil dont l'autorisation a été retirée dans le navigateur doit être réactivé à la main (bouton « Activer »).
+
+**Ce que le propriétaire doit savoir**
+- **Android** (Chrome, Edge, Firefox) et **ordinateur** : fiable, même application fermée ; l'autorisation est demandée une seule fois, au clic sur « Activer ».
+- **iPhone / iPad** : seulement si l'application est **installée sur l'écran d'accueil** (Safari → Partager → « Sur l'écran d'accueil ») et sous **iOS 16.4 ou plus récent**. Dans l'onglet Safari, aucune notification n'est possible : l'écran l'explique.
+  Pas de garantie de remise immédiate quand l'iPhone est en mode économie d'énergie. Une alerte non ouverte reste sur l'écran verrouillé ; la livraison d'une alerte n'est jamais garantie par Apple ni Google (d'où l'écran cuisine et la messagerie, qui restent la référence).
+- Il faut **HTTPS** (déjà requis pour la PWA). Le serveur contacte les services de push du navigateur en sortie (HTTPS vers `fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`) : ouvrez ces destinations si l'API est derrière un pare-feu sortant.
+- La CSP (`connect-src`, `worker-src 'self'`) est inchangée : l'abonnement est un échange entre le navigateur et son service de push, pas une requête de la page.
+- Les alertes ne contiennent **aucun montant, adresse, téléphone ni nom de client** ; elles disent seulement « il y a quelque chose » et ouvrent l'application. Chaque personne active ou coupe ses alertes sur son appareil ; l'administrateur peut couper un type d'alerte pour tout le restaurant (Paramètres → Notifications).
+- Une déconnexion, une révocation de session ou la désactivation d'un compte retire ses appareils ; les abonnements restés sans ouverture de l'application pendant 60 jours sont purgés chaque nuit.
 
 ## 6. Fichiers téléversés (logos, photos, avatars)
 
@@ -193,6 +219,7 @@ l'ancien code peut ne plus s'accorder à la base ; dans ce cas restaurez la sauv
 | Stockage des fichiers | `disk` (volume) | Bucket S3 / R2 / MinIO, privé ou public / CDN |
 | Fournisseur email | SMTP générique | Brevo, SES, Mailjet… (+ SPF / DKIM du domaine d'envoi) |
 | Fournisseur SMS | `log` (aucun envoi) | Twilio ou agrégateur local HTTP (Togo) |
+| Notifications push de l'équipe | Désactivées (pas de clés VAPID) | Générer les clés (§5 ter), contact `VAPID_SUBJECT`, informer l'équipe des limites iPhone |
 | Sauvegardes | Disque local chiffré, rotation 7 / 4 / 6 | Cible hors site, passphrase ou clé age, fréquence, test de restauration planifié |
 | Supervision | `check.sh` + `HEALTHCHECK` | Moniteur externe, canal d'alerte (webhook), collecteur de journaux |
 | Images | Construites sur le serveur (`--build`) | Registre (GHCR…) et déploiement automatique depuis la CI |

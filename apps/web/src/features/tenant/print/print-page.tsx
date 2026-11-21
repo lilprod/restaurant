@@ -14,6 +14,7 @@ import type { PrinterDriverKind } from "@/lib/print/settings";
 import { testTicketDoc, kitchenTicketDoc } from "@/lib/print/ticket-doc";
 import { useOffline } from "@/providers/offline";
 import { useTenant } from "../hooks";
+import { PushCard } from "../push/push-card";
 import { usePrinter } from "./use-printer";
 
 /** « Impression et hors ligne » : imprimante de cet appareil (réglages locaux) et file des commandes saisies sans réseau. */
@@ -45,8 +46,14 @@ export function PrintPage() {
 
   return (
     <div className="flex max-w-3xl flex-col gap-6">
-      <PageHeader title="Impression et hors ligne" description="Réglages valables pour cet appareil seulement, et commandes saisies sans réseau." />
+      <PageHeader
+        title={t.isDriver ? "Notifications" : "Impression et hors ligne"}
+        description={t.isDriver ? "Alertes de livraison sur cet appareil." : "Réglages valables pour cet appareil seulement, notifications et commandes saisies sans réseau."}
+      />
 
+      <PushCard />
+
+      {!t.isDriver && <>
       <SettingsSection
         title="Commandes hors ligne"
         description="Sans réseau, la prise de commande continue : les commandes sont gardées sur cet appareil puis envoyées automatiquement au retour du réseau, une seule fois. L'encaissement reste impossible hors ligne."
@@ -139,6 +146,7 @@ export function PrintPage() {
           <div><Button variant="secondary" onClick={() => void test()} loading={busy}><Printer /> Imprimer un ticket de test</Button></div>
         </div>
       </SettingsSection>
+      </>}
     </div>
   );
 }

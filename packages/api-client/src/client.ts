@@ -191,7 +191,7 @@ export class ApiClient {
   post<T>(path: string, body?: unknown, opts?: Omit<RequestOptions, "body">) { return this.request<T>("POST", path, { ...opts, body }); }
   patch<T>(path: string, body?: unknown, opts?: Omit<RequestOptions, "body">) { return this.request<T>("PATCH", path, { ...opts, body }); }
   put<T>(path: string, body?: unknown, opts?: Omit<RequestOptions, "body">) { return this.request<T>("PUT", path, { ...opts, body }); }
-  delete<T>(path: string, opts?: Omit<RequestOptions, "body">) { return this.request<T>("DELETE", path, opts); }
+  delete<T>(path: string, opts?: RequestOptions) { return this.request<T>("DELETE", path, opts); }
 
   /** Envoi multipart d'un fichier (champ `file` par défaut). */
   upload<T>(path: string, file: Blob, opts: { field?: string; filename?: string; signal?: AbortSignal } = {}) {

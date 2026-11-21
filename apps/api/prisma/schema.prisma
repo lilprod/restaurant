@@ -173,6 +173,7 @@ model User {
 
   staffProfile       StaffProfile?
   refreshTokens      RefreshToken[]
+  pushSubscriptions  PushSubscription[]
   reservations       Reservation[]
   orders             Order[]             @relation("OrderCustomer")
   servedOrders       Order[]             @relation("OrderWaiter")
@@ -1301,6 +1302,7 @@ model Tenant {
   auditLogs          AuditLog[]
   settings           Setting[]
   idempotencyKeys    IdempotencyKey[]
+  pushSubscriptions  PushSubscription[]
 }
 
 model TenantRegistration {
@@ -1438,6 +1440,7 @@ model PlatformSetting {
 enum NotificationChannel {
   EMAIL
   SMS
+  PUSH
 }
 
 enum NotificationStatus {
@@ -1491,4 +1494,25 @@ model IdempotencyKey {
 
   @@unique([tenantId, key])
   @@index([expiresAt])
+}
+
+/// X5B : abonnement Web Push d'un appareil du personnel (un appareil = un compte à la fois : l'endpoint est unique et réattribué).
+/// `sessionId` = session (RefreshToken) qui l'a créé : sa fin (déconnexion, révocation) supprime l'abonnement. Purge après 60 j d'inactivité.
+model PushSubscription {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId  String?
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([tenantId, userId])
+  @@index([sessionId])
+  @@index([lastSeenAt])
 }

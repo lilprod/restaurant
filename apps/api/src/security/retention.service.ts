@@ -19,6 +19,8 @@ export const RETENTION_DAYS = {
   closedSessions: 30,
   /** Liens de réinitialisation et codes de vérification d'email utilisés ou expirés : 7 jours. */
   oneTimeCodes: 7,
+  /** Abonnements push inactifs (l'application n'a pas rouvert l'appareil) : 60 jours. */
+  pushSubscriptions: 60,
 } as const;
 
 @Injectable()
@@ -53,8 +55,13 @@ export class RetentionService {
       const emailVerifications = await tx.emailVerification.deleteMany({ where: { expiresAt: { lt: codes } } });
       // X5 : clés d'idempotence échues (réponses rejouables 24 h).
       const idempotencyKeys = await tx.idempotencyKey.deleteMany({ where: { expiresAt: { lt: now } } });
+      // X5B : abonnements push inactifs, ou dont la session est terminée / purgée (appareil qui n'a jamais prévenu à la déconnexion).
+      const pushInactive = await tx.pushSubscription.deleteMany({ where: { lastSeenAt: { lt: before(RETENTION_DAYS.pushSubscriptions) } } });
+      const pushOrphans = await tx.$executeRaw`
+        DELETE FROM "PushSubscription" p WHERE p."sessionId" IS NOT NULL AND NOT EXISTS (
+          SELECT 1 FROM "RefreshToken" r WHERE r.id = p."sessionId" AND r."revokedAt" IS NULL AND r."expiresAt" > ${now})`;
       return {
-        idempotencyKeys: idempotencyKeys.count, loginEvents: loginEvents.count, notificationLogs: notificationLogs.count, sessions: sessions.count,
+        pushSubscriptions: pushInactive.count + pushOrphans, idempotencyKeys: idempotencyKeys.count, loginEvents: loginEvents.count, notificationLogs: notificationLogs.count, sessions: sessions.count,
         passwordResets: passwordResets.count, emailVerifications: emailVerifications.count,
       };
     });

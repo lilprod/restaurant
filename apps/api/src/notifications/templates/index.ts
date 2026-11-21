@@ -12,6 +12,10 @@ import {
 } from "./reservations";
 import { deliveryDelivered, deliveryOnTheWay, type DeliveredData, type DeliveryOnTheWayData } from "./delivery";
 import { dailyReport, type DailyReportData } from "./reports";
+import {
+  pushDeliveryAssigned, pushDeliveryReady, pushDeliveryUnassigned, pushKitchenItemsAdded, pushKitchenNewOrder, pushOrderReady, pushTest,
+  type PushDeliveryData, type PushOrderItemsData, type PushOrderReadyData, type PushTestData,
+} from "./push";
 import { planningPublished, type PlanningPublishedData } from "./staff";
 import type { TemplateDef } from "./types";
 
@@ -40,6 +44,13 @@ export interface TemplateDataMap {
   "delivery.on_the_way": DeliveryOnTheWayData;
   "delivery.delivered": DeliveredData;
   "reports.daily": DailyReportData;
+  "push.test": PushTestData;
+  "push.delivery-assigned": PushDeliveryData;
+  "push.delivery-unassigned": PushDeliveryData;
+  "push.delivery-ready": PushDeliveryData;
+  "push.order-ready": PushOrderReadyData;
+  "push.kitchen-new-order": PushOrderItemsData;
+  "push.kitchen-items-added": PushOrderItemsData;
 }
 export type TemplateName = keyof TemplateDataMap;
 
@@ -62,7 +73,17 @@ export const TEMPLATES: { [K in TemplateName]: TemplateDef<TemplateDataMap[K]> }
   "delivery.on_the_way": deliveryOnTheWay,
   "delivery.delivered": deliveryDelivered,
   "reports.daily": dailyReport,
+  "push.test": pushTest,
+  "push.delivery-assigned": pushDeliveryAssigned,
+  "push.delivery-unassigned": pushDeliveryUnassigned,
+  "push.delivery-ready": pushDeliveryReady,
+  "push.order-ready": pushOrderReady,
+  "push.kitchen-new-order": pushKitchenNewOrder,
+  "push.kitchen-items-added": pushKitchenItemsAdded,
 };
+
+/** Modèles disposant d'un contenu push. */
+export type PushTemplateName = "push.test" | "push.delivery-assigned" | "push.delivery-unassigned" | "push.delivery-ready" | "push.order-ready" | "push.kitchen-new-order" | "push.kitchen-items-added";
 
 export { renderEmail } from "./layout";
 export * from "./types";

@@ -24,6 +24,7 @@ import { useSpacePath } from "@/providers/space";
 import { elapsedLabel, useApplyOrder, useNow, useTenant } from "../hooks";
 import { OrderPlace, OrderStatusBadge, PaymentStatusBadge } from "../orders/order-bits";
 import { useTables } from "../tables/tables-page";
+import { PushReminder } from "../push/push-reminder";
 import { ArrivalsCard } from "../reservations/arrivals-card";
 
 export const OPEN_ORDERS_QUERY = { open: true, pageSize: 100 } as const;
@@ -57,6 +58,8 @@ export function WaiterHome() {
           </>
         }
       />
+
+      <PushReminder className="mb-6" />
 
       {ready > 0 && (
         <div role="status" className="mb-6 flex items-center gap-3 rounded-lg border border-[color-mix(in_oklab,var(--tone-green-dot)_35%,var(--border))] bg-[var(--tone-green-bg)] px-4 py-3 text-sm text-[var(--tone-green-fg)]">

@@ -1,6 +1,6 @@
 import type { NotificationList, NotificationLogItem, NotificationsQuery } from "@restaurant/api-client";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, Mail, MessageSquare, RefreshCw, RotateCw, SearchX, X } from "lucide-react";
+import { Bell, BellRing, Mail, MessageSquare, RefreshCw, RotateCw, SearchX, X } from "lucide-react";
 import * as React from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -85,7 +85,7 @@ export function NotificationsLog({ api, queryRoot, canResend, showTenant = false
     { key: "date", header: "Date", cell: (n) => <span className="whitespace-nowrap font-mono text-xs tabular text-muted-foreground">{formatDateTime(n.createdAt)}</span> },
     {
       key: "channel", header: "Canal",
-      cell: (n) => <span className="inline-flex items-center gap-1.5 text-[13px]">{n.channel === "EMAIL" ? <Mail className="size-3.5 text-muted-foreground" /> : <MessageSquare className="size-3.5 text-muted-foreground" />}{NOTIFICATION_CHANNEL_LABEL[n.channel]}</span>,
+      cell: (n) => <span className="inline-flex items-center gap-1.5 text-[13px]">{n.channel === "EMAIL" ? <Mail className="size-3.5 text-muted-foreground" /> : n.channel === "PUSH" ? <BellRing className="size-3.5 text-muted-foreground" /> : <MessageSquare className="size-3.5 text-muted-foreground" />}{NOTIFICATION_CHANNEL_LABEL[n.channel]}</span>,
     },
     { key: "to", header: "Destinataire", cell: (n) => <span className="whitespace-nowrap font-mono text-[13px]">{n.to}</span> },
     ...(showTenant ? [{ key: "tenant", header: "Restaurant", hideOnMobile: true, cell: (n: NotificationLogItem) => <span className="block max-w-[160px] truncate text-[13px]">{n.tenant?.name ?? <span className="text-muted-foreground">Plateforme</span>}</span> }] : []),
@@ -95,6 +95,7 @@ export function NotificationsLog({ api, queryRoot, canResend, showTenant = false
         <div className="flex max-w-[320px] flex-col">
           <span className="truncate text-[13px]">{NOTIFICATION_TEMPLATE_LABEL[n.template] ?? n.template}</span>
           {n.subject && n.channel === "EMAIL" && <span className="truncate text-[11px] text-muted-foreground">{n.subject}</span>}
+          {n.payload && <span className="truncate text-[11px] text-muted-foreground" data-testid="push-payload">{n.payload.title} · {n.payload.body}</span>}
         </div>
       ),
     },
@@ -117,7 +118,7 @@ export function NotificationsLog({ api, queryRoot, canResend, showTenant = false
         <div className="grid gap-4 sm:grid-cols-2 xl:flex xl:flex-wrap xl:items-end xl:gap-6">
           <Field label="Canal">
             <Segmented ariaLabel="Canal" size="sm" value={channel} onChange={setChannel}
-              options={[{ value: "", label: "Tous" }, { value: "EMAIL", label: "Email" }, { value: "SMS", label: "SMS" }]} />
+              options={[{ value: "", label: "Tous" }, { value: "EMAIL", label: "Email" }, { value: "SMS", label: "SMS" }, { value: "PUSH", label: "Push" }]} />
           </Field>
           <Field label="Statut">
             <div className="-mx-1 overflow-x-auto px-1 scrollbar-none">

@@ -33,7 +33,10 @@ export function useTenantNav(): NavItem[] {
   const delivery = useDeliveryAvailable();
   return React.useMemo(() => {
     // X2 : le livreur n'a que « Mes livraisons » (l'API refuse le reste).
-    if (t.isDriver) return [{ to: to("/mes-livraisons"), label: "Mes livraisons", icon: <Bike />, end: true, keywords: ["livrer", "course", "encaisser"], section: "Service" }] as NavItem[];
+    if (t.isDriver) return [
+      { to: to("/mes-livraisons"), label: "Mes livraisons", icon: <Bike />, end: true, keywords: ["livrer", "course", "encaisser"], section: "Service" },
+      { to: to("/impression"), label: "Notifications", icon: <Bell />, keywords: ["alertes", "push", "téléphone", "notification"], section: "Service" },
+    ] as NavItem[];
     const S = "Service", G = "Gestion";
     const items: (NavItem | false)[] = [
       t.role !== "KITCHEN" && { to: to("/"), label: t.isManager ? "Tableau de bord" : "Mon service", icon: t.isManager ? <LayoutDashboard /> : <HandPlatter />, end: true, section: S },

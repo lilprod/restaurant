@@ -308,7 +308,7 @@ export interface NotificationLogItem {
   tenantId: string | null;
   /** Présent dans la vue plateforme uniquement. */
   tenant?: { id: string; name: string; slug: string } | null;
-  channel: "EMAIL" | "SMS";
+  channel: "EMAIL" | "SMS" | "PUSH";
   to: string;
   template: string;
   category: "transactional" | "reminder";
@@ -320,10 +320,12 @@ export interface NotificationLogItem {
   sentAt: ISODate | null;
   resendOfId: string | null;
   canResend: boolean;
+  /** Push uniquement : charge utile telle qu'envoyée à l'appareil (aucune donnée sensible). */
+  payload?: { title: string; body: string; url: string; tag: string };
 }
 export type NotificationList = Paginated<NotificationLogItem>;
 export type NotificationsQuery = {
-  channel?: "EMAIL" | "SMS";
+  channel?: "EMAIL" | "SMS" | "PUSH";
   status?: "QUEUED" | "SENT" | "FAILED";
   template?: string;
   /** Plateforme : `none` = messages de la plateforme, sinon identifiant d'un restaurant. */
@@ -1240,3 +1242,8 @@ export interface DeliverySettlements {
   }[];
 }
 export interface DeliverySettleResult { count: number; total: number; byMethod: Record<string, number> }
+
+/** X5B : état du push web sur le serveur (clé publique VAPID à transmettre au navigateur). */
+export interface PushConfig { enabled: boolean; publicKey: string | null }
+/** `PushSubscription.toJSON()` du navigateur. */
+export interface PushSubscriptionBody { endpoint: string; keys: { p256dh: string; auth: string } }

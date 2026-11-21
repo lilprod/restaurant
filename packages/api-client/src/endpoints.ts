@@ -14,7 +14,7 @@ import type {
 import type { ApiClient } from "./client";
 import type {
   AuditLogList, AuditLogQueryParams,
-  AccountSummary, Allergen, AssetKind, NotificationList, NotificationsQuery, BrandingSettings, DiningTable, FloorPlan, TableLayoutEntry, LoginEvent, MenuCategory, MenuItem, Order, OrderItemStatus,
+  AccountSummary, Allergen, AssetKind, NotificationList, NotificationsQuery, PushConfig, PushSubscriptionBody, BrandingSettings, DiningTable, FloorPlan, TableLayoutEntry, LoginEvent, MenuCategory, MenuItem, Order, OrderItemStatus,
   OrderPaymentResult, OrderReceipt, OrdersQuery, PublicMenu, RegisterCloseResult, RegisterCurrent, RegisterSession, StaffMember,
   StaffRole, TableStatus, TenantDashboard, LoginResponse, LoginResult, LoginSuccess, Paginated, PaymentList,
   Plan, PlatformDashboard, PlatformPublicBranding, PlatformRole, PlatformSettingsAll, PlatformUserView, Profile, PublicPlan, Receipt,
@@ -244,6 +244,13 @@ export function platformApi(c: ApiClient) {
 export function tenantApi(c: ApiClient) {
   return {
     auditLogs: (q: AuditLogQueryParams = {}) => c.get<AuditLogList>("/tenant/audit-logs", { query: { ...q } }),
+    // X5B : notifications push web de l'équipe (appareil du compte connecté)
+    push: {
+      config: () => c.get<PushConfig>("/tenant/push/config"),
+      subscribe: (body: PushSubscriptionBody) => c.post<{ id: string; created: boolean; reassigned: boolean }>("/tenant/push/subscriptions", body),
+      unsubscribe: (endpoint: string, opts?: { signal?: AbortSignal }) => c.delete<void>("/tenant/push/subscriptions", { body: { endpoint }, signal: opts?.signal }),
+      test: (endpoint?: string) => c.post<{ sent: number }>("/tenant/push/test", endpoint ? { endpoint } : {}),
+    },
     notifications: {
       list: (q: NotificationsQuery = {}) => c.get<NotificationList>("/tenant/notifications", { query: q }),
       resend: (id: string) => c.post<{ id: string }>(`/tenant/notifications/${enc(id)}/resend`),

@@ -13,3 +13,12 @@ process.env.NOTIFICATIONS_RETRY_BASE_MS = "0";
 process.env.DISABLE_THROTTLE = "1";
 process.env.UPLOAD_DIR = require("node:path").join(require("node:os").tmpdir(), "restaurant-test-uploads");
 process.env.PUBLIC_API_URL = "http://api.test";
+// X5B : clés VAPID générées à la volée (jamais commitées) ; pilote `log` : rien ne sort du serveur, les envois sont capturés en mémoire.
+{
+  const { generateKeyPairSync } = require("node:crypto") as typeof import("node:crypto");
+  const jwk = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ format: "jwk" });
+  process.env.VAPID_PUBLIC_KEY = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x!, "base64url"), Buffer.from(jwk.y!, "base64url")]).toString("base64url");
+  process.env.VAPID_PRIVATE_KEY = jwk.d!;
+  process.env.VAPID_SUBJECT = "mailto:push-test@example.com";
+  process.env.PUSH_DRIVER = "log";
+}

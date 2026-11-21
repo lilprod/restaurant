@@ -7,7 +7,7 @@ export function TenantNotificationsPage() {
   const t = useTenant();
   return (
     <>
-      <PageHeader title="Notifications" description="Emails et SMS envoyés par votre restaurant. Les destinataires sont masqués." />
+      <PageHeader title="Notifications" description="Emails, SMS et notifications push envoyés par votre restaurant. Les destinataires sont masqués." />
       <NotificationsLog api={t.api.notifications} queryRoot={t.key("notifications-log")} canResend={t.isAdmin} />
     </>
   );
