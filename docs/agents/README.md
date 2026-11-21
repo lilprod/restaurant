@@ -21,7 +21,9 @@ et tout ce dont l'orchestrateur (l'agent principal) a besoin pour découper, lan
 | 0 | Sécurité (2FA, sessions, verrouillage, politiques), paramètres, marque, thèmes, logo/favicon | ✅ livré |
 | 0b | Application web (espaces SuperAdmin et restaurant), design Vercel/Geist | ✅ livré |
 | 1 | Équipe, tables, menu, commandes, écran cuisine temps réel, encaissement, caisse, tableau de bord du jour | ✅ livré |
-| 2+ | Voir la carte des sous-projets ci-dessous | ⏳ à déléguer |
+| 2+ | X0, X1, P3, P1B, P2A, P4, P2B, P2C, X7, X4, P5, X2, X5 (voir la carte ci-dessous) | ✅ livré |
+| — | X5B notifications push web | ⏳ en cours |
+| — | X6 paiement en ligne (agrégateur à choisir), X3 application mobile « Équipe » (optionnelle) | ⏸ en attente |
 
 ## Carte des sous-projets
 
