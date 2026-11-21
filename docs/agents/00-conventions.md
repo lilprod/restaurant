@@ -91,6 +91,17 @@ Sans paquet PostgreSQL installé : `docker compose up -d` (voir `docker-compose.
 - Les sorties HTTP vers Internet passent par un proxy et certains hôtes (images, CDN) sont bloqués : pas de dépendance réseau à l'exécution.
 - Après une migration, la base de test reçoit les migrations via `pretest:e2e` ; sous RLS, `scripts/dev/test-rls.sh` redonne les droits et relance `prisma/sql/rls.sql`.
 
+## 5 bis. Sauvegarde du travail en cours (instantanés)
+Ne commitez pas et ne poussez pas sur `master` : l'orchestrateur intègre après vérification. Pour ne rien perdre (interruption, limite d'usage,
+redémarrage du conteneur), **poussez un instantané** sur votre branche de sauvegarde :
+```bash
+bash scripts/dev/wip-push.sh <ID> "point d'étape : <ce qui est fait>"   # ex. X5B → branche distante wip/X5B
+```
+Quand : après chaque étape notable (schéma + migration, API qui compile, écrans, tests verts) et **au moins toutes les 30 à 45 minutes** de travail.
+Le script ne touche ni à la branche courante, ni à l'index, ni à l'arbre de travail ; la CI ignore `wip/**`. Jamais de secret dans les fichiers
+(les fichiers ignorés par `.gitignore`, dont `.env`, ne sont pas inclus). Reprise : `git fetch origin wip/<ID>` puis `git diff HEAD origin/wip/<ID>`.
+Indiquez dans le rapport final le dernier instantané poussé.
+
 ## 6. Langue et ton
 
 Code, identifiants et commentaires techniques : anglais ou français selon le fichier voisin (le code existant commente en français).

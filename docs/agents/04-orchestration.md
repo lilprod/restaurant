@@ -58,7 +58,8 @@ Lis d'abord, dans cet ordre :
 4. docs/agents/03-verification.md (contrôles et format du rapport)
 
 Prépare l'environnement avec `bash scripts/dev/setup-db.sh`. Respecte strictement le périmètre de la fiche ; ce qui en sort va dans la section
-« Écarts » du rapport. Sois concis, précis et économe (section 7 de 00-conventions.md). Ne commite pas et ne pousse pas.
+« Écarts » du rapport. Sois concis, précis et économe (section 7 de 00-conventions.md). Ne commite pas sur master et ne pousse pas master ; pousse des instantanés
+réguliers avec `bash scripts/dev/wip-push.sh <ID> "<étape>"` (section 5 bis de 00-conventions.md).
 Termine par le rapport au format de 03-verification.md.
 <précisions éventuelles : décisions déjà prises, choix du propriétaire, contraintes de la vague>
 ```
