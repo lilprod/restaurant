@@ -4,7 +4,8 @@ import { expect, type Browser, type BrowserContext, type Page } from "@playwrigh
 /** Restaurant dédié aux scénarios (créé au besoin avec la carte de démonstration) : le restaurant « demo » n'est pas touché. */
 export const SLUG = process.env.E2E_SLUG ?? "e2e";
 export const PASSWORD = process.env.DEMO_PASSWORD ?? "Demo-Resto-2026";   // comptes de développement locaux
-export const email = (role: "admin" | "manager" | "waiter" | "kitchen") => `${role}@${SLUG}.demo`;
+export type Who = "admin" | "manager" | "waiter" | "kitchen" | "driver";
+export const email = (role: Who) => `${role}@${SLUG}.demo`;
 
 const DB_URL = process.env.E2E_DATABASE_URL ?? "postgresql://app:app@localhost:5433/restaurant";
 const API = `${process.env.E2E_BASE_URL ?? "http://localhost:5173"}/api/v1`;
@@ -23,7 +24,7 @@ export function ensureRestaurant() {
   });
 }
 
-export async function loginUi(page: Page, who: "admin" | "manager" | "waiter" | "kitchen", path = "") {
+export async function loginUi(page: Page, who: Who, path = "") {
   await page.goto(`/r/${SLUG}/login`);
   await page.getByLabel("Email").fill(email(who));
   await page.getByLabel("Mot de passe", { exact: true }).fill(PASSWORD);
@@ -39,10 +40,10 @@ export async function newDevice(browser: Browser): Promise<{ ctx: BrowserContext
 }
 
 /** Appel API authentifié (préparation des données d'un scénario). */
-export async function apiAs(who: "admin" | "manager" | "waiter" | "kitchen") {
+export async function apiAs(who: Who, slug = SLUG) {
   const res = await fetch(`${API}/tenant/auth/login`, {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ tenantSlug: SLUG, email: email(who), password: PASSWORD }),
+    body: JSON.stringify({ tenantSlug: slug, email: `${who}@${slug}.demo`, password: PASSWORD }),
   });
   expect(res.status).toBe(200);
   const { accessToken } = (await res.json()) as { accessToken: string };

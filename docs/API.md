@@ -156,6 +156,7 @@ Purge planifiée `RetentionService.purge()` chaque nuit à 03:17 UTC (coupée pa
 |---|---|---|
 | Journal de connexion (`LoginEvent` : email tenté, IP, navigateur) | 12 mois | |
 | Journal des notifications (`NotificationLog` : destinataire, variables) | 6 mois | |
+| Abonnements push (`PushSubscription`) | 60 jours sans ouverture de l'application, ou session terminée | X5B ; supprimés aussi à la déconnexion et à la désactivation du compte |
 | Sessions fermées ou échues (`RefreshToken`) | 30 jours après la fin | |
 | Liens de réinitialisation, codes de vérification d'email | 7 jours après usage ou échéance | |
 | Journaux d'audit, commandes, paiements, paie | non purgés | obligations comptables et légales ; anonymisation à la suppression d'un compte client (P2C) |
@@ -299,7 +300,7 @@ Service unique `NotificationsService` (module global `src/notifications/`). `Mai
 | `GET /platform/notifications?tenantId=` | SuperAdmin, Support | Journal global ; `tenantId=none` = messages de la plateforme |
 | `POST /platform/notifications/:id/resend` | SuperAdmin | Renvoi manuel (audité) |
 
-Statuts : `QUEUED` (en file, éventuellement en cours de reprise) → `SENT` ou `FAILED` (après 5 tentatives, délai doublé à chaque fois).
+Canaux : `EMAIL`, `SMS`, `PUSH` (voir plus bas). Statuts : `QUEUED` (en file, éventuellement en cours de reprise) → `SENT` ou `FAILED` (après 5 tentatives, délai doublé à chaque fois).
 
 ### Configuration (variables d'environnement, voir `.env.example`)
 - Email : `MAIL_DRIVER=log|smtp`, `SMTP_URL`, `MAIL_FROM` (Brevo, Mailjet, Gmail SMTP : seule l'URL change).
@@ -319,6 +320,40 @@ Statuts : `QUEUED` (en file, éventuellement en cours de reprise) → `SENT` ou 
    `send` ne lève jamais d'exception, ne bloque pas sur le fournisseur (mise en file) et retourne `{ status: "queued", id }` ou `{ status: "skipped", reason }`.
    `dedupeKey` garantit « une seule fois » (ex. `license:<abonnement>:<échéance>:<palier>:<destinataire>`). Numéros normalisés en E.164 (`normalizePhone` de `@restaurant/utils`, 8 chiffres = Togo).
 La marque (nom, logo), les coordonnées et la signature du restaurant sont ajoutées automatiquement.
+
+### Notifications push web de l'équipe (X5B)
+Canal `PUSH` du même service (`NotificationsService.sendPush`, module `src/notifications/`) : mêmes règles que email/SMS (journal `NotificationLog`, 5 reprises à délai doublé,
+`dedupeKey` — complétée par l'identifiant de l'appareil —, préférences du restaurant), mais **jamais attendu** par la requête métier (`flush()` attend les envois en tests).
+Alerte pour le **personnel** (ADMIN, MANAGER, WAITER, KITCHEN, DRIVER), jamais un client ; livrée à tous les appareils abonnés du ou des comptes visés (comptes actifs seulement),
+sauf à l'auteur de l'action.
+
+| Route | Rôles | Rôle |
+|---|---|---|
+| `GET /tenant/push/config` | personnel | `{ enabled, publicKey }` : `enabled` = clés VAPID configurées (sinon `false`, `publicKey: null`) |
+| `POST /tenant/push/subscriptions` | personnel | Corps `{ endpoint, keys: { p256dh, auth } }` (= `PushSubscription.toJSON()`). Création ou mise à jour **idempotente par endpoint** → `{ id, created, reassigned }`. Un endpoint déjà connu d'un autre compte (même d'un autre restaurant : même appareil) est **réattribué** au compte courant. 10 appareils au plus par compte. 409 si le push n'est pas configuré |
+| `DELETE /tenant/push/subscriptions` | personnel | Corps `{ endpoint }` : supprime l'abonnement **de ce compte** (204, même réponse s'il n'existe pas ou appartient à un autre) |
+| `POST /tenant/push/test` | personnel | Corps `{ endpoint? }` : notification de test à soi-même (cet appareil, ou tous ceux du compte) → `{ sent }` ; 409 sans appareil ; 10 par minute |
+
+- **Endpoint** : `https` uniquement et service de push connu (`fcm.googleapis.com`, `*.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`) — l'API appelle cette adresse (anti-SSRF) ; autre → 400.
+- **Données** : `PushSubscription` (RLS) : `tenantId`, `userId`, `sessionId` (session qui l'a créé), `endpoint` unique, `p256dh`, `auth`, `userAgent` abrégé (« Chrome · Android »), `createdAt`, `lastSeenAt` (rafraîchi à chaque ouverture de l'application).
+  Supprimé : à la déconnexion (jeton du refresh : **cet appareil** seulement), à la révocation d'une session, à la désactivation du compte ou « révoquer toutes les sessions » (tous les appareils du compte), sur réponse 404 / 410 du service de push, et par la purge nocturne
+  (inactif depuis plus de 60 jours, ou session terminée / purgée).
+- **Envoi** : pilote `webpush` (bibliothèque `web-push`, VAPID) si les clés sont présentes, sinon `log` (rien ne sort du serveur) ; `PUSH_DRIVER=log` le force (développement, démonstration, tests). TTL **300 s**, `urgency: high`. 404 / 410 → abonnement supprimé, ligne du journal `FAILED`, pas de reprise ; autre erreur → reprises.
+- **Journal** (`GET /tenant/notifications?channel=PUSH`, administrateur) : une ligne par appareil, `to` = « Appareil ••xxxx » (jamais l'endpoint), `payload` = `{ title, body, url, tag }` exact ; `canResend: false` (409 au renvoi : alerte périmée).
+- **Charge utile** (JSON, **aucune donnée sensible** : ni montant, ni adresse, ni téléphone, ni nom de client) : `{ title, body, url, tag, renotify: true }` ; `url` relative `/r/<slug>/…` ; `tag` regroupe les alertes d'un même objet (`delivery:<id>`, `order:<id>`, `kitchen:<id>`).
+
+| Modèle | Destinataires | Déclencheur | Événement (préférence) |
+|---|---|---|---|
+| `push.delivery-assigned` | livreur choisi | `POST /tenant/delivery/:id/assign` | `pushDelivery` |
+| `push.delivery-unassigned` | ancien livreur | réattribution à un autre livreur | `pushDelivery` |
+| `push.delivery-ready` | livreur assigné | la commande de livraison devient prête | `pushDelivery` |
+| `push.order-ready` | serveur de la commande (`waiterId`) | des plats passent à « prêt » (`whole: true` si toute la commande) | `pushWaiter` |
+| `push.kitchen-new-order` | comptes `KITCHEN` actifs | création de commande (avec articles) | `pushKitchen` |
+| `push.kitchen-items-added` | comptes `KITCHEN` actifs | `POST /tenant/orders/:id/items` | `pushKitchen` |
+| `push.test` | soi-même | `POST /tenant/push/test` | transactionnel (toujours envoyé) |
+
+Préférences : section `notifications` — `channels.push` (absent = actif) et `events.pushDelivery|pushWaiter|pushKitchen`. Variables : `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` (`mailto:` ou `https:`), `PUSH_DRIVER` ;
+les trois premières vont ensemble (sinon l'API refuse de démarrer), aucune = push désactivé sans erreur. Génération et rotation : `docs/DEPLOIEMENT.md` §5 ter.
 
 ### Branchements livrés
 Mot de passe oublié (email, lien jamais conservé) · relances de licence J-7 / J-1 / jour d'expiration aux administrateurs (tâche planifiée toutes les heures,

@@ -302,5 +302,11 @@ DROP POLICY IF EXISTS tenant_isolation ON "IdempotencyKey";
 CREATE POLICY tenant_isolation ON "IdempotencyKey"
   USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
 
+ALTER TABLE "PushSubscription" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "PushSubscription" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "PushSubscription";
+CREATE POLICY tenant_isolation ON "PushSubscription"
+  USING (app_tenant_ok("tenantId")) WITH CHECK (app_tenant_ok("tenantId"));
+
 -- Anti-double-réservation : contrainte EXCLUDE USING gist "ReservationTable_no_overlap" (extension btree_gist),
 -- créée par la migration `reservations` sur la plage dénormalisée [startsAt, endsAt) de ReservationTable.

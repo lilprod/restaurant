@@ -50,8 +50,8 @@ export const DEFAULT_LICENSING = { graceDays: 7 };
 export const defaultBranding = (displayName: string) => ({ displayName, theme: { ...DEFAULT_THEME } });
 
 export const DEFAULT_NOTIFICATIONS: NotificationsSettingsInput = {
-  channels: { email: true, sms: false },
-  events: { licenseReminders: true, reservations: true, reservationReminders: true, waitlist: true, orderReady: true },
+  channels: { email: true, sms: false, push: true },
+  events: { licenseReminders: true, reservations: true, reservationReminders: true, waitlist: true, orderReady: true, pushDelivery: true, pushWaiter: true, pushKitchen: true },
 };
 
 export const DEFAULT_RESERVATIONS: ReservationsSettingsInput = {

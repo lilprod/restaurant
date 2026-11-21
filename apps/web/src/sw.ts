@@ -5,15 +5,24 @@
  * Il ne touche JAMAIS à `/api/*` (donc ni aux routes d'authentification, ni au jeton de rafraîchissement — cookie HttpOnly —,
  * ni aux données d'un restaurant) ni à `/socket.io/*`, ni à une requête portant un en-tête Authorization.
  * Les données hors ligne (carte, tables, file de commandes) vivent dans IndexedDB, par restaurant, et sont vidées à la déconnexion.
+ *
+ * X5B : notifications push du personnel. `push` affiche l'alerte (titre, texte, `tag` qui regroupe, icône, badge) sauf si l'application est déjà
+ * visible (le temps réel l'a signalée : pas de doublon) ; `notificationclick` ramène l'onglet du restaurant au premier plan (navigation sans
+ * rechargement, la saisie en cours est conservée) ou ouvre l'adresse reçue, toujours ramenée à NOTRE origine. Aucune réponse authentifiée n'est mise en cache.
  */
+import { parsePushPayload, restaurantPrefix, safeNotificationUrl } from "./lib/push-payload";
 
 interface Entry { url: string; revision: string | null }
 interface SwEvent extends Event { waitUntil(p: Promise<unknown>): void }
 interface SwFetchEvent extends SwEvent { request: Request; respondWith(r: Promise<Response> | Response): void }
 interface SwMessageEvent extends SwEvent { data: unknown; ports: MessagePort[] }
+interface SwPushEvent extends SwEvent { data: { text(): string } | null }
+interface SwNotificationEvent extends SwEvent { notification: Notification }
+interface SwWindowClient { url: string; visibilityState: string; focus(): Promise<unknown>; postMessage(message: unknown): void }
 interface SwScope {
   location: Location;
-  clients: { claim(): Promise<void> };
+  registration: { showNotification(title: string, options?: NotificationOptions & { renotify?: boolean; vibrate?: number[] }): Promise<void> };
+  clients: { claim(): Promise<void>; matchAll(options: { type: "window"; includeUncontrolled: boolean }): Promise<SwWindowClient[]>; openWindow(url: string): Promise<SwWindowClient | null> };
   skipWaiting(): Promise<void>;
   addEventListener(type: string, fn: (e: never) => void): void;
 }
@@ -112,4 +121,41 @@ async function cacheFirst(req: Request, name: string, max: number, ok: (r: Respo
     for (const k of keys.slice(0, Math.max(0, keys.length - max))) await cache.delete(k);
   }
   return res;
+}
+
+// ── Notifications push (X5B) ──
+
+const ICON = "/icons/icon-192.png";
+const BADGE = "/icons/badge-96.png";
+
+sw.addEventListener("push", ((e: SwPushEvent) => { e.waitUntil(onPush(e)); }) as (e: never) => void);
+
+async function onPush(e: SwPushEvent): Promise<void> {
+  const p = parsePushPayload(e.data?.text() ?? null, sw.location.origin);
+  // Application au premier plan : l'événement est déjà signalé à l'écran (temps réel) : une notification système ferait doublon.
+  // Exception : le test demandé par l'utilisateur (bouton « Tester ») doit s'afficher même application ouverte.
+  const windows = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+  if (p.tag !== "test" && windows.some((w) => w.visibilityState === "visible")) return;
+  await sw.registration.showNotification(p.title, {
+    body: p.body, tag: p.tag, renotify: true, icon: ICON, badge: BADGE, lang: "fr", vibrate: [120, 60, 120], data: { url: p.url },
+  });
+}
+
+sw.addEventListener("notificationclick", ((e: SwNotificationEvent) => {
+  e.notification.close();
+  e.waitUntil(openTarget((e.notification.data as { url?: unknown } | null)?.url));
+}) as (e: never) => void);
+
+/** Onglet du même restaurant : focalisé, puis l'application navigue (sans rechargement) ; sinon une nouvelle fenêtre sur l'adresse reçue. */
+async function openTarget(raw: unknown): Promise<void> {
+  const path = safeNotificationUrl(raw, sw.location.origin);
+  const prefix = restaurantPrefix(path);
+  const windows = await sw.clients.matchAll({ type: "window", includeUncontrolled: true });
+  const same = prefix ? windows.find((w) => restaurantPrefix(new URL(w.url).pathname) === prefix) : undefined;
+  if (same) {
+    try { await same.focus(); } catch { /* focus refusé : le message suffit */ }
+    same.postMessage({ type: "PUSH_NAVIGATE", url: path });
+    return;
+  }
+  await sw.clients.openWindow(new URL(path, sw.location.origin).href);
 }

@@ -9,7 +9,7 @@ export const REGISTRATION_STATUS_LABEL: Record<string, string> = { PENDING: "En 
 export const PAYMENT_STATUS_LABEL: Record<string, string> = { RECORDED: "Enregistré", VOIDED: "Annulé" };
 export const PAYMENT_METHOD_LABEL: Record<string, string> = { FLOOZ: "Flooz", TMONEY: "TMoney", CARD: "Carte", CASH: "Espèces" };
 export const NOTIFICATION_STATUS_LABEL: Record<string, string> = { QUEUED: "En cours", SENT: "Envoyé", FAILED: "Échec" };
-export const NOTIFICATION_CHANNEL_LABEL: Record<string, string> = { EMAIL: "Email", SMS: "SMS" };
+export const NOTIFICATION_CHANNEL_LABEL: Record<string, string> = { EMAIL: "Email", SMS: "SMS", PUSH: "Push" };
 export const NOTIFICATION_TEMPLATE_LABEL: Record<string, string> = {
   "auth.password-reset": "Réinitialisation de mot de passe",
   "license.reminder": "Relance de licence",
@@ -25,6 +25,13 @@ export const NOTIFICATION_TEMPLATE_LABEL: Record<string, string> = {
   "waitlist.available": "Place libérée (liste d'attente)",
   "staff.planning-published": "Planning publié",
   "reports.daily": "Rapport quotidien",
+  "push.test": "Notification de test (push)",
+  "push.delivery-assigned": "Livraison attribuée (push)",
+  "push.delivery-unassigned": "Livraison retirée (push)",
+  "push.delivery-ready": "Commande prête à récupérer (push)",
+  "push.order-ready": "Plats prêts (push serveur)",
+  "push.kitchen-new-order": "Nouvelle commande (push cuisine)",
+  "push.kitchen-items-added": "Articles ajoutés (push cuisine)",
 };
 export const RESERVATION_STATUS_LABEL: Record<string, string> = {
   PENDING: "À confirmer", CONFIRMED: "Confirmée", SEATED: "Installée", COMPLETED: "Terminée", CANCELLED: "Annulée", NO_SHOW: "Absent",

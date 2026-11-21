@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import type { Prisma } from "@prisma/client";
 import { createHash, randomBytes } from "node:crypto";
 import type { RequestMeta } from "../common/request-meta";
 import { APP_ENV, Env } from "../config/env";
@@ -77,10 +78,16 @@ export class SessionService {
     });
   }
 
+  /** X5B : une session qui se termine (déconnexion, révocation, compte désactivé) emporte les abonnements push de son appareil. */
+  private dropPush(where: Prisma.PushSubscriptionWhereInput) {
+    return this.prisma.asPlatform((tx) => tx.pushSubscription.deleteMany({ where }));
+  }
+
   async revoke(acc: Pick<Account, "space" | "id">, sessionId: string) {
     const r = await this.prisma.refreshToken.updateMany({
       where: { id: sessionId, ...this.owner(acc), revokedAt: null }, data: { revokedAt: new Date() },
     });
+    if (acc.space === "tenant") await this.dropPush({ sessionId, userId: acc.id });
     return r.count === 1;
   }
 
@@ -90,10 +97,13 @@ export class SessionService {
       where: { ...this.owner(acc), revokedAt: null, ...(exceptSessionId ? { NOT: { id: exceptSessionId } } : {}) },
       data: { revokedAt: new Date() },
     });
+    if (acc.space === "tenant") await this.dropPush({ userId: acc.id, ...(exceptSessionId ? { OR: [{ sessionId: null }, { sessionId: { not: exceptSessionId } }] } : {}) });
     return r.count;
   }
 
   async revokeByToken(token: string) {
+    const row = await this.prisma.refreshToken.findUnique({ where: { tokenHash: hashToken(token) }, select: { id: true, userId: true } });
     await this.prisma.refreshToken.updateMany({ where: { tokenHash: hashToken(token), revokedAt: null }, data: { revokedAt: new Date() } });
+    if (row?.userId) await this.dropPush({ sessionId: row.id, userId: row.userId });
   }
 }

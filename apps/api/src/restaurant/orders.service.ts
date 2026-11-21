@@ -35,6 +35,11 @@ export const orderInclude = {
 } satisfies Prisma.OrderInclude;
 
 type OrderRow = Prisma.OrderGetPayload<{ include: typeof orderInclude }>;
+/** Passage d'articles à « prêt » (X5B) : de quoi alerter le serveur et le livreur. */
+type ReadyEvent = {
+  orderId: string; number: number; waiterId: string | null; tableLabel: string | null; whole: boolean; wholeNow: boolean;
+  delivery: { id: string; driverUserId: string | null } | null; key: string;
+};
 type Ops = { serviceChargePercent: number; defaultVatRate: number; takeawayEnabled: boolean; deliveryEnabled: boolean };
 
 /** Forme publique d'une commande (API et événements temps réel). */
@@ -194,7 +199,11 @@ export class OrdersService {
       return orderView(created);
     });
     this.realtime.emit(tenantId, "order.created", view);
-    if (created) this.emitDelivery(tenantId, created);
+    if (created) {
+      this.emitDelivery(tenantId, created);
+      const row = created as OrderRow;
+      this.pushKitchen(tenantId, acc.id, "push.kitchen-new-order", row, row.items.filter((i) => !i.parentItemId && i.status !== "CANCELLED").reduce((n, i) => n + i.quantity, 0), `order:${row.id}:new`);
+    }
     if (tableChanged) await this.tables.broadcast(tenantId, view.table!.id);
     return view;
   }
@@ -258,10 +267,13 @@ export class OrdersService {
   }
 
   async addItems(acc: Account, orderId: string, items: OrderItemInput[]) {
-    return this.mutate(acc, orderId, async (tx, o, tenantId) => {
+    const view = await this.mutate(acc, orderId, async (tx, o, tenantId) => {
       this.assertOpen(o);
       await this.insertLines(tx, tenantId, o.id, await this.buildLines(tx, tenantId, items, await this.ops(tenantId)));
     });
+    // X5B : la cuisine est prévenue des articles ajoutés à une commande ouverte.
+    this.pushKitchen(acc.tenantId!, acc.id, "push.kitchen-items-added", view, items.reduce((n, i) => n + i.quantity, 0), `order:${orderId}:added:${Date.now()}`);
+    return view;
   }
 
   async updateItem(acc: Account, orderId: string, itemId: string, patch: { quantity?: number; instructions?: string }) {
@@ -457,10 +469,12 @@ export class OrdersService {
     let stock: void | StockEffects = undefined;
     let freshRow = null as OrderRow | null;
     let ready: { id: string; number: number; customerName: string | null; customerPhone: string | null; customerId: string | null } | null = null;
+    let readyEvent: ReadyEvent | null = null;
     const view = await this.prisma.asTenant(tenantId, async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} AND "tenantId" = ${tenantId} FOR UPDATE`;
       const o = await this.load(tx, tenantId, orderId);
       const before = o.status;
+      const wasReady = new Set(o.items.filter((i) => i.status === "READY").map((i) => i.id));
       stock = await fn(tx, o, tenantId);
       await this.recompute(tx, o.id, ops);
       tableChanged = await this.tables.syncStatus(tx, o.tableId);
@@ -469,11 +483,22 @@ export class OrdersService {
       if (fresh.type === "TAKEAWAY" && fresh.status === "READY" && before !== "READY") {
         ready = { id: fresh.id, number: fresh.number, customerName: fresh.customerName, customerPhone: fresh.customerPhone, customerId: fresh.customerId };
       }
+      // X5B : plats prêts (serveur de la commande) et commande prête à récupérer (livreur assigné).
+      const newlyReady = fresh.items.filter((i) => !i.formulaId && i.status === "READY" && !wasReady.has(i.id));
+      if (newlyReady.length) {
+        readyEvent = {
+          orderId: fresh.id, number: fresh.number, waiterId: fresh.waiterId, tableLabel: fresh.table?.label ?? null,
+          whole: fresh.status === "READY", wholeNow: fresh.status === "READY" && before !== "READY",
+          delivery: fresh.delivery ? { id: fresh.delivery.id, driverUserId: fresh.delivery.driver?.user.id ?? null } : null,
+          key: newlyReady.map((i) => `${i.id}@${i.readyAt?.getTime() ?? 0}`).sort().join(","),
+        };
+      }
       freshRow = fresh;
       return orderView(fresh);
     });
     this.realtime.emit(tenantId, "order.updated", view);
     if (freshRow) this.emitDelivery(tenantId, freshRow);
+    if (readyEvent) this.pushReady(tenantId, acc.id, readyEvent as ReadyEvent);
     if (ready) await this.notifyReady(tenantId, ready);
     if (tableChanged && view.table) await this.tables.broadcast(tenantId, view.table.id);
     await this.stock.publish(tenantId, stock);
@@ -486,6 +511,28 @@ export class OrdersService {
     const payload = deliveryView(o.delivery, o);
     this.realtime.emit(tenantId, "delivery.updated", payload);
     if (o.delivery.driver) this.realtime.emitToUsers(tenantId, [o.delivery.driver.user.id], "delivery.updated", payload);
+  }
+
+  /** X5B : alerte push vers la cuisine (comptes KITCHEN actifs) ; jamais bloquante ni attendue. */
+  private pushKitchen(tenantId: string, actorId: string, template: "push.kitchen-new-order" | "push.kitchen-items-added", o: { id: string; number: number }, count: number, dedupeKey: string) {
+    if (count <= 0) return;
+    void this.notifications.sendPush({ template, data: { orderId: o.id, number: o.number, count }, tenantId, audience: { role: "KITCHEN" }, excludeUserId: actorId, dedupeKey });
+  }
+
+  /** X5B : plats prêts → serveur de la commande ; commande entière prête → livreur assigné (une seule alerte par événement et par appareil). */
+  private pushReady(tenantId: string, actorId: string, e: ReadyEvent) {
+    if (e.wholeNow && e.delivery?.driverUserId) {
+      void this.notifications.sendPush({
+        template: "push.delivery-ready", data: { orderId: e.orderId, number: e.number, deliveryId: e.delivery.id }, tenantId,
+        audience: { userIds: [e.delivery.driverUserId] }, excludeUserId: actorId, dedupeKey: `delivery:${e.delivery.id}:ready:${e.key}`,
+      });
+    }
+    if (e.waiterId) {
+      void this.notifications.sendPush({
+        template: "push.order-ready", data: { orderId: e.orderId, number: e.number, tableLabel: e.tableLabel, whole: e.whole }, tenantId,
+        audience: { userIds: [e.waiterId] }, excludeUserId: actorId, dedupeKey: `order:${e.orderId}:ready:${e.key}`,
+      });
+    }
   }
 
   /** SMS « commande prête » : réglage du restaurant (canal SMS, événement `orderReady`) et préférence du client respectés. */

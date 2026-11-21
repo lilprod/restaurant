@@ -100,6 +100,10 @@ services:
       SMS_HTTP_HEADERS: ${SMS_HTTP_HEADERS:-}
       SMS_HTTP_CONTENT_TYPE: ${SMS_HTTP_CONTENT_TYPE:-json}
       SMS_HTTP_BODY: ${SMS_HTTP_BODY:-}
+      # Notifications push web de l'équipe (X5B) : vide = désactivé. Clés : node scripts/ops/gen-vapid-keys.mjs
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-}
       # Fichiers : disque (volume « uploads ») par défaut, ou stockage objet compatible S3.
       STORAGE_DRIVER: ${STORAGE_DRIVER:-disk}
       S3_BUCKET: ${S3_BUCKET:-}

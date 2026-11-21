@@ -2,6 +2,7 @@ import type { ChatMessage, Delivery, Order, Reservation, WaitlistEntry } from "@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { API_BASE, getTenantSpace } from "@/app/spaces";
+import { syncPush } from "@/lib/push";
 import { RealtimeConnection, realtimeOrigin, type RealtimeStatus } from "@/lib/realtime/connection";
 import { applyMenuEvent, applyTableEvent, type MenuEvent, type TableEvent } from "@/lib/realtime/catalog-cache";
 import { applyOrderEvent, resyncServiceQueries } from "@/lib/realtime/order-cache";
@@ -51,6 +52,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   meRef.current = session.user?.id;
   const tzRef = React.useRef<string | undefined>(undefined);
   tzRef.current = localization.data?.timezone;
+
+  // X5B : appareil déjà abonné aux notifications → rattaché au compte et au restaurant courants (changement de compte sur le même appareil).
+  React.useEffect(() => {
+    if (enabled && session.slug) void syncPush(getTenantSpace(session.slug).api.push);
+  }, [enabled, session.slug, session.user?.id]);
 
   React.useEffect(() => {
     if (!enabled) return;

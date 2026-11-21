@@ -21,6 +21,19 @@ export interface EmailParts {
   note?: string;
 }
 
+/**
+ * Contenu d'une notification push (X5B). Affichée sur l'écran verrouillé : AUCUNE donnée sensible (ni montant, ni adresse, ni téléphone,
+ * ni nom de client). L'application recharge le détail par l'API après le clic.
+ */
+export interface PushParts {
+  title: string;
+  body: string;
+  /** Chemin interne DANS l'espace du restaurant (ex. `/mes-livraisons`) ; le service ajoute `/r/<slug>`. */
+  path: string;
+  /** Regroupe / remplace les notifications d'un même objet (ex. `order:<id>`). */
+  tag: string;
+}
+
 export interface TemplateDef<D> {
   /** `transactional` : toujours envoyé. `reminder` : respecte les canaux actifs et les préférences par événement. */
   category: "transactional" | "reminder";
@@ -31,6 +44,8 @@ export interface TemplateDef<D> {
   email?: (data: D, brand: Brand) => EmailParts;
   /** Texte SMS (160 caractères maximum, tronqué sinon). Jamais de secret ni de code dans un SMS. */
   sms?: (data: D, brand: Brand) => string;
+  /** Notification push web du personnel (X5B). */
+  push?: (data: D, brand: Brand) => PushParts;
 }
 
 export const SMS_MAX_LENGTH = 160;

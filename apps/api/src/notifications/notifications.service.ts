@@ -8,8 +8,9 @@ import { TenantSettingsService } from "../settings/tenant-settings.service";
 import { BullQueue, DeliveryJob, DeliveryQueue, SyncQueue } from "./delivery-queue";
 import { LogEmailDriver, createEmailDriver } from "./drivers/email";
 import { LogSmsDriver, createSmsDriver } from "./drivers/sms";
-import type { EmailDriver, SmsDriver } from "./drivers/types";
-import { TEMPLATES, renderEmail, type Brand, type TemplateDataMap, type TemplateName } from "./templates";
+import { PushGoneError, LogPushDriver, createPushDriver } from "./drivers/push";
+import type { EmailDriver, PushDriver, SmsDriver } from "./drivers/types";
+import { TEMPLATES, renderEmail, type Brand, type PushTemplateName, type TemplateDataMap, type TemplateName } from "./templates";
 import { fitSms } from "./templates/types";
 
 export type Channel = "EMAIL" | "SMS";
@@ -31,6 +32,30 @@ export type SendResult =
   | { status: "queued"; id: string }
   | { status: "skipped"; reason: "channel_disabled" | "event_disabled" | "invalid_recipient" | "duplicate" | "error" };
 
+/** Durée de vie d'une alerte chez le service de push (secondes) : au-delà, elle n'est plus livrée. */
+export const PUSH_TTL_SECONDS = 300;
+
+/** Qui reçoit un push : des comptes précis ou tous les comptes d'un rôle (comptes actifs du restaurant uniquement), éventuellement un seul appareil. */
+export interface PushAudience {
+  userIds?: string[];
+  role?: "KITCHEN";
+  /** Un seul appareil (bouton « Tester »). */
+  endpoint?: string;
+}
+
+export interface PushInput<K extends PushTemplateName = PushTemplateName> {
+  template: K;
+  data: TemplateDataMap[K];
+  tenantId: string;
+  audience: PushAudience;
+  /** Compte qui a déclenché l'événement : il n'est pas alerté de sa propre action. */
+  excludeUserId?: string;
+  /** Une seule fois par événement et par appareil (la clé de l'appareil est ajoutée). */
+  dedupeKey?: string;
+}
+
+export type PushResult = { queued: number; skipped?: "disabled" | "channel_disabled" | "event_disabled" | "no_device" | "error" };
+
 const PLATFORM_BRAND: Brand = { name: "Gestion Restaurant", contact: {} };
 
 /**
@@ -41,7 +66,9 @@ const PLATFORM_BRAND: Brand = { name: "Gestion Restaurant", contact: {} };
 export class NotificationsService implements OnModuleDestroy {
   private readonly log = new Logger(NotificationsService.name);
   /** Pilotes actifs (variables d'environnement). Remplaçables dans les tests pour simuler une panne. */
-  drivers: { email: EmailDriver; sms: SmsDriver };
+  drivers: { email: EmailDriver; sms: SmsDriver; push: PushDriver };
+  /** Envois push en cours (non bloquants pour la requête métier) : `flush()` les attend. */
+  private readonly inflight = new Set<Promise<unknown>>();
   private readonly queue: DeliveryQueue;
 
   constructor(
@@ -49,12 +76,12 @@ export class NotificationsService implements OnModuleDestroy {
     private readonly settings: TenantSettingsService,
     @Inject(APP_ENV) private readonly env: Env,
   ) {
-    this.drivers = { email: createEmailDriver(env), sms: createSmsDriver(env) };
+    this.drivers = { email: createEmailDriver(env), sms: createSmsDriver(env), push: createPushDriver(env) };
     const process = this.processJob.bind(this);
     this.queue = env.NOTIFICATIONS_QUEUE === "bullmq"
       ? new BullQueue(env.REDIS_URL!, process, env.NOTIFICATIONS_RETRY_BASE_MS)
       : new SyncQueue(process, env.NOTIFICATIONS_RETRY_BASE_MS);
-    this.log.log(`Notifications : email=${this.drivers.email.name}, sms=${this.drivers.sms.name}, file=${this.queue.mode}`);
+    this.log.log(`Notifications : email=${this.drivers.email.name}, sms=${this.drivers.sms.name}, push=${this.pushEnabled ? this.drivers.push.name : "désactivé"}, file=${this.queue.mode}`);
   }
 
   async onModuleDestroy() {
@@ -69,9 +96,18 @@ export class NotificationsService implements OnModuleDestroy {
   get smsOutbox() {
     return this.drivers.sms instanceof LogSmsDriver ? this.drivers.sms.outbox : [];
   }
+  /** Push capturés par le pilote `log` (tests / développement). */
+  get pushOutbox() {
+    return this.drivers.push instanceof LogPushDriver ? this.drivers.push.outbox : [];
+  }
+  /** Push disponible : clés VAPID configurées (sinon aucun abonnement possible, aucun envoi). */
+  get pushEnabled() {
+    return !!this.env.VAPID_PUBLIC_KEY;
+  }
   /** Attend la fin des envois et reprises en cours (tests). */
-  flush() {
-    return this.queue.flush();
+  async flush() {
+    while (this.inflight.size) await Promise.all([...this.inflight]);
+    await this.queue.flush();
   }
 
   // ── Envoi ──
@@ -143,7 +179,9 @@ export class NotificationsService implements OnModuleDestroy {
   /** Une tentative d'envoi. `true` = terminé (envoyé ou abandonné après la dernière tentative), `false` = à réessayer. */
   private async processJob(job: DeliveryJob, attempt: number, maxAttempts: number): Promise<boolean> {
     try {
-      if (job.channel === "EMAIL") await this.drivers.email.send({ to: job.to, from: job.from, fromName: job.fromName, subject: job.subject, text: job.text, html: job.html });
+      if (job.channel === "PUSH") {
+        if (await this.sendPushJob(job, attempt)) return true;
+      } else if (job.channel === "EMAIL") await this.drivers.email.send({ to: job.to, from: job.from, fromName: job.fromName, subject: job.subject, text: job.text, html: job.html });
       else await this.drivers.sms.send({ to: job.to, text: job.text });
       await this.update(job.tenantId, job.logId, { status: "SENT", attempts: attempt, error: null, sentAt: new Date() });
       return true;
@@ -153,6 +191,102 @@ export class NotificationsService implements OnModuleDestroy {
       this.log.warn(`Envoi ${job.logId} : tentative ${attempt}/${maxAttempts} échouée (${error})`);
       await this.update(job.tenantId, job.logId, { status: final ? "FAILED" : "QUEUED", attempts: attempt, error });
       return final;
+    }
+  }
+
+  // ── Push web (X5B) ──
+
+  /**
+   * Envoie une notification push aux appareils abonnés du personnel : mêmes règles que `send` (préférences du restaurant, journal,
+   * reprises, `dedupeKey`), mais jamais attendu par la requête métier. Ne lève jamais d'exception.
+   */
+  sendPush<K extends PushTemplateName>(input: PushInput<K>, opts: { ignorePreferences?: boolean } = {}): Promise<PushResult> {
+    const p: Promise<PushResult> = this.dispatchPush(input, opts).catch((e: Error) => {
+      this.log.error(`Push « ${input.template} » impossible : ${e.message}`);
+      return { queued: 0, skipped: "error" as const };
+    });
+    const tracked = p.finally(() => this.inflight.delete(tracked));
+    this.inflight.add(tracked);
+    return p;
+  }
+
+  private async dispatchPush<K extends PushTemplateName>(input: PushInput<K>, opts: { ignorePreferences?: boolean }): Promise<PushResult> {
+    if (!this.pushEnabled) return { queued: 0, skipped: "disabled" };
+    const def = TEMPLATES[input.template] as (typeof TEMPLATES)[TemplateName];
+    if (!def.push) throw new Error(`Le modèle « ${input.template} » n'a pas de contenu push`);
+    const { tenantId, audience } = input;
+    const ctx = await this.tenantContext(tenantId);
+    if (def.category === "reminder" && !opts.ignorePreferences) {
+      if (ctx.prefs.channels.push === false) return { queued: 0, skipped: "channel_disabled" };
+      if (def.event && ctx.prefs.events[def.event] === false) return { queued: 0, skipped: "event_disabled" };
+    }
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId }, select: { slug: true } });
+    if (!tenant) throw new Error("Restaurant introuvable");
+    const parts = def.push(input.data as never, ctx.brand);
+    const payload = { title: parts.title, body: parts.body, url: `/r/${tenant.slug}${parts.path}`, tag: parts.tag, renotify: true };
+
+    const subs = await this.prisma.asTenant(tenantId, (tx) => tx.pushSubscription.findMany({
+      where: {
+        tenantId,
+        user: { isActive: true, ...(audience.role ? { role: audience.role } : {}) },
+        AND: [
+          audience.userIds ? { userId: { in: audience.userIds } } : {},
+          input.excludeUserId ? { userId: { not: input.excludeUserId } } : {},
+          audience.endpoint ? { endpoint: audience.endpoint } : {},
+        ],
+      },
+      select: { id: true, userId: true },
+    }));
+    if (!subs.length) return { queued: 0, skipped: "no_device" };
+
+    const json = JSON.stringify(payload);
+    let queued = 0;
+    for (const sub of subs) {
+      let id: string;
+      try {
+        const row = await this.prisma.asTenant(tenantId, (tx) => tx.notificationLog.create({
+          data: {
+            tenantId, channel: "PUSH", to: sub.id, template: input.template, category: def.category, subject: payload.title, locale: "fr",
+            dedupeKey: input.dedupeKey ? `${input.dedupeKey}:${sub.id}` : undefined,
+            // Charge utile exacte (sans donnée sensible par construction) : consultable dans le journal.
+            data: { ...payload, userId: sub.userId },
+          },
+          select: { id: true },
+        }));
+        id = row.id;
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") continue;   // déjà envoyé pour cet événement
+        throw e;
+      }
+      const job: DeliveryJob = { logId: id, tenantId, channel: "PUSH", subscriptionId: sub.id, payload: json };
+      try {
+        await this.queue.add(job);
+      } catch (e) {
+        await this.update(tenantId, id, { status: "FAILED", error: `File d'envoi indisponible : ${(e as Error).message}`.slice(0, 300) });
+      }
+      queued++;
+    }
+    return { queued };
+  }
+
+  /**
+   * Une tentative d'envoi push. `true` = abonnement expiré (404 / 410 du service de push) : appareil supprimé, journal en échec, pas de reprise.
+   * Toute autre erreur est levée : la file réessaie (5 tentatives, délai doublé).
+   */
+  private async sendPushJob(job: Extract<DeliveryJob, { channel: "PUSH" }>, attempt: number): Promise<boolean> {
+    const sub = await this.prisma.asTenant(job.tenantId, (tx) => tx.pushSubscription.findFirst({ where: { id: job.subscriptionId, tenantId: job.tenantId } }));
+    if (!sub) {
+      await this.update(job.tenantId, job.logId, { status: "FAILED", attempts: attempt, error: "Appareil désabonné avant l'envoi" });
+      return true;
+    }
+    try {
+      await this.drivers.push.send({ target: { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth }, payload: job.payload, ttl: PUSH_TTL_SECONDS, urgency: "high" });
+      return false;
+    } catch (e) {
+      if (!(e instanceof PushGoneError)) throw e;
+      await this.prisma.asTenant(job.tenantId, (tx) => tx.pushSubscription.deleteMany({ where: { id: sub.id } }));
+      await this.update(job.tenantId, job.logId, { status: "FAILED", attempts: attempt, error: `${e.message} : appareil supprimé` });
+      return true;
     }
   }
 
@@ -187,6 +321,7 @@ export class NotificationsService implements OnModuleDestroy {
     const row = await (scope === "platform" ? this.prisma.asPlatform(find) : this.prisma.asTenant(scope.tenantId, find));
     if (!row) throw new NotFoundException("Notification introuvable");
     if (row.status === "QUEUED") throw new ConflictException("Ce message est encore en cours d'envoi");
+    if (row.channel === "PUSH") throw new ConflictException("Une notification push ne peut pas être renvoyée : elle est périmée au bout de quelques minutes");
     if (!row.data || !(row.template in TEMPLATES)) {
       throw new ConflictException("Ce message contient des informations confidentielles : il ne peut pas être renvoyé");
     }
@@ -205,7 +340,7 @@ export class NotificationsService implements OnModuleDestroy {
       tenantId: r.tenantId,
       ...(withTenant.tenant !== undefined ? { tenant: withTenant.tenant } : {}),
       channel: r.channel,
-      to: r.channel === "EMAIL" ? maskEmail(r.to) : maskPhone(r.to),
+      to: r.channel === "EMAIL" ? maskEmail(r.to) : r.channel === "PUSH" ? `Appareil ••${r.to.slice(-4)}` : maskPhone(r.to),
       template: r.template,
       category: r.category,
       subject: r.subject,
@@ -215,7 +350,9 @@ export class NotificationsService implements OnModuleDestroy {
       createdAt: r.createdAt,
       sentAt: r.sentAt,
       resendOfId: r.resendOfId,
-      canResend: r.status !== "QUEUED" && r.data !== null,
+      canResend: r.channel !== "PUSH" && r.status !== "QUEUED" && r.data !== null,
+      /** Push : titre, texte, adresse interne et regroupement tels qu'envoyés à l'appareil (aucune donnée sensible). */
+      ...(r.channel === "PUSH" ? { payload: pushPayloadOf(r.data) } : {}),
     };
   }
 
@@ -238,7 +375,7 @@ export class NotificationsService implements OnModuleDestroy {
     const s = (await this.settings.all(tenantId)) as unknown as {
       business: { phone?: string; email?: string; address?: { street?: string; postalCode?: string; city?: string; country?: string } };
       branding: { displayName: string; assets?: { logo?: string | null } };
-      notifications: { channels: { email: boolean; sms: boolean }; senderName?: string; signature?: string; events: Record<string, boolean> };
+      notifications: { channels: { email: boolean; sms: boolean; push?: boolean }; senderName?: string; signature?: string; events: Record<string, boolean> };
     };
     const a = s.business.address ?? {};
     const address = [a.street, [a.postalCode, a.city].filter(Boolean).join(" "), a.country].filter(Boolean).join(", ");
@@ -250,4 +387,9 @@ export class NotificationsService implements OnModuleDestroy {
     };
     return { brand, fromName: s.notifications.senderName || s.branding.displayName, prefs: s.notifications };
   }
+}
+
+function pushPayloadOf(data: Prisma.JsonValue | null) {
+  const d = (data ?? {}) as { title?: string; body?: string; url?: string; tag?: string };
+  return { title: d.title ?? "", body: d.body ?? "", url: d.url ?? "", tag: d.tag ?? "" };
 }

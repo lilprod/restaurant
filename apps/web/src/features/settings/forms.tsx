@@ -312,6 +312,7 @@ export function NotificationsForm({ adapter }: { adapter: SettingsAdapter }) {
         <div className="divide-y divide-border">
           <S form={form} name="channels.email" label="Email" description="Relances et messages non critiques par email." />
           <S form={form} name="channels.sms" label="SMS" description="Relances par SMS au numéro du restaurant (8 chiffres au Togo, ou format international)." />
+          <S form={form} name="channels.push" label="Notifications push de l'équipe" description="Alertes sur le téléphone du personnel (cuisine, serveur, livreur). Chaque personne les active sur son appareil." />
         </div>
       </SettingsSection>
       <SettingsSection title="Événements" description="Choisissez les messages non critiques que vous souhaitez recevoir.">

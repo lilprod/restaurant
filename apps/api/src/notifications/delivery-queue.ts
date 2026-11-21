@@ -7,7 +7,9 @@ export const MAX_ATTEMPTS = 5;
 
 export type DeliveryJob =
   | { logId: string; tenantId: string | null; channel: "EMAIL"; to: string; from: string; fromName?: string; subject: string; text: string; html: string }
-  | { logId: string; tenantId: string | null; channel: "SMS"; to: string; text: string };
+  | { logId: string; tenantId: string | null; channel: "SMS"; to: string; text: string }
+  /** X5B : un envoi par appareil abonné ; l'abonnement est relu au moment de l'envoi (il a pu être supprimé entre-temps). */
+  | { logId: string; tenantId: string; channel: "PUSH"; subscriptionId: string; payload: string };
 
 /** Exécute une tentative ; `true` = terminé (envoyé ou définitivement abandonné), `false` = à réessayer. */
 export type JobProcessor = (job: DeliveryJob, attempt: number, maxAttempts: number) => Promise<boolean>;

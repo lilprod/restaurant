@@ -137,6 +137,13 @@ export class DeliveryService {
       return this.load(tx, tenantId, id);
     });
     this.emit(tenantId, row, previous);
+    // X5B : alerte push du nouveau livreur ; l'ancien est prévenu que la livraison lui est retirée (réattribution).
+    if (previous !== driverUserId) {
+      const stamp = row.assignedAt?.getTime() ?? Date.now();
+      const data = { orderId: row.orderId, number: row.order.number, deliveryId: row.id };
+      void this.notifications.sendPush({ template: "push.delivery-assigned", data, tenantId, audience: { userIds: [driverUserId] }, excludeUserId: acc.id, dedupeKey: `delivery:${id}:assigned:${stamp}` });
+      if (previous) void this.notifications.sendPush({ template: "push.delivery-unassigned", data, tenantId, audience: { userIds: [previous] }, excludeUserId: acc.id, dedupeKey: `delivery:${id}:unassigned:${stamp}:${previous}` });
+    }
     return view(row);
   }
 

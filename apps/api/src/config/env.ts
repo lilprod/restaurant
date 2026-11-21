@@ -70,6 +70,14 @@ const envSchema = z.object({
   REDIS_URL: z.string().optional(),
   /** Délai de base (ms) avant la première reprise ; il double à chaque nouvelle tentative. */
   NOTIFICATIONS_RETRY_BASE_MS: z.coerce.number().int().min(0).default(30_000),
+  // ── Notifications push web (X5B) ──
+  /** Clés VAPID (`node scripts/gen-vapid.mjs`). Sans clés : push désactivé (pilote `log`). Publique : 65 octets, privée : 32 octets, en base64url. */
+  VAPID_PUBLIC_KEY: z.string().regex(/^[A-Za-z0-9_-]{87}$/, "clé publique VAPID invalide (87 caractères base64url)").optional(),
+  VAPID_PRIVATE_KEY: z.string().regex(/^[A-Za-z0-9_-]{43}$/, "clé privée VAPID invalide (43 caractères base64url)").optional(),
+  /** Contact de l'éditeur transmis aux services de push : `mailto:…` ou `https://…`. */
+  VAPID_SUBJECT: z.string().regex(/^(mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/, "mailto:adresse ou https://adresse attendu").optional(),
+  /** `webpush` (défaut si les clés sont présentes) ou `log` (rien ne sort du serveur : développement, tests, démonstration). */
+  PUSH_DRIVER: z.enum(["webpush", "log"]).optional(),
 }).superRefine((env, ctx) => {
   const need = (cond: boolean, path: string, message: string) => { if (!cond) ctx.addIssue({ code: "custom", path: [path], message }); };
   if (env.MAIL_DRIVER === "smtp") need(!!env.SMTP_URL, "SMTP_URL", "obligatoire avec MAIL_DRIVER=smtp");
@@ -85,6 +93,12 @@ const envSchema = z.object({
       catch { need(false, "SMS_HTTP_HEADERS", "JSON invalide"); }
     }
   }
+  // Les trois variables VAPID vont ensemble ; sans elles, le push est simplement désactivé (jamais bloquant).
+  const vapid = [env.VAPID_PUBLIC_KEY, env.VAPID_PRIVATE_KEY, env.VAPID_SUBJECT].filter(Boolean).length;
+  if (vapid > 0 && vapid < 3) {
+    for (const k of ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"] as const) need(!!env[k], k, "à renseigner avec les deux autres variables VAPID (ou les retirer toutes)");
+  }
+  if (env.PUSH_DRIVER === "webpush") need(vapid === 3, "VAPID_PUBLIC_KEY", "obligatoire avec PUSH_DRIVER=webpush");
   if (env.NOTIFICATIONS_QUEUE === "bullmq") need(!!env.REDIS_URL, "REDIS_URL", "obligatoire avec NOTIFICATIONS_QUEUE=bullmq");
   if (env.STORAGE_DRIVER === "s3") {
     need(!!env.S3_BUCKET, "S3_BUCKET", "obligatoire avec STORAGE_DRIVER=s3");

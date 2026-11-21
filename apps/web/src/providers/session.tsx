@@ -1,3 +1,5 @@
+import { getTenantSpace } from "@/app/spaces";
+import { disablePush } from "@/lib/push";
 import { loadProfile, resetIfOtherUser, saveProfile, wipeCachesKeepQueue, wipeTenantData } from "@/lib/offline/persist";
 import { DEFAULT_POLICY_BY_SPACE } from "@/lib/policy";
 import {
@@ -134,6 +136,8 @@ export function SessionProvider({ space, client, auth, account, slug, licenseSto
   }, [client, account, licenseStorageKey, space, slug]);
 
   const logout = React.useCallback(async (opts: { silent?: boolean; message?: string } = {}) => {
+    // X5B : l'appareil ne reçoit plus d'alertes du compte (abonnement retiré côté navigateur ET côté API, tant que la session est valide).
+    if (space === "tenant" && slug) await disablePush(getTenantSpace(slug).api.push);
     await client.logout();
     writeLicense(licenseStorageKey, null);
     qc.removeQueries({ queryKey: [...queryKey] });

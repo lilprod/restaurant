@@ -19,6 +19,7 @@ import { toastError } from "@/lib/errors";
 import { formatFcfa, formatTime } from "@/lib/format";
 import { ORDER_PAYMENT_METHOD_LABEL } from "@/lib/labels";
 import { useTenant } from "../hooks";
+import { PushReminder } from "../push/push-reminder";
 import { DeliveryAddress, DeliveryStatusBadge } from "./delivery-bits";
 import { mapsLink, telLink, useApplyDelivery, useMyDeliveries } from "./delivery-hooks";
 
@@ -40,6 +41,7 @@ export function MyDeliveriesPage() {
         <h1 className="text-2xl font-semibold tracking-[-0.02em]">Mes livraisons</h1>
         <LiveIndicator />
       </header>
+      <PushReminder />
       {q.isLoading ? (
         <div className="flex flex-col gap-4" aria-busy="true"><Skeleton className="h-64 rounded-xl" /><Skeleton className="h-64 rounded-xl" /></div>
       ) : (
