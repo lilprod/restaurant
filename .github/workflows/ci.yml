@@ -1,5 +1,8 @@
 name: CI
-on: [push, pull_request]
+on:
+  push:
+    branches-ignore: ["wip/**"]   # instantanés de travail en cours des agents (scripts/dev/wip-push.sh)
+  pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
