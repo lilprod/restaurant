@@ -66,7 +66,7 @@ jobs:
       - run: pnpm --filter api prisma:generate
       - run: pnpm --filter @restaurant/shared-types --filter @restaurant/utils --filter @restaurant/validation build
       - name: Tests e2e API sous RLS (rôle non superuser app_rls)
-        run: bash scripts/dev/test-rls.sh
+        run: bash scripts/dev/test-rls.sh --reporters=default --reporters=github-actions   # échecs publiés en annotations
 
   # Web : types, tests Vitest et build de production.
   web:
