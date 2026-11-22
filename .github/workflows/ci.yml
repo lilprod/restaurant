@@ -37,8 +37,12 @@ jobs:
       - run: pnpm lint
       - run: pnpm build
       - run: pnpm test
+      # Les tests provoquent volontairement des erreurs SQL (doublons, RLS) : sans ce réglage, le journal du conteneur PostgreSQL,
+      # affiché en fin de job, noie la sortie de Jest. Il ne garde que les erreurs fatales du serveur.
+      - name: Journal PostgreSQL réduit (sortie des tests lisible)
+        run: psql "postgresql://app:app@localhost:5432/restaurant_test" -qc "ALTER SYSTEM SET log_min_messages = 'fatal'" -c "ALTER SYSTEM SET log_min_error_statement = 'panic'" -c "SELECT pg_reload_conf()"
       - name: Tests e2e API (PostgreSQL + RLS)
-        run: pnpm --filter api test:e2e
+        run: pnpm --filter api test:e2e --reporters=default --reporters=github-actions
 
   # Toute la suite e2e sous un rôle NON superuser (la RLS s'applique vraiment) : c'est la configuration de production.
   e2e-rls:
@@ -65,6 +69,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter api prisma:generate
       - run: pnpm --filter @restaurant/shared-types --filter @restaurant/utils --filter @restaurant/validation build
+      # Les tests provoquent volontairement des erreurs SQL (doublons, RLS) : sans ce réglage, le journal du conteneur PostgreSQL,
+      # affiché en fin de job, noie la sortie de Jest. Il ne garde que les erreurs fatales du serveur.
+      - name: Journal PostgreSQL réduit (sortie des tests lisible)
+        run: psql "postgresql://app:app@localhost:5432/restaurant_test" -qc "ALTER SYSTEM SET log_min_messages = 'fatal'" -c "ALTER SYSTEM SET log_min_error_statement = 'panic'" -c "SELECT pg_reload_conf()"
       - name: Tests e2e API sous RLS (rôle non superuser app_rls)
         run: bash scripts/dev/test-rls.sh --reporters=default --reporters=github-actions   # échecs publiés en annotations
 
