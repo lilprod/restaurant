@@ -16,6 +16,11 @@ ts="$(date -u +%Y%m%dT%H%M%SZ)"; name="restaurant-$ts.dump.$(ext)"
 work="$(mktemp -d "$DIR/.work.XXXXXX")"; trap 'rm -rf "$work"' EXIT
 
 log "Sauvegarde de « $DB » démarrée"
+# Une sauvegarde faite avec un pg_dump plus récent que le serveur peut contenir des instructions que pg_restore refusera sur ce même
+# serveur (ex. `SET transaction_timeout`, PostgreSQL 17+) : on refuse plutôt que de produire une sauvegarde impossible à restaurer.
+server_major="$(psql -X -q -At -d "$DB" -c 'SHOW server_version_num' | cut -c1-2)"
+client_major="$(pg_dump --version | grep -oE '[0-9]+' | head -1)"
+[ "$client_major" -le "$server_major" ] || die "pg_dump $client_major plus récent que le serveur PostgreSQL $server_major : utilisez les outils clients $server_major (ex. /usr/lib/postgresql/$server_major/bin)"
 # Manifeste calculé juste avant le dump (instantané cohérent entre ses propres lignes).
 psql -X -q -At -v ON_ERROR_STOP=1 -d "$DB" > "$work/manifest" <<'SQL'
 BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;
