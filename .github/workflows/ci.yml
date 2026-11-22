@@ -120,15 +120,19 @@ jobs:
       - name: Données d'exemple (rôle propriétaire)
         working-directory: apps/api
         run: DATABASE_URL="postgresql://restaurant_owner:${DB_OWNER_PASSWORD}@localhost:5432/restaurant" pnpm exec tsx prisma/seed-demo.ts demo --create
-      # Outils clients de la même version majeure que le serveur (postgres:16, comme en production) : un pg_dump plus récent
-      # (17+, celui de l'image du runner) écrit `SET transaction_timeout`, que pg_restore ne peut pas rejouer sur un serveur 16.
+      # Outils clients de la même version majeure que le serveur (postgres:16, comme l'image de sauvegarde de production) : le
+      # pg_dump du runner (17+) écrit `SET transaction_timeout`, que pg_restore ne peut pas rejouer sur un serveur 16, et Ubuntu
+      # ne fournit plus postgresql-client-16. pg_dump / pg_restore passent donc par l'image postgres:16 (fichiers échangés via /tmp).
       - name: Outils PostgreSQL 16 (pg_dump / pg_restore alignés sur le serveur)
         run: |
-          if [ ! -x /usr/lib/postgresql/16/bin/pg_dump ]; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq postgresql-client-16
-          fi
-          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
-          /usr/lib/postgresql/16/bin/pg_dump --version
+          docker pull -q postgres:16
+          bin="$RUNNER_TEMP/pg16"; mkdir -p "$bin"
+          for tool in pg_dump pg_restore; do
+            printf '#!/bin/sh\nexec docker run --rm -i --network host -e PGHOST -e PGPORT -e PGUSER -e PGPASSWORD -e PGDATABASE -v /tmp:/tmp postgres:16 %s "$@"\n' "$tool" > "$bin/$tool"
+            chmod +x "$bin/$tool"
+          done
+          echo "$bin" >> "$GITHUB_PATH"
+          "$bin/pg_dump" --version
       - name: Sauvegarde chiffrée puis restauration vérifiée
         env: { PGUSER: postgres, PGPASSWORD: ci-admin-password-0123456789, PGDATABASE: restaurant }
         run: bash scripts/ops/test-backup-restore.sh
