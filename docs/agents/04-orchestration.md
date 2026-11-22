@@ -77,6 +77,11 @@ Pour un agent web qui suit un agent API : ajouter « L'API du sous-projet est in
 7. Mettre à jour le tableau d'état de `docs/agents/README.md` et, si la fiche a révélé des choses, la fiche suivante concernée.
 8. Résumer au propriétaire : livré, vérifié (chiffres), limites, décisions à prendre.
 
+**Après chaque push sur `master` : vérifier la CI GitHub du commit** (5 jobs : build, e2e-rls, web, ops, docker) avant d'annoncer
+l'intégration ou de lancer le sous-projet suivant. Une CI rouge se traite tout de suite (cause racine, jamais de test désactivé).
+Un test qui passe en local mais échoue en CI : rejouer avec les contraintes de la CI (2 processeurs, `?connection_limit=3` dans
+`TEST_DATABASE_URL`) ; les échecs Jest apparaissent en annotations et en fin de journal du job.
+
 ## 6. Décisions réservées au propriétaire (ne pas les trancher en silence)
 
 - Fournisseurs externes payants : email (Brevo, SMTP…), SMS (Twilio, opérateur local…), stockage (S3, Cloudinary), hébergement, agrégateur de paiement (CinetPay, PayDunya, FedaPay…).
