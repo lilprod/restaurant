@@ -583,7 +583,9 @@ export class OrdersService {
   /** Valide plats et formules (disponibilité, horaires, choix, options), applique les promotions et fige prix, noms et TVA. */
   private async buildLines(tx: Tx, tenantId: string, items: OrderItemInput[], ops: Ops) {
     const now = this.clock.now();
-    const tz = (await this.settings.tenant(tenantId)).timezone;
+    // Lu dans la transaction : passer par le client principal réclamerait une seconde connexion pendant que celle-ci est tenue
+    // (blocage mutuel des commandes simultanées quand les connexions manquent).
+    const tz = (await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { timezone: true } })).timezone;
     const formulas = await tx.formula.findMany({
       where: { id: { in: [...new Set(items.flatMap((i) => (i.formulaId ? [i.formulaId] : [])))] }, tenantId, archivedAt: null },
       include: { steps: { orderBy: { sortOrder: "asc" }, include: { items: true } } },

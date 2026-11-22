@@ -69,7 +69,15 @@ export class NotificationsService implements OnModuleDestroy {
   drivers: { email: EmailDriver; sms: SmsDriver; push: PushDriver };
   /** Envois push en cours (non bloquants pour la requête métier) : `flush()` les attend. */
   private readonly inflight = new Set<Promise<unknown>>();
+  /** File d'attente des envois push (un à la fois). */
+  private pushChain: Promise<void> = Promise.resolve();
   private readonly queue: DeliveryQueue;
+
+  /** Instances vivantes (une par application) : `settleAll()` permet aux tests d'attendre les envois en cours avant de vider la base. */
+  private static readonly live = new Set<NotificationsService>();
+  static async settleAll() {
+    for (const svc of NotificationsService.live) while (svc.inflight.size) await Promise.allSettled([...svc.inflight]);
+  }
 
   constructor(
     private readonly prisma: PrismaService,
@@ -81,11 +89,16 @@ export class NotificationsService implements OnModuleDestroy {
     this.queue = env.NOTIFICATIONS_QUEUE === "bullmq"
       ? new BullQueue(env.REDIS_URL!, process, env.NOTIFICATIONS_RETRY_BASE_MS)
       : new SyncQueue(process, env.NOTIFICATIONS_RETRY_BASE_MS);
+    NotificationsService.live.add(this);
     this.log.log(`Notifications : email=${this.drivers.email.name}, sms=${this.drivers.sms.name}, push=${this.pushEnabled ? this.drivers.push.name : "désactivé"}, file=${this.queue.mode}`);
   }
 
   async onModuleDestroy() {
+    // Arrêt propre : on attend les envois push lancés sans attente par les modules métier avant de fermer la file,
+    // sinon ils continuent d'interroger la base après la fermeture (notifications perdues, requêtes orphelines).
+    while (this.inflight.size) await Promise.allSettled([...this.inflight]);
     await this.queue.close();
+    NotificationsService.live.delete(this);
   }
 
   /** Emails capturés par le pilote `log` (tests / développement). */
@@ -201,10 +214,13 @@ export class NotificationsService implements OnModuleDestroy {
    * reprises, `dedupeKey`), mais jamais attendu par la requête métier. Ne lève jamais d'exception.
    */
   sendPush<K extends PushTemplateName>(input: PushInput<K>, opts: { ignorePreferences?: boolean } = {}): Promise<PushResult> {
-    const p: Promise<PushResult> = this.dispatchPush(input, opts).catch((e: Error) => {
+    // Envois en arrière-plan traités un par un : ils n'occupent jamais plus d'une connexion à la base, pour ne pas priver
+    // les requêtes métier (une rafale de commandes déclenche autant d'envois, chacun dans sa propre transaction).
+    const p: Promise<PushResult> = this.pushChain.then(() => this.dispatchPush(input, opts)).catch((e: Error) => {
       this.log.error(`Push « ${input.template} » impossible : ${e.message}`);
       return { queued: 0, skipped: "error" as const };
     });
+    this.pushChain = p.then(() => undefined);
     const tracked = p.finally(() => this.inflight.delete(tracked));
     this.inflight.add(tracked);
     return p;

@@ -6,6 +6,7 @@ import * as argon2 from "argon2";
 import request from "supertest";
 import { AppModule } from "../src/app.module";
 import { setupApp } from "../src/setup";
+import { NotificationsService } from "../src/notifications/notifications.service";
 
 export async function createApp() {
   const mod = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -17,6 +18,8 @@ export async function createApp() {
 
 /** Vide toutes les tables (hors historique de migrations). */
 export async function resetDb(prisma: PrismaClient) {
+  // Envois push non attendus par les requêtes précédentes : les laisser finir avant de vider les tables (sinon verrous / erreurs au hasard).
+  await NotificationsService.settleAll();
   const rows = await prisma.$queryRaw<{ tablename: string }[]>`
     SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('_prisma_migrations', 'Allergen')`;
   if (rows.length === 0) throw new Error("Base de test vide : lancez `pnpm test:e2e` (applique les migrations d'abord)");

@@ -3,6 +3,12 @@ import { Prisma, PrismaClient } from "@prisma/client";
 
 export type Tx = Prisma.TransactionClient;
 
+/**
+ * Délais des transactions interactives. Les valeurs par défaut de Prisma (attente d'une connexion 2 s, durée 5 s) font échouer
+ * en 500 les requêtes d'un coup de feu (commandes simultanées qui verrouillent les mêmes lignes) sur un serveur à peu de connexions.
+ */
+const TX_OPTIONS = { maxWait: 10_000, timeout: 20_000 } as const;
+
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
   async onModuleInit() {
@@ -17,7 +23,7 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     return this.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
       return fn(tx);
-    });
+    }, TX_OPTIONS);
   }
 
   /**
@@ -28,6 +34,6 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
     return this.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.bypass_rls', 'on', true)`;
       return fn(tx);
-    });
+    }, TX_OPTIONS);
   }
 }
