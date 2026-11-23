@@ -1,6 +1,7 @@
 import { INestApplication } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 import request from "supertest";
+import { hashToken } from "../src/security/session.service";
 import { asPlatform, createApp, login, resetDb, seedPlatform } from "./helpers";
 
 const DAY = 86_400_000;
@@ -37,10 +38,14 @@ describe("Plateforme SaaS (e2e)", () => {
       const first = (await login(app, "root@test.local")).body;
       const second = await api().post("/api/v1/platform/auth/refresh").send({ refreshToken: first.refreshToken });
       expect(second.status).toBe(200);
-      const replay = await api().post("/api/v1/platform/auth/refresh").send({ refreshToken: first.refreshToken });
-      expect(replay.status).toBe(401);
       const me = await api().get("/api/v1/platform/account/me").set(auth(second.body.accessToken));
       expect(me.body.role).toBe("SUPER_ADMIN");
+      // Ancien jeton rejoué : accepté pendant le délai de grâce (réponse perdue), révocation de la session au-delà (vol présumé).
+      const replay = await api().post("/api/v1/platform/auth/refresh").send({ refreshToken: first.refreshToken });
+      expect(replay.status).toBe(200);
+      await asPlatform(prisma, (tx) => tx.refreshToken.updateMany({ where: { previousTokenHash: hashToken(first.refreshToken) }, data: { rotatedAt: new Date(Date.now() - 60_000) } }));
+      expect((await api().post("/api/v1/platform/auth/refresh").send({ refreshToken: first.refreshToken })).status).toBe(401);
+      expect((await api().post("/api/v1/platform/auth/refresh").send({ refreshToken: replay.body.refreshToken })).status).toBe(401);
     });
     it("limite le rôle SUPPORT en lecture seule", async () => {
       expect((await api().get("/api/v1/platform/plans").set(auth(supportTok))).status).toBe(200);

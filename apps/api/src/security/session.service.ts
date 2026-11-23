@@ -9,6 +9,9 @@ import type { Account, Space } from "./accounts.repo";
 
 export const hashToken = (t: string) => createHash("sha256").update(t).digest("hex");
 
+/** Délai pendant lequel le jeton de rafraîchissement remplacé reste accepté (réponse de rotation perdue). */
+export const ROTATION_GRACE_MS = 20_000;
+
 export interface AccessClaims {
   sub: string;
   typ: Space;
@@ -49,16 +52,42 @@ export class SessionService {
     return this.jwt.signAsync({ sub: acc.id, typ: "2fa", space: acc.space, tid: acc.tenantId ?? undefined }, { expiresIn: "5m" });
   }
 
-  /** Rotation en place : l'ancien jeton cesse de fonctionner, l'identifiant de session reste le même. */
+  /**
+   * Rotation en place (l'identifiant de session reste le même), avec délai de grâce :
+   * - jeton courant → nouveau jeton ; l'ancien devient « précédent » ;
+   * - jeton précédent présenté dans les ROTATION_GRACE_MS qui suivent la rotation (réponse perdue : rechargement, navigation,
+   *   coupure réseau, deux requêtes simultanées) → nouveau jeton, la session continue ;
+   * - jeton précédent présenté APRÈS ce délai → réutilisation d'un jeton déjà remplacé : vol présumé, toute la session est révoquée.
+   */
   async rotate(oldToken: string, meta: RequestMeta) {
-    const row = await this.prisma.refreshToken.findUnique({ where: { tokenHash: hashToken(oldToken) } });
-    if (!row || row.revokedAt || row.expiresAt < new Date()) return null;
+    const h = hashToken(oldToken);
+    const now = new Date();
+    const usable = (r: { revokedAt: Date | null; expiresAt: Date }) => !r.revokedAt && r.expiresAt >= now;
+    const current = await this.prisma.refreshToken.findUnique({ where: { tokenHash: h } });
+    if (current) {
+      if (!usable(current)) return null;
+      const refreshToken = randomBytes(48).toString("base64url");
+      const claimed = await this.prisma.refreshToken.updateMany({
+        where: { id: current.id, tokenHash: h, revokedAt: null },
+        data: { tokenHash: hashToken(refreshToken), previousTokenHash: h, rotatedAt: now, lastUsedAt: now, ip: meta.ip, userAgent: meta.userAgent },
+      });
+      if (claimed.count === 1) return { row: current, refreshToken };
+      // Une requête simultanée vient de faire tourner ce jeton : il est maintenant « précédent », on passe par la grâce ci-dessous.
+    }
+    const prev = await this.prisma.refreshToken.findUnique({ where: { previousTokenHash: h } });
+    if (!prev || !usable(prev) || !prev.rotatedAt) return null;
+    if (now.getTime() - prev.rotatedAt.getTime() > ROTATION_GRACE_MS) {
+      await this.prisma.refreshToken.updateMany({ where: { id: prev.id, revokedAt: null }, data: { revokedAt: now } });
+      if (prev.userId) await this.dropPush({ sessionId: prev.id, userId: prev.userId });
+      return null;
+    }
     const refreshToken = randomBytes(48).toString("base64url");
+    // Le délai de grâce court toujours depuis la PREMIÈRE rotation (rotatedAt inchangé) : il ne peut pas être prolongé indéfiniment.
     const claimed = await this.prisma.refreshToken.updateMany({
-      where: { id: row.id, tokenHash: row.tokenHash, revokedAt: null },
-      data: { tokenHash: hashToken(refreshToken), lastUsedAt: new Date(), ip: meta.ip, userAgent: meta.userAgent },
+      where: { id: prev.id, tokenHash: prev.tokenHash, revokedAt: null },
+      data: { tokenHash: hashToken(refreshToken), lastUsedAt: now, ip: meta.ip, userAgent: meta.userAgent },
     });
-    return claimed.count === 1 ? { row, refreshToken } : null;
+    return claimed.count === 1 ? { row: prev, refreshToken } : null;
   }
 
   async isActive(sid: string, accountId: string): Promise<boolean> {
@@ -102,8 +131,10 @@ export class SessionService {
   }
 
   async revokeByToken(token: string) {
-    const row = await this.prisma.refreshToken.findUnique({ where: { tokenHash: hashToken(token) }, select: { id: true, userId: true } });
-    await this.prisma.refreshToken.updateMany({ where: { tokenHash: hashToken(token), revokedAt: null }, data: { revokedAt: new Date() } });
+    // Jeton courant ou précédent (déconnexion après une réponse de rotation perdue) : la session est fermée dans les deux cas.
+    const where = { OR: [{ tokenHash: hashToken(token) }, { previousTokenHash: hashToken(token) }] };
+    const row = await this.prisma.refreshToken.findFirst({ where, select: { id: true, userId: true } });
+    await this.prisma.refreshToken.updateMany({ where: { ...where, revokedAt: null }, data: { revokedAt: new Date() } });
     if (row?.userId) await this.dropPush({ sessionId: row.id, userId: row.userId });
   }
 }

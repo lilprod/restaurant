@@ -6,6 +6,7 @@ import { rmSync } from "node:fs";
 import request from "supertest";
 import { MailService } from "../src/mail/mail.service";
 import { RetentionService } from "../src/security/retention.service";
+import { hashToken } from "../src/security/session.service";
 import { asPlatform, createApp, login, resetDb, seedPlatform } from "./helpers";
 
 const DAY = 86_400_000;
@@ -360,12 +361,41 @@ describe("Sécurité & paramètres (e2e)", () => {
       expect(r.status).toBe(200);
       expect(r.body.license).toMatchObject({ status: expect.any(String), inGrace: false, currentPeriodEnd: expect.any(String) });   // même forme qu'à la connexion
       expect(r.body.license.status).toBe(s.license.status);
-      expect((await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: s.refreshToken })).status).toBe(401);
       expect((await api().get(`${V}/tenant/account/me`).set(bearer(r.body.accessToken))).status).toBe(200);
       // un jeton de la plateforme ne fonctionne pas côté restaurant, et inversement
       expect((await api().post(`${V}/platform/auth/refresh`).send({ refreshToken: r.body.refreshToken })).status).toBe(401);
       expect((await api().get(`${V}/tenant/account/me`).set(bearer(root))).status).toBe(401);
       expect((await api().get(`${V}/platform/account/me`).set(bearer(r.body.accessToken))).status).toBe(401);
+    });
+
+    it("réponse de rotation perdue : l'ancien jeton reste accepté pendant le délai de grâce, la session continue", async () => {
+      const a = (await tenantLogin("kofi", "admin@kofi.tg", PW2)).body;
+      const b = await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: a.refreshToken });   // réponse « perdue » par le client
+      expect(b.status).toBe(200);
+      const c = await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: a.refreshToken });   // le client rejoue l'ancien jeton
+      expect(c.status).toBe(200);
+      expect(c.body.refreshToken).not.toBe(b.body.refreshToken);
+      expect((await api().get(`${V}/tenant/account/me`).set(bearer(c.body.accessToken))).status).toBe(200);
+      // Le jeton intermédiaire (jamais reçu) ne vaut plus rien, sans fermer la session ; le dernier jeton continue normalement.
+      expect((await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: b.body.refreshToken })).status).toBe(401);
+      const d = await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: c.body.refreshToken });
+      expect(d.status).toBe(200);
+      // Deux renouvellements simultanés avec le même jeton (deux onglets) : aucun des deux n'est refusé.
+      const both = await Promise.all([1, 2].map(() => api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: d.body.refreshToken })));
+      expect(both.map((x) => x.status)).toEqual([200, 200]);
+      // Déconnexion avec le jeton précédent (réponse perdue juste avant) : la session est bien fermée.
+      expect((await api().post(`${V}/tenant/auth/logout`).send({ refreshToken: d.body.refreshToken })).status).toBe(204);
+      expect((await api().get(`${V}/tenant/account/me`).set(bearer(both[1].body.accessToken))).status).toBe(401);
+    });
+
+    it("ancien jeton rejoué APRÈS le délai de grâce : vol présumé, toute la session est révoquée", async () => {
+      const a = (await tenantLogin("kofi", "admin@kofi.tg", PW2)).body;
+      const b = (await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: a.refreshToken })).body;
+      await asPlatform(prisma, (tx) => tx.refreshToken.updateMany({ where: { previousTokenHash: hashToken(a.refreshToken) }, data: { rotatedAt: new Date(Date.now() - 60_000) } }));
+      expect((await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: a.refreshToken })).status).toBe(401);
+      // Le voleur comme le titulaire légitime perdent la session : le jeton courant et le jeton d'accès sont refusés.
+      expect((await api().post(`${V}/tenant/auth/refresh`).send({ refreshToken: b.refreshToken })).status).toBe(401);
+      expect((await api().get(`${V}/tenant/account/me`).set(bearer(b.accessToken))).status).toBe(401);
     });
 
     it("la déconnexion révoque la session", async () => {
@@ -393,7 +423,7 @@ describe("Sécurité & paramètres (e2e)", () => {
         expect(c).toMatch(/Expires=/);
       });
 
-      it("rafraîchit par le cookie (rotation), refuse l'ancien, et la déconnexion l'efface", async () => {
+      it("rafraîchit par le cookie (rotation, délai de grâce), et la déconnexion l'efface", async () => {
         const login1 = await api().post(`${V}/tenant/auth/login`).set(WEB).send({ tenantSlug: "kofi", email: "admin@kofi.tg", password: PW2 });
         const c1 = valueOf(cookieOf(login1, "rt_tenant_kofi"));
         const r = await api().post(`${V}/tenant/auth/refresh`).set(WEB).set("Cookie", c1).send({});
@@ -402,10 +432,13 @@ describe("Sécurité & paramètres (e2e)", () => {
         expect(r.body.license).toMatchObject({ status: expect.any(String) });
         const c2 = valueOf(cookieOf(r, "rt_tenant_kofi"));
         expect(c2).not.toBe(c1);
+        // Ancien cookie rejoué dans le délai de grâce (réponse perdue) : accepté, un nouveau cookie est posé.
         const replay = await api().post(`${V}/tenant/auth/refresh`).set(WEB).set("Cookie", c1).send({});
-        expect(replay.status).toBe(401);
-        expect(cookieOf(replay, "rt_tenant_kofi")).toBeUndefined();   // pas effacé : un autre onglet peut l'avoir fait tourner
-        const out = await api().post(`${V}/tenant/auth/logout`).set(WEB).set("Cookie", c2).send({});
+        expect(replay.status).toBe(200);
+        const c3 = valueOf(cookieOf(replay, "rt_tenant_kofi"));
+        expect(c3).not.toBe(c2);
+        expect((await api().post(`${V}/tenant/auth/refresh`).set(WEB).set("Cookie", c2).send({})).status).toBe(401);   // jamais reçu
+        const out = await api().post(`${V}/tenant/auth/logout`).set(WEB).set("Cookie", c3).send({});
         expect(out.status).toBe(204);
         expect(cookieOf(out, "rt_tenant_kofi")).toMatch(/Expires=Thu, 01 Jan 1970/);
         expect((await api().get(`${V}/tenant/account/me`).set(bearer(r.body.accessToken))).status).toBe(401);
