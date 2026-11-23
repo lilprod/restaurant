@@ -24,6 +24,9 @@ export default defineConfig({
     timezoneId: "Africa/Lome",
     viewport: { width: 1280, height: 800 },
     launchOptions: { executablePath },
+    // Sans navigateur imposé (CI) : Chromium complet en mode sans interface. Le « headless shell » par défaut refuse les
+    // notifications (permission « denied » même accordée), ce qui empêche de tester le push web.
+    channel: executablePath ? undefined : "chromium",
     trace: "off",
   },
 });
