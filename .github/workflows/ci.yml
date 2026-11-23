@@ -1,7 +1,9 @@
 name: CI
 on:
+  # Une seule exécution par changement : `push` sur master seulement (après fusion), `pull_request` pour les branches de PR.
+  # Les autres branches (dont les instantanés wip/** des agents) ne déclenchent rien tant qu'elles n'ont pas de PR.
   push:
-    branches-ignore: ["wip/**"]   # instantanés de travail en cours des agents (scripts/dev/wip-push.sh)
+    branches: [master]
   pull_request:
 
 concurrency:

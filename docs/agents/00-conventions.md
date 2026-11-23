@@ -92,7 +92,7 @@ Sans paquet PostgreSQL installé : `docker compose up -d` (voir `docker-compose.
 - Après une migration, la base de test reçoit les migrations via `pretest:e2e` ; sous RLS, `scripts/dev/test-rls.sh` redonne les droits et relance `prisma/sql/rls.sql`.
 
 ## 5 bis. Sauvegarde du travail en cours (instantanés)
-Ne commitez pas et ne poussez pas sur `master` : l'orchestrateur intègre après vérification. Pour ne rien perdre (interruption, limite d'usage,
+Ne commitez pas et ne poussez pas sur `master` : l'orchestrateur vérifie puis intègre par **pull request** (branche dédiée, CI verte, fusion). Pour ne rien perdre (interruption, limite d'usage,
 redémarrage du conteneur), **poussez un instantané** sur votre branche de sauvegarde :
 ```bash
 bash scripts/dev/wip-push.sh <ID> "point d'étape : <ce qui est fait>"   # ex. X5B → branche distante wip/X5B
