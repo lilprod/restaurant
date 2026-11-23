@@ -1,7 +1,7 @@
 # Orchestration — découper, lancer, relire, intégrer
 
 Rôle de l'orchestrateur (l'agent principal de la session) : choisir le prochain sous-projet, lancer un sous-agent avec la bonne fiche,
-**ne jamais croire un rapport sur parole** (relancer soi-même les vérifications), intégrer, pousser, mettre à jour l'état dans `README.md`.
+**ne jamais croire un rapport sur parole** (relancer soi-même les vérifications), intégrer par pull request (§5), mettre à jour l'état dans `README.md`.
 
 ## 1. Ordre recommandé (vagues)
 
@@ -73,12 +73,17 @@ Pour un agent web qui suit un agent API : ajouter « L'API du sous-projet est in
 3. **Relancer soi-même** : `pnpm install --frozen-lockfile && pnpm lint && pnpm build && pnpm test && pnpm --filter api test:e2e`, puis l'e2e **sous RLS**.
 4. Regarder 3 à 5 captures clés (écrans principaux, mobile, sombre).
 5. Corriger soi-même les petits écarts ; renvoyer à l'agent (SendMessage) ce qui est substantiel.
-6. Commit en français, message décrivant le livré ; push sur la branche convenue avec le propriétaire (actuellement `master`).
+6. **Intégration par pull request** (règle du propriétaire depuis le 23/11/2026, plus de push direct sur `master`) :
+   - branche dédiée depuis `master` à jour : `feat/<ID>-<sujet>` (sous-projet), `fix/<sujet>` (correctif), `ci/<sujet>` ou `docs/<sujet>` ;
+   - commits en français décrivant le livré ; `git push -u origin <branche>` ;
+   - pull request vers `master` : titre `<ID> : <résumé>`, corps = livré, vérifications (chiffres), limites, décisions à prendre, captures utiles ;
+   - fusion seulement quand **les 6 jobs de CI** sont verts sur le dernier commit de la branche et sans conflit ; fusion par le propriétaire
+     (ou par l'orchestrateur s'il en a reçu l'accord explicite pour cette PR) ; supprimer ensuite la branche et l'éventuelle `wip/<ID>`.
 7. Mettre à jour le tableau d'état de `docs/agents/README.md` et, si la fiche a révélé des choses, la fiche suivante concernée.
 8. Résumer au propriétaire : livré, vérifié (chiffres), limites, décisions à prendre.
 
-**Après chaque push sur `master` : vérifier la CI GitHub du commit** (5 jobs : build, e2e-rls, web, ops, docker) avant d'annoncer
-l'intégration ou de lancer le sous-projet suivant. Une CI rouge se traite tout de suite (cause racine, jamais de test désactivé).
+**Après chaque push (branche de PR, puis `master` après fusion) : vérifier la CI GitHub** (6 jobs : build, e2e-rls, web, web-e2e, ops,
+docker) avant d'annoncer l'intégration ou de lancer le sous-projet suivant. Une CI rouge se traite tout de suite (cause racine, jamais de test désactivé).
 Un test qui passe en local mais échoue en CI : rejouer avec les contraintes de la CI (2 processeurs, `?connection_limit=3` dans
 `TEST_DATABASE_URL`) ; les échecs Jest apparaissent en annotations et en fin de journal du job.
 

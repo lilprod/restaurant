@@ -9,3 +9,4 @@ Avant toute tâche, lire **`docs/agents/00-conventions.md`** (règles non négoc
 
 Démarrage rapide : `bash scripts/dev/setup-db.sh` puis `bash scripts/dev/start.sh` (arrêt : `scripts/dev/stop.sh`).
 Vérification : `pnpm lint && pnpm build && pnpm test && pnpm --filter api test:e2e`.
+Intégration : jamais de push direct sur `master` ; branche dédiée + pull request, fusion quand les 6 jobs de CI sont verts (`docs/agents/04-orchestration.md` §5).
