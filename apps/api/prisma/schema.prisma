@@ -194,6 +194,9 @@ model RefreshToken {
   platformUserId String?
   tenantId       String? // renseigné pour les sessions tenant (hors RLS)
   tokenHash      String        @unique
+  /// Jeton précédent (haché) : encore accepté pendant le délai de grâce qui suit sa rotation (réponse perdue), puis traité comme un vol.
+  previousTokenHash String?    @unique
+  rotatedAt      DateTime?
   userAgent      String?
   ip             String?
   createdAt      DateTime      @default(now())
