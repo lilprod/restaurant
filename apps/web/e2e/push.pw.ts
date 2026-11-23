@@ -54,6 +54,17 @@ const shown = (page: Page) => page.evaluate(async () => {
 async function deliverPush(cdp: CDPSession, registrationId: string, data: unknown) {
   await cdp.send("ServiceWorker.deliverPushMessage", { origin: ORIGIN, registrationId, data: typeof data === "string" ? data : JSON.stringify(data) });
 }
+/**
+ * Livraison simulée « jusqu'à affichage » : `ServiceWorker.deliverPushMessage` (DevTools) perd parfois un message quand le service worker
+ * vient d'être réveillé. On vérifie ici l'affichage par NOTRE service worker, pas ce canal de simulation : on renvoie (même `tag`, donc
+ * remplacement, jamais de doublon) jusqu'à 3 fois.
+ */
+async function deliverUntil(cdp: CDPSession, registrationId: string, data: unknown, check: () => Promise<boolean>) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await deliverPush(cdp, registrationId, data);
+    try { await expect.poll(check, { timeout: 5_000 }).toBe(true); return; } catch (e) { if (attempt === 3) throw e; }
+  }
+}
 async function registrationId(cdp: CDPSession): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("inscription du service worker introuvable")), 15_000);
@@ -192,8 +203,9 @@ test.describe("Notifications push de l'équipe (build de production, nginx, CSP 
     await deliverPush(cdp, regId, { title: "Nouvelle commande", body: "Commande n°9 · 1 article.", url: `/r/${SLUG}/cuisine`, tag: "kitchen:visible" });
     await page.waitForTimeout(1500);
     expect((await shown(page)).map((n) => n.tag)).toEqual([`order:${order.id}`]);
-    await deliverPush(cdp, regId, { title: "Notification de test", body: "Test", url: `/r/${SLUG}/impression`, tag: "test" });
-    await expect.poll(async () => (await shown(page)).map((n) => n.tag).sort(), { timeout: 15_000 }).toEqual([`order:${order.id}`, "test"]);
+    await deliverUntil(cdp, regId, { title: "Notification de test", body: "Test", url: `/r/${SLUG}/impression`, tag: "test" },
+      async () => (await shown(page)).some((n) => n.tag === "test"));
+    expect((await shown(page)).map((n) => n.tag).sort()).toEqual([`order:${order.id}`, "test"]);
 
     // Charge illisible ou adresse externe : alerte générique, jamais d'erreur ni d'adresse hors de l'origine
     await page.goto("about:blank");
@@ -239,6 +251,8 @@ test.describe("Notifications push de l'équipe (build de production, nginx, CSP 
     // Les autres appareils (cuisine, livreur) restent abonnés
     expect(await pushRows(`endpoint like '%pw-kitchen-%' or endpoint like '%pw-driver-%'`)).toBe("2");
     expect(problems).toEqual([]);
+    // Nettoyage : la commande du parcours libère sa table (parcours rejouable sur la même base).
+    await manager("POST", `/tenant/orders/${order.id}/cancel`, { reason: "Fin du parcours de test" });
     await ctx.close();
   });
 

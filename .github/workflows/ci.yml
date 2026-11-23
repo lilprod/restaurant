@@ -88,6 +88,46 @@ jobs:
       # turbo respecte « ^build » : les paquets partagés (types dans dist) sont compilés avant le lint et les tests du web
       - run: pnpm turbo run lint test build --filter=web...
 
+  # Parcours navigateur Playwright (temps réel, hors ligne, impression, push, réservations, livraison…) sur le build de production
+  # (vite preview), API réelle et base neuve. Voir scripts/ci/web-e2e.sh (même script en local).
+  web-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: restaurant
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U app -d restaurant" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      E2E_DATABASE_URL: postgresql://app:app@localhost:5432/restaurant
+      E2E_LOG_DIR: ${{ github.workspace }}/web-e2e-logs
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter api prisma:generate
+      - run: pnpm build
+      - name: Navigateur Chromium (Playwright)
+        run: pnpm --filter web exec playwright install --with-deps chromium
+      - name: Parcours navigateur
+        run: bash scripts/ci/web-e2e.sh
+      - name: Journaux et traces en cas d'échec
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-logs
+          path: |
+            web-e2e-logs/
+            apps/web/test-results/
+          retention-days: 7
+
   # Déploiement : analyse statique des scripts et Dockerfiles, mise en service de la base, sauvegarde / restauration réelles.
   ops:
     runs-on: ubuntu-latest

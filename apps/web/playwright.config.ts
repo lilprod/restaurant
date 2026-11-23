@@ -2,7 +2,8 @@ import { existsSync } from "node:fs";
 import { defineConfig } from "@playwright/test";
 
 /**
- * Parcours navigateur (lancés à la demande, pas en CI) : `pnpm --filter web test:e2e`.
+ * Parcours navigateur, lancés en CI (job web-e2e) et en local par `E2E_DATABASE_URL=… bash scripts/ci/web-e2e.sh` (base neuve, build de production).
+ * À la main sur le serveur de dev : `pnpm --filter web test:e2e` (les parcours du service worker se sautent alors).
  * Prérequis : `bash scripts/dev/setup-db.sh && bash scripts/dev/start.sh` (API :3000 + web :5173).
  * Navigateur : CHROMIUM_PATH, sinon /opt/pw-browsers/chromium s'il existe, sinon celui de Playwright. Ne jamais lancer `playwright install` ici.
  */
