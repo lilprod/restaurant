@@ -52,10 +52,10 @@ pnpm lint && pnpm build && pnpm test       # lint, build, tests unitaires (API +
 pnpm --filter api test:e2e                 # tests e2e de l'API (PostgreSQL)
 bash scripts/dev/test-rls.sh               # toute la suite e2e sous un rôle SQL non superuser (RLS réellement appliquée)
 node scripts/ci/audit.mjs                  # audit des dépendances (hautes et critiques bloquantes)
-pnpm --filter web test:e2e                 # parcours Playwright (application lancée)
+E2E_DATABASE_URL=postgresql://app:app@localhost:5433/<base vide> bash scripts/ci/web-e2e.sh   # 20 parcours Playwright (build de production)
 ```
 
-La CI GitHub (`.github/workflows/ci.yml`) exécute tout cela, plus l'analyse des scripts et Dockerfiles, la sauvegarde / restauration réelles
+La CI GitHub (`.github/workflows/ci.yml`, 6 jobs) exécute tout cela, plus l'analyse des scripts et Dockerfiles, la sauvegarde / restauration réelles
 et la construction des images avec la pile Docker de production.
 
 ## Production
